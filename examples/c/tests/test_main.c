@@ -1,5 +1,3 @@
 #include "../src/main.h"
 
-int main(void) {
-    return add(2, 3) == 5 ? 0 : 1;
-}
+int main(void) { return add(2, 3) == 5 ? 0 : 1; }
