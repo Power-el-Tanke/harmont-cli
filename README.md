@@ -102,10 +102,23 @@ hm run --help                  # full flag reference
 | `hm cloud build list -p <slug>` | List builds for a pipeline |
 | `hm cloud build show -p <slug> <n>` / `watch -p <slug> <n>` / `cancel -p <slug> <n>` | Inspect or control a build |
 | `hm cloud job list -p <slug> -b <n>` / `job show -p <slug> -b <n> <id>` | Inspect jobs in a build |
-| `hm cloud billing balance` / `transactions` / `usage` / `topup` / `redeem` | Credit balance, transaction log, usage, top-ups, redeem codes |
+| `hm cloud billing <verb>` | Credit balance and usage (see below for verbs) |
 | `hm cloud run [--plan-file PATH]` | Submit a pre-rendered plan JSON (defaults to `.harmont/plan.json`) |
 
 Source-archive upload for `cloud run` is in progress — pre-render to `.harmont/plan.json` for now.
+
+<details>
+<summary>Billing verbs</summary>
+
+| Command | What it does |
+|---|---|
+| `hm cloud billing balance` | Print the current credit balance |
+| `hm cloud billing transactions [--limit N]` | List billing transactions (default 100) |
+| `hm cloud billing usage` | Usage over a time window |
+| `hm cloud billing topup` | Top up credits |
+| `hm cloud billing redeem` | Redeem a promo code |
+
+</details>
 
 ## Examples
 
