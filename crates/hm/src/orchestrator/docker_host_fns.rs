@@ -8,7 +8,43 @@ use hm_plugin_protocol::{DockerCommitArgs, DockerExecArgs, DockerExtractArgs, Do
 
 use super::state::current;
 
-const EXTRACT_CMD_SH: &str = "mkdir -p \"$WORKDIR\" && cd \"$WORKDIR\" && tar -xzf -";
+// Workspace extract must be idempotent across snapshot reuse: when a
+// parent snapshot is shared across different repos (e.g. an apt-base
+// step's image cached on apt-package set only, then reused by two
+// example projects), the previous repo's files in $WORKDIR would
+// otherwise leak into the new run because `tar -xzf` overlays rather
+// than mirrors. To keep this surgical, every extract writes a manifest
+// of the paths it laid down to `$WORKDIR/.harmont-extracted`. The next
+// extract reads that manifest, deletes only the paths the previous
+// extract added (longest first so files go before their parent dirs),
+// then unpacks the new archive (writing a fresh manifest). Files
+// created inside the container by a step's command (e.g. `node_modules`
+// after `npm ci`, build artifacts under `build/`) are not in any
+// manifest, so they survive untouched — preserving the intra-chain
+// artifact-passing semantics that toolchains rely on.
+const EXTRACT_CMD_SH: &str = r#"set -e
+mkdir -p "$WORKDIR"
+cd "$WORKDIR"
+manifest="$WORKDIR/.harmont-extracted"
+if [ -f "$manifest" ]; then
+  # Longest paths first: removes nested entries before their parents.
+  sort -r "$manifest" | while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    if [ -d "$p" ] && [ ! -L "$p" ]; then
+      rmdir "$p" 2>/dev/null || true
+    else
+      rm -f "$p" 2>/dev/null || true
+    fi
+  done
+  rm -f "$manifest"
+fi
+# Stream the archive into a temp file so we can both list and extract.
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+cat > "$tmp"
+tar -tzf "$tmp" > "$manifest"
+tar -xzf "$tmp"
+"#;
 
 pub(crate) async fn ping_impl() -> bool {
     let Some(s) = current() else {
