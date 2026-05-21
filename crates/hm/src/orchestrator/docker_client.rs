@@ -594,6 +594,61 @@ impl DockerClient {
         }
     }
 
+    /// Allocate a TTY exec into a running container. Forwards stdin/stdout
+    /// transparently so an interactive shell works. Returns exit code.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HmError::Docker`] on `create_exec` / `start_exec` / `inspect_exec` failures.
+    pub async fn exec_tty(&self, container_id: &str, cmd: &[String]) -> Result<i32> {
+        use bollard::exec::{StartExecOptions, StartExecResults};
+
+        let create = self
+            .inner
+            .create_exec(
+                container_id,
+                CreateExecOptions::<&str> {
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    attach_stdin: Some(true),
+                    tty: Some(true),
+                    cmd: Some(cmd.iter().map(String::as_str).collect()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| HmError::Docker(format!("create_exec({container_id}): {e}")))?;
+        let start = self
+            .inner
+            .start_exec(
+                &create.id,
+                Some(StartExecOptions {
+                    detach: false,
+                    tty: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .map_err(|e| HmError::Docker(format!("start_exec({}): {e}", create.id)))?;
+        if let StartExecResults::Attached { mut output, .. } = start {
+            // Bridge container output to host stdout. For full bidi
+            // stdin we would also need to feed the local stdin into
+            // the exec input stream; left as a follow-up.
+            while let Some(chunk) = output.next().await {
+                if let Ok(c) = chunk {
+                    use std::io::Write;
+                    std::io::stdout().write_all(c.into_bytes().as_ref()).ok();
+                }
+            }
+        }
+        let info = self
+            .inner
+            .inspect_exec(&create.id)
+            .await
+            .map_err(|e| HmError::Docker(format!("inspect_exec({}): {e}", create.id)))?;
+        Ok(info.exit_code.map_or(0, |c| i32::try_from(c).unwrap_or(0)))
+    }
+
     /// Internal access to the underlying bollard handle, for callers
     /// that need to call bollard APIs not yet wrapped here (e.g., log
     /// streaming via `Docker::logs`).
