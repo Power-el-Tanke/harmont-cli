@@ -5,10 +5,10 @@ use crate::cli::RunArgs;
 use crate::context::RunContext;
 use crate::output::format::banner;
 
-/// Execute a v0 IR pipeline locally and return the container id of the
-/// final step. Distinct from `handle()` in that it does not use the
-/// user-facing run UI; used by `hm dev up` to build deployment images
-/// from `from_=Step` chains.
+/// Execute a v0 IR pipeline locally; return the final container id.
+///
+/// Distinct from `handle()` — does not use the user-facing run UI.
+/// Used by `hm dev up` to build deployment images from `from_=Step` chains.
 ///
 /// # Not yet implemented
 ///

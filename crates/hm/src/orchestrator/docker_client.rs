@@ -394,8 +394,8 @@ impl DockerClient {
     /// Returns [`HmError::Docker`] for non-404 daemon errors.
     pub async fn remove_network(&self, name: &str) -> Result<()> {
         match self.inner.remove_network(name).await {
-            Ok(()) => Ok(()),
-            Err(bollard::errors::Error::DockerResponseServerError {
+            Ok(())
+            | Err(bollard::errors::Error::DockerResponseServerError {
                 status_code: 404,
                 ..
             }) => Ok(()),
@@ -407,6 +407,7 @@ impl DockerClient {
 
     /// Spec for a long-lived service container (one deployment).
     /// Pass into [`start_service`].
+    #[must_use]
     pub fn build_service_spec<'a>(image: &'a str, name: &'a str) -> ServiceSpecBuilder<'a> {
         ServiceSpecBuilder::new(image, name)
     }
@@ -425,10 +426,16 @@ impl DockerClient {
         use bollard::network::ConnectNetworkOptions;
         use std::collections::HashMap;
 
-        let mut exposed: HashMap<String, HashMap<(), ()>> = HashMap::new();
-        let mut port_bindings: HashMap<String, Option<Vec<PortBinding>>> = HashMap::new();
+        // Docker's exposed_ports type requires HashMap<String, HashMap<(), ()>>.
+        // The unit-value inner map is the Docker API convention for "no options".
+        #[allow(clippy::zero_sized_map_values, reason = "Docker API requires this exact type")]
+        let (mut exposed, mut port_bindings) = (
+            HashMap::<String, HashMap<(), ()>>::new(),
+            HashMap::<String, Option<Vec<PortBinding>>>::new(),
+        );
         for cport in &spec.publish {
             let key = format!("{cport}/tcp");
+            #[allow(clippy::zero_sized_map_values, reason = "Docker API requires this exact type")]
             exposed.insert(key.clone(), HashMap::new());
             port_bindings.insert(
                 key,
@@ -512,25 +519,25 @@ impl DockerClient {
             .await
             .map_err(|e| HmError::Docker(format!("inspect_container({container_id}): {e}")))?;
         let mut out = std::collections::HashMap::new();
-        if let Some(ns) = info.network_settings {
-            if let Some(ports) = ns.ports {
-                for (key, bindings) in ports {
-                    // key like "5432/tcp"
-                    let cport: u16 = key
-                        .split('/')
-                        .next()
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(0);
-                    if cport == 0 {
-                        continue;
-                    }
-                    if let Some(bs) = bindings {
-                        for b in bs {
-                            if let Some(hp) = b.host_port {
-                                if let Ok(p) = hp.parse::<u16>() {
-                                    out.insert(cport, p);
-                                }
-                            }
+        if let Some(ns) = info.network_settings
+            && let Some(ports) = ns.ports
+        {
+            for (key, bindings) in ports {
+                // key like "5432/tcp"
+                let cport: u16 = key
+                    .split('/')
+                    .next()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                if cport == 0 {
+                    continue;
+                }
+                if let Some(bs) = bindings {
+                    for b in bs {
+                        if let Some(hp) = b.host_port
+                            && let Ok(p) = hp.parse::<u16>()
+                        {
+                            out.insert(cport, p);
                         }
                     }
                 }
@@ -550,8 +557,8 @@ impl DockerClient {
             .stop_container(container_id, Some(StopContainerOptions { t: 10 }))
             .await
         {
-            Ok(()) => Ok(()),
-            Err(bollard::errors::Error::DockerResponseServerError {
+            Ok(())
+            | Err(bollard::errors::Error::DockerResponseServerError {
                 status_code: 404,
                 ..
             }) => Ok(()),
@@ -576,8 +583,8 @@ impl DockerClient {
             )
             .await
         {
-            Ok(()) => Ok(()),
-            Err(bollard::errors::Error::DockerResponseServerError {
+            Ok(())
+            | Err(bollard::errors::Error::DockerResponseServerError {
                 status_code: 404,
                 ..
             }) => Ok(()),
@@ -587,11 +594,24 @@ impl DockerClient {
         }
     }
 
+    /// Internal access to the underlying bollard handle, for callers
+    /// that need to call bollard APIs not yet wrapped here (e.g., log
+    /// streaming via `Docker::logs`).
+    ///
+    /// Prefer adding a dedicated method to this type; only use this
+    /// accessor when a one-off stream is needed outside the main
+    /// `DockerClient` API surface.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn inner_for_logs(&self) -> &bollard::Docker {
+        &self.inner
+    }
+
     /// List container summaries filtered by a single label `k=v` predicate.
     ///
     /// # Errors
     ///
-    /// Returns [`HmError::Docker`] when list_containers fails.
+    /// Returns [`HmError::Docker`] when `list_containers` fails.
     pub async fn list_containers_by_label(
         &self,
         k: &str,
@@ -642,6 +662,7 @@ pub struct ServiceSpecBuilder<'a> {
 }
 
 impl<'a> ServiceSpecBuilder<'a> {
+    #[must_use]
     pub fn new(image: &'a str, name: &'a str) -> Self {
         Self {
             inner: ServiceSpec {
@@ -659,42 +680,50 @@ impl<'a> ServiceSpecBuilder<'a> {
         }
     }
 
+    #[must_use]
     pub fn env(mut self, env: Vec<String>) -> Self {
         self.inner.env = env;
         self
     }
 
+    #[must_use]
     pub fn cmd(mut self, cmd: Option<Vec<String>>) -> Self {
         self.inner.cmd = cmd;
         self
     }
 
-    pub fn workdir(mut self, w: Option<&'a str>) -> Self {
+    #[must_use]
+    pub const fn workdir(mut self, w: Option<&'a str>) -> Self {
         self.inner.workdir = w;
         self
     }
 
+    #[must_use]
     pub fn binds(mut self, b: Vec<String>) -> Self {
         self.inner.binds = b;
         self
     }
 
+    #[must_use]
     pub fn publish(mut self, ports: Vec<u16>) -> Self {
         self.inner.publish = ports;
         self
     }
 
-    pub fn network(mut self, net: &'a str, alias: &'a str) -> Self {
+    #[must_use]
+    pub const fn network(mut self, net: &'a str, alias: &'a str) -> Self {
         self.inner.network = net;
         self.inner.network_alias = alias;
         self
     }
 
+    #[must_use]
     pub fn labels(mut self, l: std::collections::HashMap<String, String>) -> Self {
         self.inner.labels = l;
         self
     }
 
+    #[must_use]
     pub fn build(self) -> ServiceSpec<'a> {
         self.inner
     }

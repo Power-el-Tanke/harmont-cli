@@ -12,6 +12,7 @@
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 fn main() {
     build_embedded_plugins();
@@ -40,8 +41,6 @@ fn build_wasm_plugin(crate_name: &str) {
     }
 
     // Dev path: cross-compile from the sibling crate in the workspace.
-    use std::process::Command;
-
     let src = format!("../{crate_name}/src");
     let cargo_toml = format!("../{crate_name}/Cargo.toml");
     println!("cargo:rerun-if-changed={src}");

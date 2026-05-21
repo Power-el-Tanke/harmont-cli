@@ -20,12 +20,7 @@ pub fn worktree_hash(path: &Path) -> String {
     let mut hasher = Sha1::new();
     hasher.update(bytes.as_bytes());
     let out = hasher.finalize();
-    let mut hex = String::with_capacity(10);
-    for b in out.iter().take(5) {
-        use std::fmt::Write as _;
-        write!(&mut hex, "{b:02x}").expect("write to String never fails");
-    }
-    hex
+    hex::encode(&out[..5])
 }
 
 /// 6 hex chars from a cryptographically secure RNG. Each `hm dev up`
@@ -43,12 +38,7 @@ pub fn fresh_session_id() -> String {
     let mut hasher = Sha1::new();
     hasher.update(&raw);
     let out = hasher.finalize();
-    let mut hex = String::with_capacity(6);
-    for b in out.iter().take(3) {
-        use std::fmt::Write as _;
-        write!(&mut hex, "{b:02x}").expect("write to String never fails");
-    }
-    hex
+    hex::encode(&out[..3])
 }
 
 #[must_use]
@@ -70,12 +60,12 @@ pub fn network_name(worktree_hash: &str, session: &str) -> String {
 pub fn resolve_worktree_root() -> Result<std::path::PathBuf> {
     use std::process::Command;
     let try_git = Command::new("git").args(["rev-parse", "--show-toplevel"]).output();
-    if let Ok(out) = try_git {
-        if out.status.success() {
-            let s = String::from_utf8(out.stdout)?.trim().to_string();
-            if !s.is_empty() {
-                return Ok(std::path::PathBuf::from(s));
-            }
+    if let Ok(out) = try_git
+        && out.status.success()
+    {
+        let s = String::from_utf8(out.stdout)?.trim().to_string();
+        if !s.is_empty() {
+            return Ok(std::path::PathBuf::from(s));
         }
     }
     Ok(std::env::current_dir()?)

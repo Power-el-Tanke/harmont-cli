@@ -51,7 +51,7 @@ pub enum FromSource {
     StepChain { pipeline_v0: serde_json::Value },
 }
 
-/// Wire sentinel for hm.dev.port() — emitted by harmont.dev.dump_registry_json.
+/// Wire sentinel for `hm.dev.port()` — emitted by `harmont.dev.dump_registry_json`.
 pub const PORT_SENTINEL: &str = "__hm_dev_port__";
 
 /// Invoke `python -m harmont.dev --dump-registry --worktree-root <root>`
@@ -88,6 +88,7 @@ pub async fn dump(worktree_root: &Path) -> Result<DevRegistry> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic, reason = "test code")]
 mod tests {
     use super::*;
 

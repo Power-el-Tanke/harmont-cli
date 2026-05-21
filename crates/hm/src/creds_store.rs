@@ -59,12 +59,13 @@ pub fn set(service: &str, account: &str, secret: &str) {
 /// underlying write fails.
 pub fn delete(service: &str, account: &str) {
     let mut f = load();
-    let now_empty = if let Some(svc) = f.entries.get_mut(service) {
-        svc.remove(account);
-        svc.is_empty()
-    } else {
-        false
-    };
+    let now_empty = f
+        .entries
+        .get_mut(service)
+        .is_some_and(|svc| {
+            svc.remove(account);
+            svc.is_empty()
+        });
     if now_empty {
         f.entries.remove(service);
     }

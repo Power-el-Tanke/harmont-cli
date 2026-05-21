@@ -23,8 +23,7 @@ impl PerSlug {
         -> std::io::Result<()>
     {
         self.buf.extend_from_slice(bytes);
-        loop {
-            let Some(idx) = self.buf.iter().position(|&b| b == b'\n') else { break };
+        while let Some(idx) = self.buf.iter().position(|&b| b == b'\n') {
             // line = bytes up to (excluding) the newline
             let line = &self.buf[..idx];
             write_line(slug, width, color, line, w)?;
@@ -75,33 +74,51 @@ fn write_line<W: Write>(slug: &str, width: usize, color: bool, line: &[u8], w: &
     Ok(())
 }
 
-/// Consume LogLine messages, write `[slug] line\n` to stdout per line.
+/// Consume `LogLine` messages, write `[slug] line\n` to stdout per line.
 ///
 /// `slug_width` is the column width for the slug prefix; pass the
 /// length of the longest slug in this session so columns align.
 /// `color` toggles ANSI coloring.
 ///
 /// Returns when the channel closes.
+///
+/// # Errors
+///
+/// Returns an `std::io::Error` if writing to stdout fails.
 pub async fn run(
     mut rx: UnboundedReceiver<LogLine>,
     slug_width: usize,
     color: bool,
 ) -> std::io::Result<()> {
     use std::collections::HashMap;
+    use std::io::Write;
     let mut buffers: HashMap<String, PerSlug> = HashMap::new();
-    let mut stdout = std::io::stdout().lock();
     while let Some(msg) = rx.recv().await {
+        // Accumulate into a temporary Vec so we don't hold StdoutLock
+        // (non-Send) across the await point above.
+        let mut tmp: Vec<u8> = Vec::new();
         let entry = buffers.entry(msg.slug.clone()).or_default();
-        entry.ingest(&msg.slug, slug_width, color, &msg.bytes, &mut stdout)?;
+        entry.ingest(&msg.slug, slug_width, color, &msg.bytes, &mut tmp)?;
+        if !tmp.is_empty() {
+            let mut stdout = std::io::stdout().lock();
+            stdout.write_all(&tmp)?;
+        }
     }
-    // Final flush.
+    // Final flush — also into tmp first, then stdout.
+    let mut tmp: Vec<u8> = Vec::new();
     for (slug, mut b) in buffers {
-        b.flush(&slug, slug_width, color, &mut stdout)?;
+        b.flush(&slug, slug_width, color, &mut tmp)?;
     }
-    stdout.flush()
+    if !tmp.is_empty() {
+        let mut stdout = std::io::stdout().lock();
+        stdout.write_all(&tmp)?;
+        stdout.flush()?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 mod tests {
     use super::*;
 

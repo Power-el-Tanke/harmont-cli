@@ -11,8 +11,7 @@ pub mod fixtures;
 /// missing from `target/`.
 #[must_use]
 pub fn hm_bin() -> assert_cmd::Command {
-    let mut cmd = assert_cmd::Command::cargo_bin("hm").expect("binary 'hm' not found");
-    cmd
+    assert_cmd::Command::cargo_bin("hm").expect("binary 'hm' not found")
 }
 
 /// Build an `hm` command wired against a wiremock `MockServer`.

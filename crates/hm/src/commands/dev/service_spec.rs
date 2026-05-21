@@ -31,6 +31,7 @@ pub struct ResolvedSpec {
 }
 
 impl ResolvedSpec {
+    #[must_use]
     pub fn as_service_spec(&self) -> ServiceSpec<'_> {
         ServiceSpecBuilder::new(&self.image, &self.container_name)
             .env(self.env.clone())
@@ -44,9 +45,15 @@ impl ResolvedSpec {
     }
 }
 
-/// Build a ResolvedSpec from a LocalSpec + session metadata.
+/// Build a `ResolvedSpec` from a `LocalSpec` + session metadata.
+///
 /// `image` is the resolved image tag (raw image from the spec, or the
 /// committed tag for `from_=Step` builds — passed in by the up handler).
+///
+/// # Errors
+///
+/// Returns an error if any `port_mapping` key is not a valid `u16`, or
+/// if a bind volume host path is not valid UTF-8.
 pub fn build(
     slug: &str,
     spec: &LocalSpec,
@@ -97,7 +104,7 @@ fn resolve_binds(
             worktree_root.join(host)
         };
         let host_str = host_abs.to_str().ok_or_else(|| {
-            anyhow!("bind host path is not valid UTF-8: {host_abs:?}")
+            anyhow!("bind host path is not valid UTF-8: {}", host_abs.display())
         })?;
         // container may carry a `:ro` suffix; split + reconstruct so we
         // emit "host:container[:ro]".
@@ -115,6 +122,7 @@ fn resolve_binds(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, reason = "test code")]
 mod tests {
     use super::*;
     use std::collections::BTreeMap;

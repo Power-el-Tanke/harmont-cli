@@ -48,7 +48,7 @@ pub fn plan(reg: &DevRegistry, requested: &[String], no_deps: bool) -> Result<Bo
         }
     }
     let selected: BTreeSet<String> = if requested.is_empty() {
-        deps.keys().map(|s| s.to_string()).collect()
+        deps.keys().map(ToString::to_string).collect()
     } else if no_deps {
         requested.iter().cloned().collect()
     } else {
@@ -71,8 +71,7 @@ pub fn plan(reg: &DevRegistry, requested: &[String], no_deps: bool) -> Result<Bo
         .map(|s| {
             let count = deps
                 .get(s.as_str())
-                .map(|ds| ds.iter().filter(|d| selected.contains(**d)).count())
-                .unwrap_or(0);
+                .map_or(0, |ds| ds.iter().filter(|d| selected.contains(**d)).count());
             (s.clone(), count)
         })
         .collect();
@@ -93,11 +92,7 @@ pub fn plan(reg: &DevRegistry, requested: &[String], no_deps: bool) -> Result<Bo
         for s in &ready {
             indeg.remove(s);
         }
-        for (_, _downstreams) in deps.iter() {
-            // No-op: indeg keys we still hold are the ones not in `ready`;
-            // decrement their indeg if any of their deps were in `ready`.
-        }
-        for (slug, count) in indeg.iter_mut() {
+        for (slug, count) in &mut indeg {
             if let Some(ds) = deps.get(slug.as_str()) {
                 let removed = ds.iter().filter(|d| ready.iter().any(|r| *r == **d)).count();
                 *count = count.saturating_sub(removed);
@@ -109,6 +104,7 @@ pub fn plan(reg: &DevRegistry, requested: &[String], no_deps: bool) -> Result<Bo
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, reason = "test code")]
 mod tests {
     use super::*;
     use super::super::registry::{DevRegistry, LocalSpec, RegEntry};
