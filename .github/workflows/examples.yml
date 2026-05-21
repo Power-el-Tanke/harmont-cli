@@ -97,6 +97,7 @@ jobs:
           - ruby
           - rust
           - typescript
+          - zig-js
           - zig
     steps:
       - uses: actions/checkout@v4
