@@ -4,6 +4,3 @@
 # project files.
 !lib/
 !lib/**
-
-vendor/bundle/
-.bundle/
