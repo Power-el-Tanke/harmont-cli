@@ -41,6 +41,12 @@ pub enum Command {
     #[command(subcommand)]
     Plugin(PluginCommand),
 
+    /// Manage local long-lived deployments (dev databases, dev API
+    /// servers, dev webapps). Reads `.harmont/*.py` for
+    /// `@hm.deploy`-decorated functions and brings them up via Docker.
+    #[command(subcommand)]
+    Dev(DevCommand),
+
     /// Plugin-provided subcommand. Captured raw; the dispatcher
     /// looks it up in the registry and invokes the matching plugin.
     #[command(external_subcommand)]
@@ -122,4 +128,91 @@ pub enum PluginCommand {
         /// Plugin name.
         name: String,
     },
+}
+
+// ---------------------------------------------------------------------------
+// Dev (local deployments)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum DevCommand {
+    /// Bring deployments up in the foreground. Blocks until Ctrl-C.
+    Up(DevUpArgs),
+    /// Tear down deployments owned by this worktree's sessions.
+    Down(DevDownArgs),
+    /// List registered + running deployments.
+    Ls,
+    /// Tail logs of a live deployment from another terminal.
+    Logs(DevLogsArgs),
+    /// Print the host port for a live deployment. Designed for $() use.
+    PortOf(DevPortOfArgs),
+    /// One-shot exec into a live deployment container.
+    Exec(DevExecArgs),
+}
+
+#[derive(Debug, Clone, Parser)]
+pub struct DevUpArgs {
+    /// Deployment slugs to bring up. When empty, brings up everything
+    /// registered in `.harmont/*.py`.
+    #[arg()]
+    pub slugs: Vec<String>,
+
+    /// Skip transitive dependencies; bring up exactly the listed slugs.
+    #[arg(long)]
+    pub no_deps: bool,
+
+    /// Force image rebuild on `from_=Step` deployments even if a cached
+    /// build image exists.
+    #[arg(long)]
+    pub rebuild: bool,
+}
+
+#[derive(Debug, Clone, Parser)]
+pub struct DevDownArgs {
+    /// Slugs to sweep. When empty, sweeps all sessions of this worktree.
+    #[arg()]
+    pub slugs: Vec<String>,
+
+    /// Sweep one specific session entirely (overrides `slugs`).
+    #[arg(long, value_name = "ID")]
+    pub session: Option<String>,
+
+    /// Sweep system-wide instead of this worktree (every container
+    /// labelled `harmont.driver=local`).
+    #[arg(long)]
+    pub all: bool,
+}
+
+#[derive(Debug, Clone, Parser)]
+pub struct DevLogsArgs {
+    pub slug: String,
+
+    #[arg(short, long)]
+    pub follow: bool,
+
+    #[arg(long, value_name = "ID")]
+    pub session: Option<String>,
+}
+
+#[derive(Debug, Clone, Parser)]
+pub struct DevPortOfArgs {
+    pub slug: String,
+
+    /// Container-internal port whose host binding to print.
+    pub container_port: u16,
+
+    #[arg(long, value_name = "ID")]
+    pub session: Option<String>,
+}
+
+#[derive(Debug, Clone, Parser)]
+pub struct DevExecArgs {
+    pub slug: String,
+
+    /// Command to run inside the container. Default `sh -l`.
+    #[arg(trailing_var_arg = true)]
+    pub cmd: Vec<String>,
+
+    #[arg(long, value_name = "ID")]
+    pub session: Option<String>,
 }
