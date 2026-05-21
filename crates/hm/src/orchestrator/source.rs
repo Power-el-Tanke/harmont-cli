@@ -41,7 +41,12 @@ pub fn write_archive(source_dir: &Path, w: impl Write) -> Result<()> {
     // every dotfile — `.eslintrc.json`, `.ocamlformat`, `.gitignore`
     // overrides per-example, etc. We need those in the archive shipped
     // to the container, so flip `hidden(false)`. The literal `.git`
-    // directory is still excluded via `filter_entry`.
+    // and `.harmont` directories are still excluded via `filter_entry`
+    // — `.git` is repository bookkeeping; `.harmont` holds the
+    // pipeline-render entry point (already executed host-side) and
+    // its `__pycache__`, both of which would otherwise leak into the
+    // workspace and trip up project-level tools (e.g. ruff format
+    // walking every `.py` file under /workspace).
     let walker = WalkBuilder::new(source_dir)
         .hidden(false)
         .git_ignore(true)
@@ -49,7 +54,7 @@ pub fn write_archive(source_dir: &Path, w: impl Write) -> Result<()> {
         .git_exclude(true)
         .filter_entry(|entry: &ignore::DirEntry| {
             let name = entry.file_name().to_string_lossy();
-            name != ".git"
+            name != ".git" && name != ".harmont"
         })
         .build();
 
