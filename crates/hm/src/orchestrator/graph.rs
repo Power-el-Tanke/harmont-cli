@@ -117,6 +117,19 @@ impl Graph {
             }
         }
 
+        // Root steps (no `builds_in`) with no explicit `image` inherit
+        // the pipeline's `default_image`. Without this the docker
+        // plugin's `image_name::resolve_image` falls back to
+        // `alpine:latest`, which breaks every apt-based example. Patch
+        // at the host so the plugin stays pipeline-agnostic.
+        if let Some(default_img) = pipeline.default_image.as_deref() {
+            for node in &mut nodes {
+                if node.builds_in.is_none() && node.step.image.is_none() {
+                    node.step.image = Some(default_img.to_string());
+                }
+            }
+        }
+
         let g = Self {
             nodes,
             default_image: pipeline.default_image.clone(),

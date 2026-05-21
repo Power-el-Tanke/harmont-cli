@@ -11,10 +11,13 @@ use hm_plugin_protocol::{CommandStep, SnapshotRef};
 ///    fork parent) committed a snapshot; chain-lineage requires we
 ///    boot from it so filesystem mutations propagate downstream.
 /// 3. The step's `image` field.
-/// 4. Fall back to the default image — the host passes it as a
-///    sentinel via env or arg. Plan 2 keeps a hardcoded fallback
-///    of `"alpine:latest"`; plan 3 will surface it from the
-///    Pipeline's `default_image`.
+/// 4. Fall back to `"alpine:latest"`. Root steps that want a
+///    different default are tagged with `step.image = default_image`
+///    by the host before dispatch (see
+///    `orchestrator::graph::Graph::build`), so the plugin only
+///    reaches the alpine fallback when both the pipeline and step
+///    omit an image — a misconfiguration we surface rather than
+///    paper over.
 #[must_use]
 pub(crate) fn resolve_image(
     step: &CommandStep,
