@@ -1,57 +1,16 @@
-> **Repository layout.** This repo is a Cargo workspace. `crates/hm` is the
-> CLI binary. `crates/hm-plugin-protocol` and `crates/hm-plugin-sdk` are
-> the public API for writing third-party plugins. `crates/hm-plugin-*` are
-> the bundled plugins (Docker executor, output formatters, cloud client).
-> `examples/` contains sample pipeline repos you can `hm run --local` against.
->
-> This repo is a mirror of the `cli/` and `examples/` directories of the
-> private Harmont monorepo. Open issues and PRs against this repo;
-> maintainers will land them upstream and a CI mirror sync replays the
-> result back here.
-
 # harmont-cli
 
 [![license](https://img.shields.io/crates/l/harmont-cli.svg)](#license)
 
-Command-line client for the [Harmont](https://harmont.dev) CI platform. Run CI pipelines on your own machine, in Docker, from a Python pipeline definition checked into your repo.
+Run CI pipelines on your own machine, in Docker, from a Python pipeline definition checked into your repo.
 
-Pipelines are written with the companion [`harmont-py`](https://github.com/harmont-dev/harmont-py) DSL.
+Define the pipeline with the [`harmont-py`](https://github.com/harmont-dev/harmont-py) DSL, then `hm run --local` builds a fresh container per chain, runs the steps, and reuses snapshots across runs. The same definition runs unchanged on the hosted [Harmont](https://harmont.dev) cloud via `hm cloud run`.
 
-## Install
-
-`harmont-cli` is not yet published to crates.io. Install from source:
-
-```sh
-git clone https://github.com/harmont-dev/harmont-cli
-cd harmont-cli
-cargo build --release
-install -m 0755 target/release/hm /usr/local/bin/hm   # or any directory on $PATH
-```
-
-Verify:
-
-```sh
-hm --version
-```
-
-## Requirements
-
-`hm run --local` shells out to Docker and to Python:
-
-- **Docker** — the local executor boots a fresh container per chain.
-- **Python 3.11+** — used to render the pipeline definition to JSON.
-- **`harmont-py`** — the Python package that defines the pipeline DSL. Not yet on PyPI; install from git:
-
-```sh
-git clone https://github.com/harmont-dev/harmont-py
-pip install -e ./harmont-py
-```
-
-## Quickstart
+## Quick start
 
 ### 1. Write a pipeline
 
-Pipelines live in `.harmont/<slug>.py` inside your repo. Each file uses the `@hm.pipeline("slug")` decorator to register one or more named pipelines. Save the following as `.harmont/hello.py`:
+Pipelines live in `.harmont/<slug>.py`. Save this as `.harmont/hello.py`:
 
 ```python
 import harmont as hm
@@ -65,17 +24,105 @@ def hello() -> hm.Step:
     )
 ```
 
-The DSL is small:
+### 2. Install
 
-- `hm.sh(cmd, label=...)` — start a chain with one shell command (shorthand for `hm.scratch().sh(...)`).
-- `.sh(cmd, label=..., cwd=...)` — chain another command. Chained `.sh` calls share filesystem state inside the same container. `cwd="path"` prepends `cd <path> && ` to the command.
-- `.fork(label=...)` — branch into parallel work from a shared base.
-- `hm.wait()` — explicit synchronization barrier.
-- `@hm.target()` — reusable, memoized building block; compose into pipelines via fixture-style typed params (`Target[T]`, `Annotated[Step, BaseImage("...")]`).
+`harmont-cli` is not yet on crates.io. Install from source:
 
-A two-branch variant:
+```sh
+git clone https://github.com/harmont-dev/harmont-cli
+cd harmont-cli
+cargo build --release
+install -m 0755 target/release/hm /usr/local/bin/hm   # or any dir on $PATH
+```
+
+`hm run --local` also needs **Docker** and **Python 3.11+** with [`harmont-py`](https://github.com/harmont-dev/harmont-py):
+
+```sh
+git clone https://github.com/harmont-dev/harmont-py
+pip install -e ./harmont-py
+```
+
+Verify:
+
+```sh
+hm --version
+```
+
+### 3. Run
+
+From the repo root:
+
+```sh
+hm run hello --local
+```
+
+The CLI walks `.harmont/*.py`, resolves the `hello` slug, renders the pipeline to JSON, and schedules chains across Docker containers. Forks run in parallel up to `--parallelism N` (default: host CPU count).
+
+If the repo declares only one pipeline, the slug is optional:
+
+```sh
+hm run --local
+```
+
+## DSL surface
+
+The DSL is small. See [`harmont-py`](https://github.com/harmont-dev/harmont-py) for the full reference.
+
+| Primitive | What it does |
+|---|---|
+| `hm.sh(cmd, label=...)` | Start a chain with one shell command |
+| `.sh(cmd, label=..., cwd=...)` | Chain another command; shares container state with the parent |
+| `.fork(label=...)` | Branch a shared base into parallel work |
+| `hm.wait()` | Explicit synchronization barrier |
+| `@hm.target()` | Reusable, memoized building block |
+| `@hm.pipeline("slug")` | Register a pipeline (multiple per file are fine) |
+
+## Common flags
+
+```sh
+hm run --local --parallelism 4         # cap concurrent chains
+hm run --local --env FOO=bar           # inject env vars
+hm run --local --dir path/to/source    # run against a different source root
+hm run --format json                   # machine-readable event stream
+hm run --help                          # full flag reference
+```
+
+## Cloud
+
+`hm cloud <verb>` talks to `api.harmont.dev`. Tokens live in the OS keyring; the active org slug persists under `~/.config/harmont/state/cloud.kv`.
+
+| Command | What it does |
+|---|---|
+| `hm cloud login` | Browser-loopback OAuth (`--paste` to paste a token) |
+| `hm cloud logout` | Forget stored credentials |
+| `hm cloud whoami` | Show user + active org |
+| `hm cloud org list` / `org use <slug>` | List / pick active org |
+| `hm cloud pipeline list` | Pipelines in the active org |
+| `hm cloud build list` / `build show <id>` / `build watch <id>` | Inspect builds |
+| `hm cloud job show <id>` | Inspect a single job |
+| `hm cloud billing show` | Org billing summary |
+| `hm cloud run [--plan-file PATH]` | Submit a pre-rendered plan JSON (defaults to `.harmont/plan.json`) |
+
+Source-archive upload for `cloud run` is in progress — pre-render to `.harmont/plan.json` for now.
+
+## Examples
+
+Sixteen idiomatic starter projects (one per toolchain) live under [`examples/`](./examples). Each has a `.harmont/pipeline.py` you can read, copy, and run:
+
+```sh
+cd examples/rust
+hm run ci --local
+```
+
+Languages covered: Rust, Haskell, Go, Python (uv), Java/Kotlin (Gradle), C/C++ (CMake), C#, Ruby, Perl, PHP (Composer + Laravel), OCaml, Zig, npm-based stacks (React, Next.js, TypeScript).
+
+<details>
+<summary>A two-branch pipeline using forks and a shared base image</summary>
 
 ```python
+import harmont as hm
+
+
 @hm.pipeline("ci")
 def ci() -> hm.Step:
     setup = hm.sh(
@@ -93,10 +140,15 @@ def ci() -> hm.Step:
     return hm.pipeline(fetch, work, default_image="ubuntu:24.04")
 ```
 
-For larger pipelines, compose with `@hm.target` and typed fixture params:
+</details>
+
+<details>
+<summary>Composing larger pipelines with typed fixture-style targets</summary>
 
 ```python
 from typing import Annotated
+
+import harmont as hm
 
 
 @hm.target()
@@ -114,60 +166,9 @@ def ci(smoke: hm.Target[hm.Step]) -> hm.Step:
     return smoke
 ```
 
-For the full DSL surface (cache policies, matrix axes, soft-fail, timeouts), see the upstream [`harmont-py`](https://github.com/harmont-dev/harmont-py) repo.
+Dependencies are resolved by parameter name from the `@hm.target` registry. `Target[T]` and `Annotated[Step, BaseImage("...")]` both unwrap cleanly under mypy and pyright.
 
-### 2. Run it
-
-From the repo root:
-
-```sh
-hm run hello --local
-```
-
-The CLI walks `.harmont/*.py`, resolves the `hello` slug, renders the pipeline to JSON, and schedules the chains across Docker containers. Each chain inherits state from its parent; forks run in parallel up to `--parallelism N` (defaults to the host's available parallelism).
-
-If the repo declares only one pipeline, the slug is optional:
-
-```sh
-hm run --local
-```
-
-### 3. Useful flags
-
-```sh
-hm run --local --parallelism 4         # cap concurrent chains
-hm run --local --env FOO=bar           # inject env vars
-hm run --local --dir path/to/source    # run against a different source root
-hm run --help                          # full flag reference
-```
-
-## Cloud
-
-`hm cloud <verb>` talks to the hosted Harmont API at `api.harmont.dev`.
-Every cloud verb is delivered by the embedded `hm-plugin-cloud` WASM
-plugin (no separate install step):
-
-```sh
-hm cloud login                  # browser-loopback OAuth (or --paste to
-                                # paste a token directly)
-hm cloud logout
-hm cloud whoami                 # who am I + active org
-hm cloud org list               # orgs you belong to
-hm cloud org use <slug>         # set the active org (persisted)
-hm cloud pipeline list
-hm cloud build list             # builds for the active org
-hm cloud build show <id>
-hm cloud build watch <id>       # poll until terminal
-hm cloud job show <id>
-hm cloud billing show
-hm cloud run [--plan-file PATH] # submit a pre-rendered plan JSON
-                                # (defaults to .harmont/plan.json)
-```
-
-Tokens are stored in the OS keyring. The active org slug is persisted
-per-user under `~/.config/harmont/state/cloud.kv`. Source-archive
-upload for `cloud run` is plan-5 work — pre-render your pipeline to
-`.harmont/plan.json` first.
+</details>
 
 ## Build from source
 
@@ -175,16 +176,46 @@ upload for `cloud run` is plan-5 work — pre-render your pipeline to
 git clone https://github.com/harmont-dev/harmont-cli
 cd harmont-cli
 cargo build
-cargo test                          # Docker-dependent tests in `local_*` need a running daemon
+cargo test                          # `local_*` tests need a running Docker daemon
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-The OpenAPI client is generated at build time from the vendored `openapi.json` via [progenitor](https://github.com/oxidecomputer/progenitor). The snapshot ships with the crate.
+The OpenAPI client is generated at build time from the vendored `openapi.json` via [progenitor](https://github.com/oxidecomputer/progenitor).
+
+## Repository layout
+
+Cargo workspace:
+
+- `crates/hm/` — the `hm` binary.
+- `crates/hm-plugin-protocol/`, `crates/hm-plugin-sdk/` — public API for third-party plugins.
+- `crates/hm-plugin-*` — bundled plugins (Docker executor, output formatters, cloud client).
+- `examples/` — sample pipeline repos to `hm run --local` against.
+
+This repo mirrors the `cli/` and `examples/` directories of the private Harmont monorepo. Open issues and PRs here; maintainers land them upstream and a CI sync replays the result back.
+
+## Plugin authoring
+
+`hm` is plugin-driven via [Extism](https://extism.org). To write one:
+
+```sh
+cargo new --lib my-plugin
+cd my-plugin
+cargo add --git https://github.com/harmont-dev/harmont-cli hm-plugin-sdk
+cargo build --target wasm32-wasip1 --release
+```
+
+Implement one of `StepExecutor`, `SubcommandPlugin`, `LifecycleHook`, or `OutputFormatter`, declare a `PluginManifest`, and call `register_plugin!(...)`. Install with:
+
+```sh
+hm plugin install ./target/wasm32-wasip1/release/my_plugin.wasm
+```
+
+Built-in output formatters: `human` (default), `json`. Select with `hm run --format <name>`. Working examples live in `crates/hm-fixtures/src/bin/`.
 
 ## See also
 
-- [`harmont-py`](https://github.com/harmont-dev/harmont-py) — the Python DSL used to define pipelines that this CLI runs.
+- [`harmont-py`](https://github.com/harmont-dev/harmont-py) — the Python DSL this CLI consumes.
 
 ## License
 
@@ -194,36 +225,3 @@ Dual-licensed under either of
 - MIT license ([`LICENSE-MIT`](LICENSE-MIT))
 
 at your option.
-
-## Plugin authoring
-
-`hm` is plugin-driven via [Extism](https://extism.org). To write a plugin:
-
-```bash
-cargo new --lib my-plugin
-cd my-plugin
-cargo add --git https://github.com/harmont-dev/harmont-cli hm-plugin-sdk
-```
-
-Implement one of `StepExecutor`, `SubcommandPlugin`, `LifecycleHook`, or
-`OutputFormatter`, declare a `PluginManifest`, and call
-`register_plugin!(...)`. Build with:
-
-```bash
-cargo build --target wasm32-wasip1 --release
-```
-
-The output `.wasm` can be installed with:
-
-```bash
-hm plugin install ./target/wasm32-wasip1/release/my_plugin.wasm
-```
-
-See `crates/hm-fixtures/src/bin/` for minimal working examples.
-
-### Output formatter
-
-Implement `OutputFormatter::on_event` to render each `BuildEvent`.
-Plugins emit bytes via `host::write_stdout` or `host::write_stderr`.
-Built-in formatters: `human` (default), `json`. Select with
-`hm run --format <name>`.
