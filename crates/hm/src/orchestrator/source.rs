@@ -37,7 +37,13 @@ pub fn write_archive(source_dir: &Path, w: impl Write) -> Result<()> {
     let encoder = GzEncoder::new(w, Compression::fast());
     let mut archive = TarBuilder::new(encoder);
 
+    // `WalkBuilder` defaults to `hidden(true)`, which silently drops
+    // every dotfile — `.eslintrc.json`, `.ocamlformat`, `.gitignore`
+    // overrides per-example, etc. We need those in the archive shipped
+    // to the container, so flip `hidden(false)`. The literal `.git`
+    // directory is still excluded via `filter_entry`.
     let walker = WalkBuilder::new(source_dir)
+        .hidden(false)
         .git_ignore(true)
         .git_global(true)
         .git_exclude(true)
