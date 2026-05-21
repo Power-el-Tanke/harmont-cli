@@ -5,4 +5,4 @@ import System.Exit (exitFailure, exitSuccess)
 
 main :: IO ()
 main =
-  if add 2 3 == 5 then exitSuccess else exitFailure
+    if add 2 3 == 5 then exitSuccess else exitFailure
