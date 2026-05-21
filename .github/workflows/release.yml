@@ -18,6 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # crates/hm/build.rs cross-compiles hm-plugin-docker as a wasm
+          # plugin embedded into the binary, so the target must be on
+          # the toolchain for the `cargo check` in the next step.
+          targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
 
       - name: Set version from tag
