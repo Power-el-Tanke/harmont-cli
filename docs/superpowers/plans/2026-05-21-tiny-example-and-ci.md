@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the heavy `postgres:16` + `node:20` + Step-chain example across every doc / test in both repos with a tiny `hashicorp/http-echo:1.0` pair (~5 MB total), and wire up CI workflows in both repos that actually boot the deployment and assert it serves HTTP.
+**Goal:** Replace the heavy `postgres:16` + `node:20` + Step-chain example across every doc / test in both repos with a tiny native-stdlib HTTP server example (Python's `python -m http.server` running inside `python:3.12-alpine`), and wire up CI workflows in both repos that actually boot the deployment and assert it serves HTTP.
 
-**Architecture:** One change everywhere a deployment example appears. The new canonical example is two `http-echo` deployments — `hello` + `greeter(hello: hm.Dep[hm.Deployment])` — which together still exercise the `@hm.deploy` decorator, the `hm.Dep[T]` marker, and the bridge-network DNS path, but boot in <5 seconds and pull ~5 MB. CI workflows: `harmont-cli` runs the docker-gated integration test (which now does an actual HTTP GET against the live deployment); `harmont-py` runs the pytest suite (defensive — no existing CI besides the PyPI tag-publish workflow).
+**Architecture:** One change everywhere a deployment example appears. The new canonical example is two deployments — `hello` + `greeter(hello: hm.Dep[hm.Deployment])` — both using **the Python stdlib's built-in `http.server` module** (no third-party HTTP-server image dependency). They demonstrate `@hm.deploy`, the `hm.Dep[T]` marker (greeter pulls hello's slug into its env), and the bridge-network DNS path, in <50 MB of image footprint that boots in <5 seconds. CI workflows: `harmont-cli` runs the docker-gated integration test (which now does a real HTTP GET against the live deployment); `harmont-py` runs the pytest suite (defensive — no existing CI besides the PyPI tag-publish workflow).
 
-**Tech Stack:** GitHub Actions runners (ubuntu-latest has Docker pre-installed), `hashicorp/http-echo:1.0` (5 MB, single-binary echo server: `-text=...` `-listen=:PORT`), existing test infrastructure (pytest in py, `cargo test --features docker-integration` in cli).
+**Tech Stack:** GitHub Actions runners (ubuntu-latest has Docker pre-installed), `python:3.12-alpine` (~50 MB official image), Python stdlib's `http.server` module (which is present in any Python distribution and serves the cwd as a directory listing). Existing test infrastructure: pytest in py, `cargo test --features docker-integration` in cli.
 
 **Repos touched:** Both `harmont-py` (branch `feat/hm-dev-deploy`) and `harmont-cli` (branch `feat/hm-dev-deploy`). Commit conventions and branch state match what's already on those branches.
 
@@ -14,18 +14,26 @@
 
 ---
 
-## Why http-echo
+## Why `python -m http.server`
 
-`hashicorp/http-echo:1.0` is a 5 MB image with a single binary that listens on a port and returns the same text body on every request. It accepts `-listen=:PORT` and `-text=STRING` flags. Verified locally:
+The previous draft of this plan used `hashicorp/http-echo:1.0`. User feedback: examples should use **native language facilities**, not a third-party container image. `python -m http.server` is the canonical native-Python HTTP server — it ships in every Python install, requires no `pip install`, takes a port as a positional arg, and serves the cwd as a directory listing. The response body always contains the literal `Directory listing for /`, which the integration test can grep for.
+
+Verified locally:
 
 ```bash
-$ docker run --rm -d --name htest -p 15678:5678 hashicorp/http-echo:1.0 -listen=:5678 -text="hi"
-$ curl -s localhost:15678
-hi
+$ docker run --rm -d --name htest -p 15678:5678 python:3.12-alpine python -m http.server 5678
+$ sleep 1; curl -s localhost:15678 | head -3
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+$ curl -s localhost:15678 | grep "Directory listing"
+<title>Directory listing for /</title>
 $ docker stop htest
 ```
 
-It is the smallest practical "deployment goes up + serves something" target for CI. Postgres takes 30+ seconds to become accept-ready; http-echo is ready in <1 s.
+The image is ~50 MB (vs. postgres' 80 MB+ and node's 40 MB), but it's a tier-1 trusted image already cached on most developer machines and on GitHub Actions runners. Boot time is <1 second; the server is accept-ready as soon as the container starts.
+
+The `cmd=["python", "-m", "http.server", "5678"]` shape in the DSL also showcases the `cmd: tuple[str, ...]` field — overriding the image's default CMD with a list of args, which is the canonical use of that knob.
 
 ---
 
@@ -35,13 +43,13 @@ It is the smallest practical "deployment goes up + serves something" target for 
 
 - `docs/superpowers/specs/2026-05-21-hm-dev-deploy-design.md` — swap the canonical example in § 1 (Canonical example) and the "Cross-repo vibe check" snippet in § 6.
 - `CLAUDE.md` — swap the canonical example in the Deployments section.
-- `docs/superpowers/plans/2026-05-21-hm-dev-deploy-py.md` — swap the example in Task 11 (the canonical end-to-end test). The harmont-py implementation is already done on this branch, so the plan-doc update is for future readers; the test file itself (next bullet) is the load-bearing change.
+- `docs/superpowers/plans/2026-05-21-hm-dev-deploy-py.md` — swap the example in Task 11 (the canonical end-to-end test). The harmont-py implementation is already committed on this branch, so the plan-doc update is for future readers; the test file itself (next bullet) is the load-bearing change.
 - `tests/dev/test_canonical_example.py` — replace the db+api+web test body with hello+greeter.
 
 ### Modify (harmont-cli)
 
 - `docs/superpowers/plans/2026-05-21-hm-dev-deploy-cli.md` — swap the integration-test code in Task 15.
-- `crates/hm/tests/dev_integration.rs` — switch postgres → http-echo, add an HTTP-level assertion (do an actual GET against the host port and assert the response body).
+- `crates/hm/tests/dev_integration.rs` — switch postgres → `python -m http.server`, add an HTTP-level assertion (do an actual GET against the host port and assert the body contains `Directory listing`).
 
 ### Create (harmont-cli)
 
@@ -53,7 +61,7 @@ It is the smallest practical "deployment goes up + serves something" target for 
 
 ### Do NOT touch
 
-- The implementation files in `harmont/_deploy.py`, `harmont/dev/`, `crates/hm/src/commands/dev/` etc. — they're driver-agnostic and don't reference any specific image. The example swap is purely in docs/tests.
+- The implementation files in `harmont/_deploy.py`, `harmont/dev/`, `crates/hm/src/commands/dev/` — they're driver-agnostic and don't reference any specific image. The example swap is purely in docs/tests.
 
 ---
 
@@ -67,39 +75,7 @@ It is the smallest practical "deployment goes up + serves something" target for 
 
 - [ ] **Step 1: Replace the canonical example in the design spec**
 
-Open `/home/marko/harmont-py/docs/superpowers/specs/2026-05-21-hm-dev-deploy-design.md`. Locate the "Canonical example" section in § 1 (around the line `### Canonical example`). The current code block is:
-
-```python
-import harmont as hm
-
-@hm.target()
-def api_image() -> hm.Step:
-    return hm.sh("docker build -t myapi .", image="docker:24")
-
-@hm.deploy("db")
-def db() -> hm.Deployment:
-    return hm.dev.deploy(
-        image="postgres:16",
-        cmd=["postgres", "-c", "shared_buffers=128MB"],
-        port_mapping={5432: hm.dev.port()},
-        env={"POSTGRES_PASSWORD": "dev"},
-    )
-
-@hm.deploy("api")
-def api(
-    db: hm.Dep[hm.Deployment],
-    api_image: hm.Target[hm.Step],
-) -> hm.Deployment:
-    return hm.dev.deploy(
-        from_=api_image,
-        port_mapping={8000: hm.dev.port()},
-        env={"DATABASE_URL": f"postgres://{db.name}:5432/app"},
-        volumes={".": "/workspace"},
-        workdir="/workspace",
-    )
-```
-
-Replace the **entire** code block with:
+Open `/home/marko/harmont-py/docs/superpowers/specs/2026-05-21-hm-dev-deploy-design.md`. Locate the "### Canonical example" subsection inside § 1. The current code block starts with `@hm.target() def api_image() -> hm.Step:` and ends with the `@hm.deploy("api")` body. Replace the entire code block (between the opening ` ```python ` and the matching closing fence) with:
 
 ```python
 import harmont as hm
@@ -107,40 +83,22 @@ import harmont as hm
 @hm.deploy("hello")
 def hello() -> hm.Deployment:
     return hm.dev.deploy(
-        image="hashicorp/http-echo:1.0",
-        cmd=["-listen=:5678", "-text=hi from harmont"],
+        image="python:3.12-alpine",
+        cmd=["python", "-m", "http.server", "5678"],
         port_mapping={5678: hm.dev.port()},
     )
 
 @hm.deploy("greeter")
 def greeter(hello: hm.Dep[hm.Deployment]) -> hm.Deployment:
     return hm.dev.deploy(
-        image="hashicorp/http-echo:1.0",
-        cmd=["-listen=:5678", f"-text=hello from {hello.name}"],
+        image="python:3.12-alpine",
+        cmd=["python", "-m", "http.server", "5678"],
         port_mapping={5678: hm.dev.port()},
+        env={"HELLO_HOST": hello.name},
     )
 ```
 
-Then find the § 6 "Cross-repo vibe check" code block. The current content is:
-
-```bash
-# In a temp dir
-mkdir -p .harmont && cat > .harmont/pipelines.py <<'EOF'
-import harmont as hm
-@hm.deploy("db")
-def db():
-    return hm.dev.deploy(image="postgres:16",
-                         port_mapping={5432: hm.dev.port()},
-                         env={"POSTGRES_PASSWORD": "dev"})
-EOF
-hm dev up db &
-sleep 5
-PGPASSWORD=dev psql -h localhost -p $(hm dev port-of db 5432) -U postgres -c 'select 1'
-kill %1; wait
-hm dev ls   # should show nothing running
-```
-
-Replace it with:
+Then locate the § 6 "Cross-repo vibe check" code block (the bash snippet that runs `hm dev up` against a tmpdir example). The current snippet ends with the `PGPASSWORD=dev psql ...` line. Replace the entire bash code block with:
 
 ```bash
 # In a temp dir
@@ -150,21 +108,21 @@ import harmont as hm
 @hm.deploy("hello")
 def hello():
     return hm.dev.deploy(
-        image="hashicorp/http-echo:1.0",
-        cmd=["-listen=:5678", "-text=hi from harmont"],
+        image="python:3.12-alpine",
+        cmd=["python", "-m", "http.server", "5678"],
         port_mapping={5678: hm.dev.port()},
     )
 EOF
 hm dev up hello &
 sleep 2
-curl -fsS "http://localhost:$(hm dev port-of hello 5678)" | grep -q "hi from harmont"
+curl -fsS "http://localhost:$(hm dev port-of hello 5678)" | grep -q "Directory listing"
 kill %1; wait
 hm dev ls   # should show nothing running
 ```
 
-- [ ] **Step 2: Replace the canonical example in `harmont-py/CLAUDE.md`**
+- [ ] **Step 2: Replace the canonical example in `CLAUDE.md`**
 
-Open `/home/marko/harmont-py/CLAUDE.md`. Locate the "Deployments — `@hm.deploy` and `hm.dev`" section. Find the code block that currently shows the db+api+web example (it mirrors the spec's `db` + `api(db, api_image)` pattern). Replace the **entire** code block (between the opening ` ```python ` fence and the matching closing fence) with the same hello+greeter snippet used in Step 1:
+Open `/home/marko/harmont-py/CLAUDE.md`. Find the "Deployments — `@hm.deploy` and `hm.dev`" section (currently around line 195). Inside it find the code block that defines the old db / api / web example. Replace the entire code block (between its ` ```python ` open and ` ``` ` close) with:
 
 ```python
 import harmont as hm
@@ -172,42 +130,44 @@ import harmont as hm
 @hm.deploy("hello")
 def hello() -> hm.Deployment:
     return hm.dev.deploy(
-        image="hashicorp/http-echo:1.0",
-        cmd=["-listen=:5678", "-text=hi from harmont"],
+        image="python:3.12-alpine",
+        cmd=["python", "-m", "http.server", "5678"],
         port_mapping={5678: hm.dev.port()},
     )
 
 @hm.deploy("greeter")
 def greeter(hello: hm.Dep[hm.Deployment]) -> hm.Deployment:
     return hm.dev.deploy(
-        image="hashicorp/http-echo:1.0",
-        cmd=["-listen=:5678", f"-text=hello from {hello.name}"],
+        image="python:3.12-alpine",
+        cmd=["python", "-m", "http.server", "5678"],
         port_mapping={5678: hm.dev.port()},
+        env={"HELLO_HOST": hello.name},
     )
 ```
 
 Leave the "Public surface" enumeration block beneath it unchanged.
 
-- [ ] **Step 3: Update the harmont-py plan's Task 11 example**
+- [ ] **Step 3: Update Task 11 in the harmont-py plan**
 
-Open `/home/marko/harmont-py/docs/superpowers/plans/2026-05-21-hm-dev-deploy-py.md`. Locate Task 11 ("Task 11: Full-suite green + canonical end-to-end sanity check"). Find the code block under Step 1 that defines the db+api+web test. Replace the **entire body** of the test (from `def test_canonical_db_api_web_dumps_expected_shape():` through the final assertion) with:
+Open `/home/marko/harmont-py/docs/superpowers/plans/2026-05-21-hm-dev-deploy-py.md`. Locate Task 11 ("Task 11: Full-suite green + canonical end-to-end sanity check"). Find Step 1's code block (the test function `def test_canonical_db_api_web_dumps_expected_shape():`). Replace **the entire test function** (and remove the preceding `@hm.target()` `api_image` definition) with:
 
 ```python
 def test_canonical_hello_greeter_dumps_expected_shape():
     @hm.deploy("hello")
     def hello() -> hm.Deployment:
         return hm.dev.deploy(
-            image="hashicorp/http-echo:1.0",
-            cmd=["-listen=:5678", "-text=hi from harmont"],
+            image="python:3.12-alpine",
+            cmd=["python", "-m", "http.server", "5678"],
             port_mapping={5678: hm.dev.port()},
         )
 
     @hm.deploy("greeter")
     def greeter(hello: hm.Dep[hm.Deployment]) -> hm.Deployment:
         return hm.dev.deploy(
-            image="hashicorp/http-echo:1.0",
-            cmd=["-listen=:5678", f"-text=hello from {hello.name}"],
+            image="python:3.12-alpine",
+            cmd=["python", "-m", "http.server", "5678"],
             port_mapping={5678: hm.dev.port()},
+            env={"HELLO_HOST": hello.name},
         )
 
     raw = hm.dev.dump_registry_json(worktree_root=Path("/tmp/wt"))
@@ -215,25 +175,28 @@ def test_canonical_hello_greeter_dumps_expected_shape():
     assert out["schema_version"] == "0"
     assert list(out["deployments"].keys()) == ["hello", "greeter"]  # topo order
     assert out["deployments"]["greeter"]["deps"] == ["hello"]
-    assert out["deployments"]["hello"]["image"] == "hashicorp/http-echo:1.0"
-    assert out["deployments"]["greeter"]["cmd"] == [
-        "-listen=:5678",
-        "-text=hello from hello",
+    assert out["deployments"]["hello"]["image"] == "python:3.12-alpine"
+    assert out["deployments"]["hello"]["cmd"] == [
+        "python", "-m", "http.server", "5678",
     ]
+    assert out["deployments"]["greeter"]["env"] == {"HELLO_HOST": "hello"}
     # No Step-chain in the new example (from_= is stubbed in v1 cli);
     # both entries have from=None.
     assert out["deployments"]["hello"]["from"] is None
     assert out["deployments"]["greeter"]["from"] is None
 ```
 
-The test function name changes from `test_canonical_db_api_web_dumps_expected_shape` to `test_canonical_hello_greeter_dumps_expected_shape`. Also remove the `@hm.target()` `api_image` definition that was at the top of the old test body — it's no longer used.
-
 - [ ] **Step 4: Update `tests/dev/test_canonical_example.py` to match**
 
-Open `/home/marko/harmont-py/tests/dev/test_canonical_example.py`. Replace the whole file contents with:
+Open `/home/marko/harmont-py/tests/dev/test_canonical_example.py`. Replace the entire file contents with:
 
 ```python
-"""End-to-end test mirroring the spec's canonical hello+greeter example."""
+"""End-to-end test mirroring the spec's canonical hello+greeter example.
+
+The deployments both use Python's stdlib `http.server` (no third-party
+image dependency), which is the smallest practical "native language
+facility" demonstration of an HTTP server in a harmont deployment.
+"""
 from __future__ import annotations
 
 import json
@@ -246,17 +209,18 @@ def test_canonical_hello_greeter_dumps_expected_shape(tmp_path: Path) -> None:
     @hm.deploy("hello")
     def hello() -> hm.Deployment:
         return hm.dev.deploy(
-            image="hashicorp/http-echo:1.0",
-            cmd=["-listen=:5678", "-text=hi from harmont"],
+            image="python:3.12-alpine",
+            cmd=["python", "-m", "http.server", "5678"],
             port_mapping={5678: hm.dev.port()},
         )
 
     @hm.deploy("greeter")
     def greeter(hello: hm.Dep[hm.Deployment]) -> hm.Deployment:
         return hm.dev.deploy(
-            image="hashicorp/http-echo:1.0",
-            cmd=["-listen=:5678", f"-text=hello from {hello.name}"],
+            image="python:3.12-alpine",
+            cmd=["python", "-m", "http.server", "5678"],
             port_mapping={5678: hm.dev.port()},
+            env={"HELLO_HOST": hello.name},
         )
 
     raw = hm.dev.dump_registry_json(worktree_root=tmp_path)
@@ -264,16 +228,16 @@ def test_canonical_hello_greeter_dumps_expected_shape(tmp_path: Path) -> None:
     assert out["schema_version"] == "0"
     assert list(out["deployments"].keys()) == ["hello", "greeter"]
     assert out["deployments"]["greeter"]["deps"] == ["hello"]
-    assert out["deployments"]["hello"]["image"] == "hashicorp/http-echo:1.0"
-    assert out["deployments"]["greeter"]["cmd"] == [
-        "-listen=:5678",
-        "-text=hello from hello",
+    assert out["deployments"]["hello"]["image"] == "python:3.12-alpine"
+    assert out["deployments"]["hello"]["cmd"] == [
+        "python", "-m", "http.server", "5678",
     ]
+    assert out["deployments"]["greeter"]["env"] == {"HELLO_HOST": "hello"}
     assert out["deployments"]["hello"]["from"] is None
     assert out["deployments"]["greeter"]["from"] is None
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [ ] **Step 5: Run tests + lints**
 
 From `/home/marko/harmont-py`:
 
@@ -283,24 +247,25 @@ python3 -m pytest tests/dev/test_canonical_example.py -v
 
 Expected: 1 passed (`test_canonical_hello_greeter_dumps_expected_shape`).
 
-Also re-run the full dev suite to confirm nothing else broke:
-
 ```bash
 python3 -m pytest tests/dev/ 2>&1 | tail -3
 ```
 
-Expected: 42 passed (same as before the swap — only the canonical test was renamed, no count change).
-
-- [ ] **Step 6: Run ruff + mypy on the changed file**
+Expected: 42 passed (count unchanged — only this one test renamed).
 
 ```bash
 python3 -m ruff check tests/dev/test_canonical_example.py
+```
+
+Expected: clean.
+
+```bash
 python3 -m mypy tests/dev/test_canonical_example.py 2>&1 | tail -5
 ```
 
-Expected: ruff clean; mypy may warn on the inner functions (consistent with the prior version of this file — those warnings were noted as pre-existing test-file untypedness in the harmont-py plan's Task 11 self-review). No new errors.
+Expected: only the pre-existing test-untypedness warnings on the inner `hello` / `greeter` defs (same shape as the prior version of this file; not a regression).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 cd /home/marko/harmont-py
@@ -309,15 +274,14 @@ git add docs/superpowers/specs/2026-05-21-hm-dev-deploy-design.md \
         docs/superpowers/plans/2026-05-21-hm-dev-deploy-py.md \
         tests/dev/test_canonical_example.py
 git commit -m "$(cat <<'EOF'
-docs(deploy): swap canonical example to hashicorp/http-echo
+docs(deploy): swap canonical example to python -m http.server
 
 The previous canonical example used postgres:16 + a Step-chain api
 build + node:20 — three heavy images and a build path that v1 cli
-stubs out. The hello+greeter pair using hashicorp/http-echo:1.0
-demonstrates the same surface (`@hm.deploy`, `hm.Dep[T]`,
-bridge-network DNS, cross-deployment env interpolation) in a 5MB
-total docker footprint that boots in under 5 seconds — appropriate
-for CI and for users trying the example locally.
+stubs out. The hello+greeter pair now runs `python -m http.server`
+from `python:3.12-alpine` (the Python stdlib's built-in HTTP server;
+no third-party image dependency). Same surface coverage (@hm.deploy,
+hm.Dep[T], cross-deploy env interpolation), much smaller footprint.
 
 Updated the design spec § 1 + § 6, CLAUDE.md, the py plan's Task 11,
 and tests/dev/test_canonical_example.py to match.
@@ -334,12 +298,11 @@ EOF
 **Files:**
 - Modify: `/home/marko/harmont-cli/docs/superpowers/plans/2026-05-21-hm-dev-deploy-cli.md`
 - Modify: `/home/marko/harmont-cli/crates/hm/tests/dev_integration.rs`
+- Modify: `/home/marko/harmont-cli/crates/hm/Cargo.toml`
 
 - [ ] **Step 1: Replace the example in the cli plan's Task 15**
 
-Open `/home/marko/harmont-cli/docs/superpowers/plans/2026-05-21-hm-dev-deploy-cli.md`. Locate Task 15 (Step 2's integration-test code). The current `write_deploys_py` call inside the test passes a postgres deployment string. Find the `up_and_port_of_postgres` test function and replace the entire body with the new hello-only test below. Also rename the function from `up_and_port_of_postgres` to `up_serves_http_and_tears_down`.
-
-Replace the function (inside the plan doc, ` ```rust ` block):
+Open `/home/marko/harmont-cli/docs/superpowers/plans/2026-05-21-hm-dev-deploy-cli.md`. Locate Task 15's Step 2 (the `#[test] #[ignore] fn up_and_port_of_postgres()` body). Replace the entire test function (and rename it) with:
 
 ```rust
 #[test]
@@ -352,8 +315,8 @@ import harmont as hm
 @hm.deploy("hello")
 def hello():
     return hm.dev.deploy(
-        image="hashicorp/http-echo:1.0",
-        cmd=["-listen=:5678", "-text=hi from harmont"],
+        image="python:3.12-alpine",
+        cmd=["python", "-m", "http.server", "5678"],
         port_mapping={5678: hm.dev.port()},
     )
 "#);
@@ -373,7 +336,7 @@ def hello():
     let mut buf = String::new();
     let mut chunk = [0u8; 1024];
     let started = std::time::Instant::now();
-    while started.elapsed().as_secs() < 30 {
+    while started.elapsed().as_secs() < 60 {
         let n = stderr.read(&mut chunk).unwrap_or(0);
         if n == 0 { break; }
         buf.push_str(&String::from_utf8_lossy(&chunk[..n]));
@@ -397,10 +360,13 @@ def hello():
     assert!(host_port > 1024, "expected ephemeral host port, got {host_port}");
 
     // HTTP-level assertion: the deployment is actually serving.
-    // http-echo takes ~1s to become accept-ready after container start;
-    // poll for up to 10 seconds before failing.
+    // python -m http.server serves a directory listing for `/`, whose
+    // HTML always contains the title "Directory listing for /".
     let body = poll_http(&format!("http://127.0.0.1:{host_port}"));
-    assert_eq!(body.trim(), "hi from harmont", "unexpected body: {body:?}");
+    assert!(
+        body.contains("Directory listing"),
+        "expected python http.server directory listing; got {body:?}",
+    );
 
     // Tear down via SIGINT.
     let _ = nix::sys::signal::kill(
@@ -420,14 +386,14 @@ def hello():
         String::from_utf8_lossy(&port_of_after.stderr));
 }
 
-/// Poll an HTTP endpoint for up to 10 seconds. Returns body on first
-/// successful 200; panics otherwise. Used so the test is robust to
-/// the small delay between container-start and the server becoming
-/// accept-ready.
+/// Poll an HTTP endpoint for up to 15 seconds. Returns body on the first
+/// successful 200; panics otherwise. The poll loop is robust to the
+/// (small) delay between container start and python's http.server
+/// becoming accept-ready.
 fn poll_http(url: &str) -> String {
     let started = std::time::Instant::now();
     let mut last_err = String::new();
-    while started.elapsed().as_secs() < 10 {
+    while started.elapsed().as_secs() < 15 {
         match ureq::get(url).call() {
             Ok(resp) => {
                 if resp.status() == 200 {
@@ -443,19 +409,15 @@ fn poll_http(url: &str) -> String {
 }
 ```
 
-The test now does a real HTTP GET and asserts the body matches what http-echo was configured to serve. This validates the full chain: container started, network bind worked, host port allocated, port_mapping translation correct, image's CMD honored.
-
-Note: this introduces `ureq` as a dev-dep. Update the plan's Step 3 (dev-dependencies) section to also add:
+Also update Task 15's Step 3 (dev-dependencies) section in the plan: add `ureq` alongside the existing `tempfile` + `nix` entries. The line to add:
 
 ```toml
-ureq = { version = "2", features = [] }
+ureq = { version = "2", default-features = false, features = ["tls"] }
 ```
-
-Alongside the existing `tempfile` and `nix` entries.
 
 - [ ] **Step 2: Update `crates/hm/tests/dev_integration.rs` to match**
 
-Open `/home/marko/harmont-cli/crates/hm/tests/dev_integration.rs`. Replace the entire file contents with:
+Open `/home/marko/harmont-cli/crates/hm/tests/dev_integration.rs`. Replace the entire file with:
 
 ```rust
 //! Docker-gated integration tests.
@@ -499,8 +461,8 @@ import harmont as hm
 @hm.deploy("hello")
 def hello():
     return hm.dev.deploy(
-        image="hashicorp/http-echo:1.0",
-        cmd=["-listen=:5678", "-text=hi from harmont"],
+        image="python:3.12-alpine",
+        cmd=["python", "-m", "http.server", "5678"],
         port_mapping={5678: hm.dev.port()},
     )
 "#);
@@ -517,7 +479,7 @@ def hello():
     let mut buf = String::new();
     let mut chunk = [0u8; 1024];
     let started = std::time::Instant::now();
-    while started.elapsed().as_secs() < 30 {
+    while started.elapsed().as_secs() < 60 {
         let n = stderr.read(&mut chunk).unwrap_or(0);
         if n == 0 { break; }
         buf.push_str(&String::from_utf8_lossy(&chunk[..n]));
@@ -541,9 +503,13 @@ def hello():
     assert!(host_port > 1024,
         "expected ephemeral host port, got {host_port}");
 
+    // python -m http.server returns an HTML directory listing whose
+    // body always contains the literal "Directory listing for /".
     let body = poll_http(&format!("http://127.0.0.1:{host_port}"));
-    assert_eq!(body.trim(), "hi from harmont",
-        "unexpected body: {body:?}");
+    assert!(
+        body.contains("Directory listing"),
+        "expected python http.server directory listing; got {body:?}",
+    );
 
     let _ = nix::sys::signal::kill(
         nix::unistd::Pid::from_raw(up.id() as i32),
@@ -564,7 +530,7 @@ def hello():
 fn poll_http(url: &str) -> String {
     let started = std::time::Instant::now();
     let mut last_err = String::new();
-    while started.elapsed().as_secs() < 10 {
+    while started.elapsed().as_secs() < 15 {
         match ureq::get(url).call() {
             Ok(resp) => {
                 if resp.status() == 200 {
@@ -582,7 +548,7 @@ fn poll_http(url: &str) -> String {
 
 - [ ] **Step 3: Add `ureq` to `[dev-dependencies]` in `crates/hm/Cargo.toml`**
 
-Open `/home/marko/harmont-cli/crates/hm/Cargo.toml`. Locate the `[dev-dependencies]` section (already has `tempfile`, `nix`, `wiremock`, `assert_cmd`, `predicates`, `assert_fs`). Add the line in alphabetical order:
+Open `/home/marko/harmont-cli/crates/hm/Cargo.toml`. Locate the `[dev-dependencies]` section (already has `tempfile`, `nix`, `wiremock`, `assert_cmd`, `predicates`, `assert_fs`). Add this line, in alphabetical order:
 
 ```toml
 ureq = { version = "2", default-features = false, features = ["tls"] }
@@ -595,7 +561,7 @@ cd /home/marko/harmont-cli
 cargo build -p harmont-cli --tests --features docker-integration 2>&1 | tail -5
 ```
 
-Expected: clean build (may pull `ureq` from registry on first run).
+Expected: clean build. `ureq` v2 with `tls` feature pulls in `rustls`. On the first build this adds ~30-60 seconds of crate compilation.
 
 - [ ] **Step 5: Run clippy to verify no new warnings**
 
@@ -603,20 +569,20 @@ Expected: clean build (may pull `ureq` from registry on first run).
 cargo clippy --all-targets -p harmont-cli --features docker-integration -- -D warnings 2>&1 | tail -5
 ```
 
-Expected: clean. If clippy flags anything in `dev_integration.rs` (e.g., `expect_used`, `panic`, `unwrap_used`), apply `#[allow(... reason = "...")]` at the function or file level — integration tests are allowed to panic/unwrap.
+Expected: clean. If clippy flags anything in `dev_integration.rs` (e.g., `expect_used`, `panic`, `unwrap_used` from pedantic), apply `#[allow(... reason = "integration test allows panic on docker-state mismatch")]` at the file level — integration tests are allowed to panic / unwrap.
 
-- [ ] **Step 6: (Local-only, skipped in CI step) Run the integration test if Docker is reachable**
+- [ ] **Step 6: (Local-only — skip if no Docker) Run the integration test**
 
-If you have Docker running locally:
+If `docker info` succeeds locally:
 
 ```bash
 cd /home/marko/harmont-cli
-cargo test -p harmont-cli --features docker-integration -- --ignored up_serves_http_and_tears_down
+cargo test -p harmont-cli --features docker-integration -- --ignored up_serves_http_and_tears_down --nocapture
 ```
 
-Expected: 1 passed. The test pulls `hashicorp/http-echo:1.0` (~5 MB), spawns `hm dev up hello`, polls for "all up.", queries the host port, does `curl`-equivalent HTTP GET, asserts body, SIGINTs, asserts post-teardown exit code 4. Total runtime ~10 seconds.
+Expected: 1 passed. The test pulls `python:3.12-alpine` (~50 MB), spawns `hm dev up hello`, polls for "all up.", queries the host port, does HTTP GET, asserts the body contains "Directory listing", SIGINTs, then asserts post-teardown exit code 4. Total runtime ~30 seconds on a cold image, ~10 seconds with the image pre-pulled.
 
-If Docker is not reachable, skip this step — CI (Task 3) will exercise it.
+If Docker is not reachable, skip this step — CI (Task 3) exercises it on every PR.
 
 - [ ] **Step 7: Commit**
 
@@ -627,15 +593,18 @@ git add docs/superpowers/plans/2026-05-21-hm-dev-deploy-cli.md \
         crates/hm/Cargo.toml \
         Cargo.lock
 git commit -m "$(cat <<'EOF'
-test(dev): integration test boots http-echo + asserts HTTP body
+test(dev): integration test boots python http.server + asserts HTTP body
 
-Swap the postgres-based integration test for hashicorp/http-echo:1.0,
-which pulls in 5MB instead of 80MB+ and is accept-ready in ~1s.
-Add an actual HTTP GET against the host port + body assertion so the
-test validates the whole chain (container start → bridge net → port
-publish → image CMD honored), not just port allocation.
+Swap the postgres-based integration test for `python -m http.server`
+running inside `python:3.12-alpine` — pulls 50MB instead of 80MB,
+boots in <1s, and uses Python's stdlib HTTP server (no third-party
+image dependency). Add an actual HTTP GET against the host port +
+body assertion (the response is python http.server's directory
+listing, whose body always contains "Directory listing for /") so
+the test validates the whole chain: container start → bridge net →
+port publish → image CMD honored → server actually serving.
 
-ureq is the new dev-dep (TLS-only feature set keeps the bloat down).
+ureq is the new dev-dep (default-features=false, just `tls` feature).
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -646,7 +615,7 @@ EOF
 
 ## Task 3: Add harmont-cli CI workflow
 
-The workflow runs unit tests on every PR, and the docker-gated integration test on PRs + pushes to main. The runner has Docker pre-installed (ubuntu-latest images on GitHub-hosted runners).
+The workflow runs unit tests + clippy on every PR, and the docker-gated integration test on PRs + pushes to main. The runner has Docker pre-installed (ubuntu-latest GitHub-hosted images).
 
 **Files:**
 - Create: `/home/marko/harmont-cli/.github/workflows/ci.yml`
@@ -694,9 +663,8 @@ jobs:
   integration:
     name: docker-gated integration test
     runs-on: ubuntu-latest
-    # Pull request from a fork doesn't have secrets and we don't need
-    # any here — but skip the heavy job on draft PRs to save runner
-    # minutes. Push to main always runs it.
+    # Skip the heavy job on draft PRs to save runner minutes. Push to
+    # main always runs it.
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
     steps:
       - name: Check out harmont-cli
@@ -740,8 +708,8 @@ jobs:
         working-directory: harmont-cli
         run: cargo build -p harmont-cli --tests --features docker-integration
 
-      - name: Pre-pull http-echo image
-        run: docker pull hashicorp/http-echo:1.0
+      - name: Pre-pull python:3.12-alpine
+        run: docker pull python:3.12-alpine
 
       - name: cargo test --features docker-integration -- --ignored
         working-directory: harmont-cli
@@ -760,20 +728,21 @@ jobs:
           docker logs $(docker ps -aq) 2>&1 | head -200 || true
 ```
 
-The workflow has two jobs:
+Two jobs:
 - `unit` — runs on every PR + push. `cargo build --all-targets`, `cargo test --lib`, `cargo clippy -D warnings`. Fast (under 5 min w/ cache).
-- `integration` — docker-gated. Checks out harmont-py from the matching branch (so PR-branch python changes are visible), falls back to `main` if that branch doesn't exist (e.g., PRs from outside the org). Pulls http-echo proactively so the test's first call doesn't pay pull latency. Runs the single ignored integration test. Surfaces docker state on failure so future debugging is one-click.
+- `integration` — docker-gated. Checks out harmont-py from the matching branch (so PR-branch python changes are visible), falls back to `main` if that branch doesn't exist (e.g., PRs from outside the org). Pre-pulls `python:3.12-alpine` so the test's first call doesn't pay pull latency. Runs the single ignored integration test. Surfaces docker state on failure so future debugging is one-click.
 
-The `repository: harmont-dev/harmont-py` reference assumes the GitHub org is `harmont-dev` (matches the existing release.yml). If the org name differs, change it.
+The `repository: harmont-dev/harmont-py` reference assumes the GitHub org is `harmont-dev` (matches the existing release.yml's pattern). If the org name differs, change it.
 
-- [ ] **Step 2: (Local-only) Lint the workflow file**
+- [ ] **Step 2: (Optional) lint the workflow file**
 
-If you have `actionlint` installed locally, run it. Otherwise just visually verify the YAML structure (indentation, no tabs, all jobs have a `runs-on`).
+If `actionlint` is installed locally:
 
 ```bash
-# Optional:
 which actionlint && actionlint /home/marko/harmont-cli/.github/workflows/ci.yml
 ```
+
+Otherwise visually verify the YAML structure (indentation, no tabs, every job has a `runs-on`).
 
 - [ ] **Step 3: Commit**
 
@@ -785,9 +754,10 @@ ci: add unit + docker-gated integration workflow
 
 Two jobs. `unit` runs cargo build/test/clippy on every PR + push;
 ~5 min w/ cache. `integration` is the deployment-goes-up gate: pulls
-hashicorp/http-echo:1.0, runs `hm dev up hello` end-to-end via the
+python:3.12-alpine, runs `hm dev up hello` end-to-end via the
 docker-gated integration test (added in the prior commit), and
-HTTP-GETs the host port to confirm the container is actually serving.
+HTTP-GETs the host port to confirm the python -m http.server inside
+the container is actually serving.
 
 The integration job checks out harmont-py from the matching branch
 (falling back to main) so PR-branch python-side changes participate
@@ -807,9 +777,18 @@ Currently harmont-py's only workflow is `release.yml` (tag-driven PyPI publish).
 **Files:**
 - Create: `/home/marko/harmont-py/.github/workflows/ci.yml`
 
-- [ ] **Step 1: Create `.github/workflows/ci.yml`**
+- [ ] **Step 1: Verify `pyproject.toml`'s python-requires**
 
-Create `/home/marko/harmont-py/.github/workflows/ci.yml`:
+```bash
+cd /home/marko/harmont-py
+grep -A1 "requires-python" pyproject.toml
+```
+
+Note the value (e.g., `">=3.11"` or `">=3.10"`). The matrix in Step 2 must match: include every supported version up to the latest stable.
+
+- [ ] **Step 2: Create `.github/workflows/ci.yml`**
+
+Create `/home/marko/harmont-py/.github/workflows/ci.yml` with the following content. Adjust the `python-version` matrix to match what Step 1 found (the value below assumes `>=3.11`):
 
 ```yaml
 name: CI
@@ -848,48 +827,34 @@ jobs:
         run: mypy harmont
 
       - name: pytest
-        run: pytest -v
-```
-
-Two minor things:
-- `mypy harmont` (not `mypy harmont tests`) — the harmont-py plan's Task 11 noted test files have pre-existing untyped-fn warnings that are out of scope to fix here.
-- Python matrix runs 3.11 + 3.12. The package's `pyproject.toml` should declare `requires-python = ">=3.11"` (verify before committing — if it's 3.10+, add 3.10 to the matrix).
-
-- [ ] **Step 2: Verify pyproject.toml's python-requires**
-
-```bash
-cd /home/marko/harmont-py
-grep -A1 "requires-python" pyproject.toml
-```
-
-If `requires-python = ">=3.10"`, edit the workflow's matrix to `["3.10", "3.11", "3.12"]`. If `>=3.12`, drop 3.11. Match the matrix to what the package actually supports.
-
-- [ ] **Step 3: (Local) Run the same commands the workflow runs**
-
-To make sure the workflow won't immediately fail on a known issue, run the same commands locally:
-
-```bash
-cd /home/marko/harmont-py
-python3 -m ruff check . 2>&1 | tail -5
-python3 -m mypy harmont 2>&1 | tail -5
-python3 -m pytest 2>&1 | tail -5
-```
-
-Pre-existing failures in `test_gradle.py` (3) and `test_haskell.py` (2) will fail pytest. Two ways to handle this:
-1. Keep the workflow strict (pytest exits non-zero) and accept that CI is initially red until those tests are fixed.
-2. Make the workflow lenient on those known-broken tests via `pytest --deselect`.
-
-Pick option 2 for now so the new CI doesn't immediately block PRs on pre-existing issues. Update the workflow's `pytest` step to:
-
-```yaml
-      - name: pytest
         run: |
           pytest -v \
             --deselect tests/test_gradle.py \
             --deselect tests/test_haskell.py
 ```
 
-The intent is documented in the commit message; a follow-up issue should track restoring the full suite once those test files are fixed.
+Notes:
+- `mypy harmont` (NOT `mypy harmont tests`) — test files have pre-existing untyped-fn warnings that are out of scope to fix here.
+- The `--deselect tests/test_gradle.py --deselect tests/test_haskell.py` excludes the known-broken tests so this new workflow isn't immediately red on unrelated issues. Track restoring the full suite as a separate concern.
+
+- [ ] **Step 3: Run the same commands locally to ensure the workflow won't trip on a known issue**
+
+```bash
+cd /home/marko/harmont-py
+python3 -m ruff check . 2>&1 | tail -3
+python3 -m mypy harmont 2>&1 | tail -3
+python3 -m pytest \
+    --deselect tests/test_gradle.py \
+    --deselect tests/test_haskell.py \
+    2>&1 | tail -3
+```
+
+Expected:
+- ruff: clean OR pre-existing complaints unrelated to this work (read them; if any complaint is in `harmont/` or `tests/dev/`, fix before committing the workflow).
+- mypy: clean for `harmont/`; pre-existing test-untypedness is filtered out by the path constraint.
+- pytest: ~395 passed (the prior 42 in `tests/dev/` plus the existing suites, minus the deselected gradle/haskell ones).
+
+If any of these is unexpectedly red, **stop and report** before adding the workflow — the workflow would land already-broken otherwise.
 
 - [ ] **Step 4: Commit**
 
@@ -899,8 +864,9 @@ git add .github/workflows/ci.yml
 git commit -m "$(cat <<'EOF'
 ci: add pytest + ruff + mypy workflow
 
-PR + push-to-main gate. Matrix over python 3.11 / 3.12. Existing
-release.yml (tag-driven PyPI publish) is untouched.
+PR + push-to-main gate. Matrix over python 3.11 / 3.12 (match the
+package's requires-python). Existing release.yml (tag-driven PyPI
+publish) is untouched.
 
 Excludes tests/test_gradle.py and tests/test_haskell.py via
 --deselect — those have pre-existing failures unrelated to the
@@ -916,7 +882,7 @@ EOF
 
 ## Self-review
 
-**Spec coverage** (vs. user's ask: "Edit all the examples ... include like a really tiny example of a deployment ... ensure our CI has tests to verify the deployment goes up"):
+**Spec coverage** (vs. user's ask: "Edit all the examples ... include like a really tiny example of a deployment ... ensure our CI has tests to verify the deployment goes up"; native language facilities, NOT a third-party image):
 
 - "Edit all the examples":
   - Spec § 1 canonical example → Task 1 Step 1 ✓
@@ -926,25 +892,23 @@ EOF
   - `tests/dev/test_canonical_example.py` → Task 1 Step 4 ✓
   - cli plan Task 15 example → Task 2 Step 1 ✓
   - `crates/hm/tests/dev_integration.rs` → Task 2 Step 2 ✓
-- "Really tiny": `hashicorp/http-echo:1.0` is 5 MB, single-binary, accept-ready in ~1s. ✓
+- "Native language facilities": `python -m http.server` is Python stdlib — no third-party module needed, no third-party HTTP-server image. The image is `python:3.12-alpine`, a base language image. ✓
 - "Ensure CI has tests to verify the deployment goes up":
-  - cli `integration` job runs `up_serves_http_and_tears_down` (boots the deployment, HTTP-GETs it, asserts body, SIGINTs, asserts post-teardown exit code) → Task 3 ✓
+  - cli `integration` job runs `up_serves_http_and_tears_down`: boots `hm dev up hello`, HTTP-GETs the host port, asserts body contains `Directory listing`, SIGINTs, asserts post-teardown exit code 4 → Task 3 ✓
 
-**Placeholder scan**: no TBDs, no "fill in", no "similar to Task N", no "handle edge cases" without showing how. The fallback for harmont-py-main checkout in Task 3's workflow is an explicit `continue-on-error` step plus a fallback job, not a vague hint. ✓
+**Placeholder scan**: no TBDs, no "fill in", no "similar to Task N", no "handle edge cases" without code. The harmont-py-fallback in Task 3's workflow is an explicit `continue-on-error` + fallback step, not a vague hint. ✓
 
 **Type / name consistency**:
-- The new test function name `test_canonical_hello_greeter_dumps_expected_shape` is used identically in both the py plan (Task 1 Step 3) and the test file (Task 1 Step 4).
-- The cli test function name `up_serves_http_and_tears_down` is used identically in the cli plan update (Task 2 Step 1), in the test file (Task 2 Step 2), and in the workflow `-- --ignored up_serves_http_and_tears_down` (Task 3 Step 1).
-- The image tag `hashicorp/http-echo:1.0` and the inner port `5678` are used identically everywhere.
-- The greeter's expected text is `"hello from hello"` (derived from `f"-text=hello from {hello.name}"` with `hello.name == "hello"`) — used identically in the plan and the test. ✓
+- The new test function name `test_canonical_hello_greeter_dumps_expected_shape` appears identically in both the py plan (Task 1 Step 3) and the test file (Task 1 Step 4).
+- The cli test function name `up_serves_http_and_tears_down` appears identically in the cli plan update (Task 2 Step 1), in the test file (Task 2 Step 2), and in the workflow `-- --ignored up_serves_http_and_tears_down` (Task 3 Step 1).
+- The image tag `python:3.12-alpine`, the inner port `5678`, and the cmd list `["python", "-m", "http.server", "5678"]` appear identically everywhere.
+- The body-assertion substring `"Directory listing"` is used identically in the integration test and the spec's bash vibe-check (`grep -q "Directory listing"`). ✓
 
 ---
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-05-21-tiny-example-and-ci.md`. Two execution options:
+Plan saved. Two execution options:
 
-1. **Subagent-Driven (recommended)** — I dispatch a fresh subagent per task, review between tasks, fast iteration.
-2. **Inline Execution** — Execute tasks in this session using executing-plans, batch execution with checkpoints.
-
-Which approach?
+1. **Subagent-Driven (recommended)** — fresh subagent per task + review checkpoints.
+2. **Inline Execution** — execute tasks in this session w/ batch checkpoints.
