@@ -3,7 +3,7 @@
 //! Run with: `cargo test -p harmont-cli --features docker-integration -- --ignored`
 //! Requires:
 //!   * A reachable Docker daemon
-//!   * harmont-py installed in the env at HARMONT_PYTHON (defaults to python3)
+//!   * harmont-py installed in the env at `HARMONT_PYTHON` (defaults to python3)
 //!     with the `feat/hm-dev-deploy` branch checked out (or merged to main)
 //!
 //! Each test creates its own .harmont/ in a tmpdir to avoid step-on
