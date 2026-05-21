@@ -1,4 +1,10 @@
-"""PHP / Laravel example pipeline."""
+"""PHP / Laravel example pipeline.
+
+Uses ``laravel=False`` because this example ships a minimal
+PHPUnit suite without the full Laravel scaffolding (no
+``artisan`` script). Real Laravel projects flip the flag to
+``True`` so the test action runs ``php artisan test``.
+"""
 from __future__ import annotations
 
 import harmont as hm
@@ -11,7 +17,7 @@ import harmont as hm
     triggers=[hm.push(branch="main")],
 )
 def ci() -> tuple[hm.Step, ...]:
-    project = hm.composer(path=".", laravel=True)
+    project = hm.composer(path=".", laravel=False)
     return (
         project.test(),
         project.lint(),
