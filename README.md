@@ -26,21 +26,32 @@ def hello() -> hm.Step:
 
 ### 2. Install
 
-`harmont-cli` is not yet on crates.io. Install from source:
+Install the CLI from [crates.io](https://crates.io/crates/harmont-cli):
+
+```sh
+cargo install harmont-cli
+```
+
+`hm run` also needs **Docker** and **Python 3.11+** with [`harmont`](https://pypi.org/project/harmont/):
+
+```sh
+pip install harmont
+```
+
+<details>
+<summary>Or build from source (contributors)</summary>
 
 ```sh
 git clone https://github.com/harmont-dev/harmont-cli
 cd harmont-cli
 cargo build --release
 install -m 0755 target/release/hm /usr/local/bin/hm   # or any dir on $PATH
-```
 
-`hm run` also needs **Docker** and **Python 3.11+** with [`harmont-py`](https://github.com/harmont-dev/harmont-py):
-
-```sh
 git clone https://github.com/harmont-dev/harmont-py
 pip install -e ./harmont-py
 ```
+
+</details>
 
 Verify:
 
