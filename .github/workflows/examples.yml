@@ -3,6 +3,8 @@ name: examples
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -70,14 +72,7 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # Examples are gated until harmont-py main grows the toolchain
-  # helpers (hm.cmake / hm.npm / hm.gradle / hm.python / hm.rust /
-  # hm.go / hm.haskell / hm.ocaml / hm.perl / hm.composer / hm.ruby /
-  # hm.zig / hm.dotnet) + the @hm.target system. They live in the
-  # private simci monorepo today and need porting to the public
-  # harmont-py repo. Re-enable by removing this `if:` once that lands.
   run-example:
-    if: false
     needs: build-hm
     name: ${{ matrix.example }}
     runs-on: ubuntu-latest
