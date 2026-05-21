@@ -4,7 +4,7 @@
 
 Run CI pipelines on your own machine, in Docker, from a Python pipeline definition checked into your repo.
 
-Define the pipeline with the [`harmont-py`](https://github.com/harmont-dev/harmont-py) DSL, then `hm run --local` builds a fresh container per chain, runs the steps, and reuses snapshots across runs. The same definition runs unchanged on the hosted [Harmont](https://harmont.dev) cloud via `hm cloud run`.
+Define the pipeline with the [`harmont-py`](https://github.com/harmont-dev/harmont-py) DSL, then `hm run` builds a fresh container per chain, runs the steps, and reuses snapshots across runs. The same definition runs unchanged on the hosted [Harmont](https://harmont.dev) cloud via `hm cloud run`.
 
 ## Quick start
 
@@ -35,7 +35,7 @@ cargo build --release
 install -m 0755 target/release/hm /usr/local/bin/hm   # or any dir on $PATH
 ```
 
-`hm run --local` also needs **Docker** and **Python 3.11+** with [`harmont-py`](https://github.com/harmont-dev/harmont-py):
+`hm run` also needs **Docker** and **Python 3.11+** with [`harmont-py`](https://github.com/harmont-dev/harmont-py):
 
 ```sh
 git clone https://github.com/harmont-dev/harmont-py
@@ -53,7 +53,7 @@ hm --version
 From the repo root:
 
 ```sh
-hm run hello --local
+hm run hello
 ```
 
 The CLI walks `.harmont/*.py`, resolves the `hello` slug, renders the pipeline to JSON, and schedules chains across Docker containers. Forks run in parallel up to `--parallelism N` (default: host CPU count).
@@ -61,7 +61,7 @@ The CLI walks `.harmont/*.py`, resolves the `hello` slug, renders the pipeline t
 If the repo declares only one pipeline, the slug is optional:
 
 ```sh
-hm run --local
+hm run
 ```
 
 ## DSL surface
@@ -80,41 +80,43 @@ The DSL is small. See [`harmont-py`](https://github.com/harmont-dev/harmont-py) 
 ## Common flags
 
 ```sh
-hm run --local --parallelism 4         # cap concurrent chains
-hm run --local --env FOO=bar           # inject env vars
-hm run --local --dir path/to/source    # run against a different source root
-hm run --format json                   # machine-readable event stream
-hm run --help                          # full flag reference
+hm run --parallelism 4         # cap concurrent chains
+hm run --env FOO=bar           # inject env vars
+hm run --dir path/to/source    # run against a different source root
+hm run --format json           # machine-readable event stream
+hm run --no-watch              # create the build and exit (don't stream events)
+hm run --help                  # full flag reference
 ```
 
 ## Cloud
 
-`hm cloud <verb>` talks to `api.harmont.dev`. Tokens live in the OS keyring; the active org slug persists under `~/.config/harmont/state/cloud.kv`.
+`hm cloud <verb>` talks to `api.harmont.dev`. Credentials are stored file-backed at `~/.harmont/credentials.toml` (mode `0600`); the active org slug persists under `~/.config/harmont/state/harmont-cloud.kv`.
 
 | Command | What it does |
 |---|---|
 | `hm cloud login` | Browser-loopback OAuth (`--paste` to paste a token) |
 | `hm cloud logout` | Forget stored credentials |
 | `hm cloud whoami` | Show user + active org |
-| `hm cloud org list` / `org use <slug>` | List / pick active org |
-| `hm cloud pipeline list` | Pipelines in the active org |
-| `hm cloud build list` / `build show <id>` / `build watch <id>` | Inspect builds |
-| `hm cloud job show <id>` | Inspect a single job |
-| `hm cloud billing show` | Org billing summary |
+| `hm cloud org switch <slug>` | Set the active organization |
+| `hm cloud pipeline list` / `pipeline show <slug>` | List or inspect pipelines |
+| `hm cloud build list -p <slug>` | List builds for a pipeline |
+| `hm cloud build show -p <slug> <n>` / `watch -p <slug> <n>` / `cancel -p <slug> <n>` | Inspect or control a build |
+| `hm cloud job list -p <slug> -b <n>` / `job show -p <slug> -b <n> <id>` | Inspect jobs in a build |
+| `hm cloud billing balance` / `transactions` / `usage` / `topup` / `redeem` | Credit balance, transaction log, usage, top-ups, redeem codes |
 | `hm cloud run [--plan-file PATH]` | Submit a pre-rendered plan JSON (defaults to `.harmont/plan.json`) |
 
 Source-archive upload for `cloud run` is in progress — pre-render to `.harmont/plan.json` for now.
 
 ## Examples
 
-Sixteen idiomatic starter projects (one per toolchain) live under [`examples/`](./examples). Each has a `.harmont/pipeline.py` you can read, copy, and run:
+Eighteen idiomatic starter projects live under [`examples/`](./examples). Each has a `.harmont/pipeline.py` you can read, copy, and run:
 
 ```sh
 cd examples/rust
-hm run ci --local
+hm run ci
 ```
 
-Languages covered: Rust, Haskell, Go, Python (uv), Java/Kotlin (Gradle), C/C++ (CMake), C#, Ruby, Perl, PHP (Composer + Laravel), OCaml, Zig, npm-based stacks (React, Next.js, TypeScript).
+Toolchains covered: Rust, Haskell, Go, Python (uv), Java/Kotlin (Gradle), C and C++ (CMake), C# (dotnet), Ruby, Perl, PHP (Composer + Laravel), OCaml, Zig, Zig+JS monorepo, and npm-based stacks (React, Next.js, TypeScript).
 
 <details>
 <summary>A two-branch pipeline using forks and a shared base image</summary>
@@ -190,22 +192,27 @@ Cargo workspace:
 - `crates/hm/` — the `hm` binary.
 - `crates/hm-plugin-protocol/`, `crates/hm-plugin-sdk/` — public API for third-party plugins.
 - `crates/hm-plugin-*` — bundled plugins (Docker executor, output formatters, cloud client).
-- `examples/` — sample pipeline repos to `hm run --local` against.
+- `examples/` — sample pipeline repos to `hm run` against.
 
 This repo mirrors the `cli/` and `examples/` directories of the private Harmont monorepo. Open issues and PRs here; maintainers land them upstream and a CI sync replays the result back.
 
 ## Plugin authoring
 
-`hm` is plugin-driven via [Extism](https://extism.org). To write one:
+`hm` is plugin-driven via [Extism](https://extism.org). To write one, start a `cdylib` crate and depend on the SDK:
 
 ```sh
 cargo new --lib my-plugin
 cd my-plugin
 cargo add --git https://github.com/harmont-dev/harmont-cli hm-plugin-sdk
+```
+
+Implement one of `StepExecutor`, `SubcommandPlugin`, `LifecycleHook`, or `OutputFormatter`, declare a `PluginManifest`, and call `register_plugin!(...)`. Then build to WebAssembly:
+
+```sh
 cargo build --target wasm32-wasip1 --release
 ```
 
-Implement one of `StepExecutor`, `SubcommandPlugin`, `LifecycleHook`, or `OutputFormatter`, declare a `PluginManifest`, and call `register_plugin!(...)`. Install with:
+Install the resulting `.wasm`:
 
 ```sh
 hm plugin install ./target/wasm32-wasip1/release/my_plugin.wasm
