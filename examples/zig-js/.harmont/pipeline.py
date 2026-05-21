@@ -1,8 +1,13 @@
-"""zig + js parallelism demo.
+"""zig monorepo + js parallelism demo.
 
-A single apt-base step forks into two install chains (Zig and Node)
-that run in parallel containers. Watch [:zig: install] and
-[:node: install] start events overlap when this runs locally.
+Three patterns demonstrated together:
+
+  1. apt-base forks into separate language chains (zig vs node) that
+     run in parallel containers.
+  2. ONE zig install is shared by TWO zig sub-projects. The two
+     project chains fork off the single :zig: install snapshot.
+  3. Independent chains run concurrently — everything that can run
+     in parallel does.
 """
 from __future__ import annotations
 
@@ -11,7 +16,7 @@ from typing import Annotated
 
 import harmont as hm
 from harmont.npm import NpmProject
-from harmont.zig import ZigProject
+from harmont.zig import ZigProject, ZigToolchain
 
 
 @hm.target()
@@ -26,8 +31,18 @@ def apt_base(base: Annotated[hm.Step, hm.BaseImage("ubuntu:24.04")]) -> hm.Step:
 
 
 @hm.target()
-def zig_project(apt_base: hm.Target[hm.Step]) -> ZigProject:
-    return hm.zig(path="zig-src", base=apt_base)
+def zig(apt_base: hm.Target[hm.Step]) -> ZigToolchain:
+    return hm.zig(base=apt_base)
+
+
+@hm.target()
+def zig_lib_a(zig: hm.Target[ZigToolchain]) -> ZigProject:
+    return zig.project(path="zig-a")
+
+
+@hm.target()
+def zig_lib_b(zig: hm.Target[ZigToolchain]) -> ZigProject:
+    return zig.project(path="zig-b")
 
 
 @hm.target()
@@ -42,13 +57,15 @@ def web_project(apt_base: hm.Target[hm.Step]) -> NpmProject:
     triggers=[hm.push(branch="main")],
 )
 def ci(
-    zig_project: hm.Target[ZigProject],
+    zig_lib_a: hm.Target[ZigProject],
+    zig_lib_b: hm.Target[ZigProject],
     web_project: hm.Target[NpmProject],
 ) -> tuple[hm.Step, ...]:
     return (
-        zig_project.build(),
-        zig_project.test(),
-        zig_project.fmt(),
+        zig_lib_a.build(),
+        zig_lib_a.test(),
+        zig_lib_b.build(),
+        zig_lib_b.test(),
         web_project.run("build"),
         web_project.run("test"),
         web_project.run("lint"),

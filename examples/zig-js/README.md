@@ -1,12 +1,17 @@
-# zig + js parallel demo
+# zig + js parallel demo (with shared toolchain install)
 
-This example exists to make harmont's chain-level parallelism
-visible. The pipeline declares one shared `apt-base` step that
-both a Zig install chain and a Node install chain build off of.
-The orchestrator places those two chains in independent slots in
-its chain DAG, so once `apt-base` commits its snapshot the Zig and
-Node installs run in two parallel Docker containers — each
-booting from the same apt-base snapshot.
+Three patterns demonstrated together:
+
+1. **apt-base fork.** One apt-base step commits a snapshot; two
+   language-install chains (zig + node) boot from it in parallel
+   containers.
+2. **Shared toolchain install.** One `:zig: install` step is
+   shared by two zig sub-projects (`zig-a/`, `zig-b/`). The IR
+   contains exactly one install node; both project chains fan out
+   from it.
+3. **Chain-level parallelism.** Every chain with no `builds_in` or
+   `depends_on` edge between it and a sibling runs concurrently,
+   bounded by `--parallelism` (default = CPU count).
 
 ## Run it
 
@@ -16,40 +21,24 @@ hm run ci
 
 ## What to look for
 
-In the human-format output, the two language-install steps emit
-their `start` events within milliseconds of each other and their
-`end` events with overlapping wall-clock spans:
-
-```
-[:apt: base] start (runner=docker)
-[:apt: base] end exit=0 duration=11234ms
-[:zig: install] start (runner=docker)
-[:node: install] start (runner=docker)         ← starts before zig-install ends
-[:zig: install] end exit=0 duration=27411ms
-[:node: install] end exit=0 duration=18302ms
-```
-
-If the two `start` lines are separated by more than ~100ms, the
-scheduler did not parallelise the chains — check `--parallelism`
-(default = CPU count) and that the two install steps share no
-`depends_on` edge in the rendered v0 IR.
+- Exactly one `[:zig: install] start`/`end` pair — never two.
+- `[:zig: install] start` and `[:node: install] start` appear
+  within ~10ms of `[:apt: base] end` (the apt-base fork).
+- After `[:zig: install] end`, the two project chains
+  (`:zig: zig-a build/test` and `:zig: zig-b build/test`) start
+  in parallel.
 
 ## How the diamond is built
 
-The pipeline registers three `@hm.target()`s and one
-`@hm.pipeline("ci")`. The `apt_base` target is declared as a
-parameter on both `zig_project` and `web_project`; harmont-py's
-fixture-style DI passes the same memoized `Step` to both, so the
-emitted IR contains exactly one apt-base node and both language
-installs carry `builds_in: <apt-base key>`. Memoization is the
-mechanism — there is no special "fork" primitive at the DSL level.
+`hm.zig()` (no `path`) returns a `ZigToolchain` holding the shared
+install Step. `tc.project(path="zig-a")` and `tc.project(path="zig-b")`
+both wrap the same Step, so the emitted IR contains exactly one
+install node. The `@hm.target()` memoization is what makes the
+shared toolchain show up exactly once — the toolchain factory is
+called once per render and the returned `ZigToolchain` is reused.
 
 ## Subprojects
 
-- `zig-src/` — a tiny Zig library + test, copied from
-  `examples/zig/`.
-- `web/` — a tiny TypeScript library + vitest, copied from
-  `examples/typescript/`.
-
-Both are built and tested by their respective toolchains
-(`hm.zig`, `hm.npm`) using the standard action methods.
+- `zig-a/` — adds two ints.
+- `zig-b/` — subtracts two ints.
+- `web/` — a tiny TypeScript library + vitest.
