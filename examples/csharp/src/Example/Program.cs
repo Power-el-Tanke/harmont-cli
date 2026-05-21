@@ -1,5 +1,6 @@
 namespace Example;
 
-public static class Program {
+public static class Program
+{
     public static int Add(int a, int b) => a + b;
 }
