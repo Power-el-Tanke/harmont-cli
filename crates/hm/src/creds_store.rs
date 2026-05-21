@@ -72,7 +72,7 @@ pub fn delete(service: &str, account: &str) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, unsafe_code)]
 mod tests {
     use super::*;
 
