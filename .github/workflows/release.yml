@@ -41,7 +41,7 @@ jobs:
 
       - name: Publish hm-plugin-protocol
         run: |
-          if curl -sf "https://crates.io/api/v1/crates/hm-plugin-protocol/$VERSION" > /dev/null 2>&1; then
+          if curl -sf -A "harmont-release-ci (github-actions)" "https://crates.io/api/v1/crates/hm-plugin-protocol/$VERSION" > /dev/null 2>&1; then
             echo "hm-plugin-protocol@$VERSION already published, skipping"
           else
             cargo publish -p hm-plugin-protocol --token ${{ secrets.CRATES_IO_TOKEN }} --allow-dirty
@@ -52,7 +52,7 @@ jobs:
 
       - name: Publish hm-plugin-sdk
         run: |
-          if curl -sf "https://crates.io/api/v1/crates/hm-plugin-sdk/$VERSION" > /dev/null 2>&1; then
+          if curl -sf -A "harmont-release-ci (github-actions)" "https://crates.io/api/v1/crates/hm-plugin-sdk/$VERSION" > /dev/null 2>&1; then
             echo "hm-plugin-sdk@$VERSION already published, skipping"
           else
             cargo publish -p hm-plugin-sdk --token ${{ secrets.CRATES_IO_TOKEN }} --allow-dirty
@@ -82,7 +82,7 @@ jobs:
 
       - name: Publish harmont-cli
         run: |
-          if curl -sf "https://crates.io/api/v1/crates/harmont-cli/$VERSION" > /dev/null 2>&1; then
+          if curl -sf -A "harmont-release-ci (github-actions)" "https://crates.io/api/v1/crates/harmont-cli/$VERSION" > /dev/null 2>&1; then
             echo "harmont-cli@$VERSION already published, skipping"
           else
             cargo publish -p harmont-cli --token ${{ secrets.CRATES_IO_TOKEN }} --allow-dirty
