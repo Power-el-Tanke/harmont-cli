@@ -101,14 +101,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install harmont-py
+      # `hm run` shells out to `/usr/bin/python3` with PATH restricted
+      # to /usr/bin:/usr/local/bin:/bin (see render.rs), so harmont-py
+      # has to land in the *system* Python's site-packages — not the
+      # actions/setup-python hostedtoolcache. PEP 668's
+      # externally-managed marker requires --break-system-packages.
+      - name: Install harmont-py into system Python
         run: |
           git clone --depth 1 https://github.com/harmont-dev/harmont-py /tmp/harmont-py
-          pip install /tmp/harmont-py
+          sudo /usr/bin/python3 -m pip install --break-system-packages /tmp/harmont-py
+          /usr/bin/python3 -c "import harmont; print('harmont', harmont.__file__)"
 
       - name: Download hm binary
         uses: actions/download-artifact@v4
@@ -122,8 +124,5 @@ jobs:
       - name: Run example via hm run
         working-directory: examples/${{ matrix.example }}
         env:
-          # The CLI shells out to `python3 -m harmont` to render the
-          # pipeline; the system Python on the runner is what setup-python
-          # just installed.
           HM_NONINTERACTIVE: '1'
         run: ${{ github.workspace }}/bin/hm run ci
