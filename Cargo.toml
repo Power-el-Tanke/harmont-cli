@@ -5,8 +5,6 @@ members = [
     "crates/hm-plugin-protocol",
     "crates/hm-plugin-sdk",
     "crates/hm-plugin-docker",
-    "crates/hm-plugin-output-human",
-    "crates/hm-plugin-output-json",
     "crates/hm-plugin-cloud",
     "crates/hm-fixtures",
 ]
