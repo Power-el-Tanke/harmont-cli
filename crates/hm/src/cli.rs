@@ -25,6 +25,16 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub no_color: bool,
 
+    /// Disable the interactive TUI; fall back to the streaming text
+    /// formatter. Implied when stdout is not a TTY.
+    #[arg(long, global = true)]
+    pub no_tui: bool,
+
+    /// Disable TUI animation effects (kept layout identical).
+    /// Implied by `NO_COLOR`.
+    #[arg(long, global = true)]
+    pub no_fx: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
