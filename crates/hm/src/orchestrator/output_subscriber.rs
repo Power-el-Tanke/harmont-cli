@@ -1,5 +1,7 @@
 //! Build-event subscriber that dispatches every `BuildEvent` into the
-//! selected output-formatter plugin's `hm_output_on_event` capability.
+//! selected output formatter. Built-in formatters (`human`, `json`) are
+//! resolved first and bypass the WASM plugin registry entirely; the
+//! registry lookup is only reached for externally-registered formatters.
 //!
 //! Replaces the plan-2 stop-gap `stderr_sink`. The subscriber acquires
 //! an `Arc<LoadedPlugin>` from the registry per event; the actual
@@ -51,39 +53,37 @@ pub fn spawn(
     format_name: String,
 ) -> tokio::task::JoinHandle<Result<()>> {
     let mut rx = bus.subscribe();
+    let mut builtin = crate::output::formatters::builtin(&format_name);
     tokio::spawn(async move {
         loop {
             match rx.recv().await {
                 Ok(event) => {
-                    // Resolve the plugin under the registry lock, then
-                    // drop the lock before awaiting `call_capability`
-                    // so concurrent step-executor calls keep flowing.
+                    let is_end = matches!(event, BuildEvent::BuildEnd { .. });
+                    if let Some(b) = builtin.as_mut() {
+                        b.on_event(&event);
+                        if is_end {
+                            b.finalize();
+                            return Ok(());
+                        }
+                        continue;
+                    }
+                    // Fall through: format_name is not a built-in;
+                    // resolve from the plugin registry.
                     let plugin = {
                         let reg = registry.lock().await;
                         let Some(&idx) = reg.output_formatter_index.get(&format_name) else {
-                            // No plugin for this format; CLI parser
-                            // should have caught this. Drain silently.
-                            if matches!(event, BuildEvent::BuildEnd { .. }) {
-                                return Ok(());
-                            }
+                            if is_end { return Ok(()); }
                             continue;
                         };
                         let Some(p) = reg.get(idx) else {
-                            if matches!(event, BuildEvent::BuildEnd { .. }) {
-                                return Ok(());
-                            }
+                            if is_end { return Ok(()); }
                             continue;
                         };
                         p
                     };
-                    let is_end = matches!(event, BuildEvent::BuildEnd { .. });
-                    // Log-and-continue on formatter failures: a broken
-                    // output plugin shouldn't fail the build.
-                    let _: Result<()> = plugin.call_capability("hm_output_on_event", &event).await;
+                    let _: Result<()> =
+                        plugin.call_capability("hm_output_on_event", &event).await;
                     if is_end {
-                        // Finalise if the plugin exports it. Tolerate
-                        // missing/erroring export — most streaming
-                        // formatters don't implement it.
                         let _: Result<Vec<u8>> =
                             plugin.call_capability("hm_output_finalize", &()).await;
                         return Ok(());
@@ -95,10 +95,6 @@ pub fn spawn(
                         target: "orchestrator",
                         "output_subscriber: dropped {n} build events (subscriber fell behind)"
                     );
-                    // Also surface to the user: send a synthetic stderr line via
-                    // the host's write_stderr fn directly. This bypasses the
-                    // event bus (which is the source of the lag), so it can't
-                    // contribute to the lag we're reporting.
                     eprintln!("[output] dropped {n} build events (subscriber fell behind)");
                 }
             }
