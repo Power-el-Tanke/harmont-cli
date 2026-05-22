@@ -1,9 +1,9 @@
-//! Build-event broadcast → TuiEvent adapter for local `hm run`.
+//! Build-event broadcast → `TuiEvent` adapter for local `hm run`.
 //!
-//! The orchestrator emits wire `BuildEvent`s on its broadcast bus and
-//! forwards them on a `tokio::sync::mpsc` sender when one is provided.
-//! This adapter sits between that mpsc and the TUI's TuiEvent channel,
-//! translating each `BuildEvent` 1:1 (the `Lagged` variant is handled
+//! The orchestrator emits wire [`BuildEvent`]s on its broadcast bus and
+//! forwards them on a [`tokio::sync::mpsc`] sender when one is provided.
+//! This adapter sits between that `mpsc` and the TUI's `TuiEvent` channel,
+//! translating each [`BuildEvent`] 1:1 (the `Lagged` variant is handled
 //! separately by the scheduler bridge).
 
 use hm_plugin_protocol::BuildEvent;
@@ -47,6 +47,9 @@ pub(crate) fn translate(ev: BuildEvent) -> TuiEvent {
         },
         BuildEvent::StepStart { step_id, runner, image } => TuiEvent::StepStart {
             step_id,
+            // chain_idx and label are filled in by the reducer from the
+            // preceding StepQueued event; this translator does not know
+            // the chain index from a StepStart alone.
             chain_idx: 0,
             runner,
             image,

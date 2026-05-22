@@ -100,7 +100,7 @@ pub async fn handle(args: RunArgs, _ctx: RunContext) -> Result<i32> {
         repo_root,
         parallelism,
         args.format.clone(),
-        None,
+        None, // extra_event_tx: TUI is wired separately
     )
     .await?;
     Ok(exit_code)
