@@ -41,11 +41,13 @@ use crate::plugin::PluginRegistry;
 /// Spawn the subscriber task. Returns a join handle the orchestrator
 /// awaits at shutdown so the `BuildEnd` event is fully drained.
 ///
-/// `format_name` must already exist in `registry.output_formatter_index`
-/// — `scheduler::run` validates this before emitting `BuildStart`, so
-/// a missing entry here means we lost a race against a concurrent
-/// registry mutation (impossible in single-run orchestration). We drop
-/// events silently in that case and exit on `BuildEnd`.
+/// `format_name` is resolved first against the built-in formatter set
+/// (`human`, `json`). If no built-in matches, the name must exist in
+/// `registry.output_formatter_index` — `scheduler::run` validates this
+/// before emitting `BuildStart`. A missing registry entry here means a
+/// race against a concurrent registry mutation (impossible in
+/// single-run orchestration); events are drained silently until
+/// `BuildEnd`.
 #[must_use]
 pub fn spawn(
     bus: Arc<EventBus>,
