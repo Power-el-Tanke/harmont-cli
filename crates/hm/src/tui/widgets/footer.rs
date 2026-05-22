@@ -2,7 +2,9 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::widgets::Widget;
+use ratatui::style::Style;
+use ratatui::text::Line;
+use ratatui::widgets::{Paragraph, Widget};
 
 use crate::tui::app::{AppState, StepStatus};
 use crate::tui::theme::Theme;
@@ -35,17 +37,10 @@ impl Widget for Footer<'_> {
         let summary = format!(" {pass} pass · {cache} cache · {fail} fail ");
         let total_width = area.width as usize;
         let pad = total_width.saturating_sub(hints.len() + summary.len());
-        let line = format!("{hints}{}{summary}", " ".repeat(pad));
+        let text = format!("{hints}{}{summary}", " ".repeat(pad));
 
-        let mut x = area.x;
-        for ch in line.chars() {
-            if x >= area.x + area.width { break; }
-            if let Some(cell) = buf.cell_mut((x, area.y)) {
-                cell.set_symbol(&ch.to_string())
-                    .set_style(ratatui::style::Style::default().fg(self.theme.text_dim));
-            }
-            x += 1;
-        }
+        let line = Line::styled(text, Style::default().fg(self.theme.text_dim));
+        Paragraph::new(line).render(area, buf);
     }
 }
 
