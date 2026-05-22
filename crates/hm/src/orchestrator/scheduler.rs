@@ -165,7 +165,7 @@ pub async fn run(
     let sink_handle =
         super::output_subscriber::spawn(bus.clone(), registry.clone(), format_name.clone());
 
-    let extra_handle = state_arc.tui_event_tx.as_ref().cloned().map(|tx| {
+    let extra_handle = state_arc.tui_event_tx.clone().map(|tx| {
         let mut rx = bus.subscribe();
         tokio::spawn(async move {
             loop {
