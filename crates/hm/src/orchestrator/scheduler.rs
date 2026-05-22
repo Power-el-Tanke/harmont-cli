@@ -136,13 +136,21 @@ pub async fn run(
     // the guard before the (rare) bail to satisfy
     // `clippy::significant_drop_tightening`.
     let bad_format: Option<Vec<String>> = {
-        let reg = registry.lock().await;
-        if reg.output_formatter_index.contains_key(&format_name) {
+        if crate::output::formatters::builtin(&format_name).is_some() {
             None
         } else {
-            let mut names: Vec<String> = reg.output_formatter_index.keys().cloned().collect();
-            names.sort();
-            Some(names)
+            let reg = registry.lock().await;
+            if reg.output_formatter_index.contains_key(&format_name) {
+                None
+            } else {
+                let mut names: Vec<String> =
+                    reg.output_formatter_index.keys().cloned().collect();
+                names.push("human".to_string());
+                names.push("json".to_string());
+                names.sort();
+                names.dedup();
+                Some(names)
+            }
         }
     };
     if let Some(available) = bad_format {
