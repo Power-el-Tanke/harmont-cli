@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  unit:
+    name: cargo test --lib + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # build.rs cross-compiles hm-plugin-* wasm artifacts.
+          targets: wasm32-wasip1
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo build (all targets)
+        run: cargo build -p harmont-cli --all-targets
+
+      - name: cargo test --lib
+        run: cargo test -p harmont-cli --lib
+
+      - name: cargo clippy (strict)
+        run: cargo clippy --all-targets -p harmont-cli -- -D warnings
+
+  integration:
+    name: docker-gated integration test
+    runs-on: ubuntu-latest
+    # Skip the heavy job on draft PRs to save runner minutes. Push to
+    # main always runs it.
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
+    steps:
+      - name: Check out harmont-cli
+        uses: actions/checkout@v4
+        with:
+          path: harmont-cli
+
+      - name: Check out harmont-py (matching branch, with main fallback)
+        uses: actions/checkout@v4
+        with:
+          repository: harmont-dev/harmont-py
+          ref: ${{ github.head_ref || github.ref_name }}
+          path: harmont-py
+        continue-on-error: true
+        id: checkout-py-branch
+
+      - name: Fall back to harmont-py main
+        if: steps.checkout-py-branch.outcome != 'success'
+        uses: actions/checkout@v4
+        with:
+          repository: harmont-dev/harmont-py
+          ref: main
+          path: harmont-py
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: harmont-cli
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install harmont-py (editable)
+        working-directory: harmont-py
+        run: pip install -e .
+
+      - name: cargo build --tests (with docker-integration feature)
+        working-directory: harmont-cli
+        run: cargo build -p harmont-cli --tests --features docker-integration
+
+      - name: Pre-pull python:3.12-alpine
+        run: docker pull python:3.12-alpine
+
+      - name: cargo test --features docker-integration -- --ignored
+        working-directory: harmont-cli
+        env:
+          HARMONT_PYTHON: python3
+        run: |
+          cargo test -p harmont-cli \
+            --features docker-integration \
+            -- --ignored up_serves_http_and_tears_down --nocapture
+
+      - name: Show docker state on failure
+        if: failure()
+        run: |
+          docker ps -a
+          docker network ls
+          docker logs $(docker ps -aq) 2>&1 | head -200 || true
