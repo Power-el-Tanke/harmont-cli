@@ -6,7 +6,7 @@
 pub mod event;
 pub mod app;
 pub mod source;
-// pub mod term;
+pub mod term;
 // pub mod theme;
 // pub mod fx;
 // pub mod widgets;
