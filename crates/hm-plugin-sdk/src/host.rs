@@ -53,6 +53,8 @@ extern "ExtismHost" {
 
     fn hm_should_cancel() -> u32;
 
+    fn hm_build_event_emit(bytes: Vec<u8>);
+
     fn hm_write_stdout(bytes: Vec<u8>);
     fn hm_write_stderr(bytes: Vec<u8>);
 }
@@ -76,6 +78,11 @@ pub fn emit_step_log(stream: StdStream, bytes: &[u8]) {
 
 pub fn emit_event(event: BuildEvent) {
     let _ = unsafe { hm_emit_event(Json(event)) };
+}
+
+pub fn build_event_emit(event: &hm_plugin_protocol::BuildEvent) {
+    let Ok(bytes) = serde_json::to_vec(event) else { return; };
+    let _ = unsafe { hm_build_event_emit(bytes) };
 }
 
 pub fn kv_get(scope: KvScope, key: &str) -> Option<Vec<u8>> {

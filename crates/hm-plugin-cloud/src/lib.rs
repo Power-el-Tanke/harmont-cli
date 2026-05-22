@@ -66,6 +66,7 @@ register_plugin!(
             "hm_kv_get".into(),
             "hm_kv_set".into(),
             "hm_should_cancel".into(),
+            "hm_build_event_emit".into(),
         ],
         config_schema: None,
         allowed_hosts: vec![

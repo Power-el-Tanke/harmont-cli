@@ -60,44 +60,92 @@ fn cancel(client: &Client, org: &str, pipe: &str, number: i64) -> Result<(), Plu
 }
 
 fn watch(client: &Client, org: &str, pipe: &str, number: i64) -> Result<(), PluginError> {
-    // Poll the build's state every 2 seconds; print state transitions
-    // to stderr. Exit when terminal (passed/failed/canceled).
-    //
-    // TODO(plan-5+): replace this busy-wait with an `hm_sleep_ms` host
-    // fn. WASM has no native sleep, so for now we spin while polling
-    // `host::should_cancel`. Crude but adequate for short intervals.
+    use hm_plugin_protocol::{BuildEvent, PlanSummary, StdStream};
+    use uuid::Uuid;
+
+    let run_id = Uuid::new_v4();
+    let step_id = Uuid::new_v4();
+
+    host::build_event_emit(&BuildEvent::BuildStart {
+        run_id,
+        plan: PlanSummary {
+            step_count: 1,
+            chain_count: 1,
+            default_runner: "cloud".into(),
+        },
+        started_at: chrono::Utc::now(),
+    });
+    host::build_event_emit(&BuildEvent::StepQueued {
+        step_id,
+        key: format!("cloud build #{number}"),
+        chain_idx: 0,
+    });
+    host::build_event_emit(&BuildEvent::StepStart {
+        step_id,
+        runner: "cloud".into(),
+        image: None,
+    });
+
+    let started = std::time::SystemTime::now();
     let mut last_state = String::new();
+
     loop {
         if host::should_cancel() {
-            return Err(PluginError::new(
-                "cloud_cancelled",
-                "watch cancelled by user",
-            ));
+            host::build_event_emit(&BuildEvent::ChainFailed {
+                chain_idx: 0,
+                failed_step_id: step_id,
+                failed_step_key: format!("cloud build #{number}"),
+                exit_code: 130,
+                message: "watch cancelled by user".into(),
+                ts: chrono::Utc::now(),
+            });
+            return Err(PluginError::new("cloud_cancelled", "watch cancelled by user"));
         }
         let b: Build = client.get(&format!(
             "/organizations/{org}/pipelines/{pipe}/builds/{number}"
         ))?;
         if b.state != last_state {
-            host::write_stderr(format!("state: {last_state} -> {}\n", b.state).as_bytes());
+            host::build_event_emit(&BuildEvent::StepLog {
+                step_id,
+                stream: StdStream::Stderr,
+                line: format!("state: {last_state} -> {}", b.state),
+                ts: chrono::Utc::now(),
+            });
             last_state = b.state.clone();
         }
-        match b.state.as_str() {
-            "passed" => return Ok(()),
-            "failed" | "canceled" => {
-                return Err(PluginError::new(
-                    "cloud_build_failed",
-                    format!("build {} ({})", b.state, number),
-                ));
+        let terminal = match b.state.as_str() {
+            "passed" => Some(0i32),
+            "failed" | "canceled" => Some(1i32),
+            _ => None,
+        };
+        if let Some(code) = terminal {
+            let elapsed_ms = u64::try_from(
+                started.elapsed().map(|d| d.as_millis()).unwrap_or(0)
+            ).unwrap_or(u64::MAX);
+            host::build_event_emit(&BuildEvent::StepEnd {
+                step_id,
+                exit_code: code,
+                duration_ms: elapsed_ms,
+                snapshot: None,
+            });
+            host::build_event_emit(&BuildEvent::BuildEnd {
+                exit_code: code,
+                duration_ms: elapsed_ms,
+            });
+            if code == 0 {
+                return Ok(());
             }
-            _ => {}
+            return Err(PluginError::new(
+                "cloud_build_failed",
+                format!("build {} ({})", b.state, number),
+            ));
         }
-        let start = std::time::SystemTime::now();
-        while start.elapsed().map(|d| d.as_secs() < 2).unwrap_or(true) {
+        // Busy-wait ~2s, polling cancellation. Same shape as before;
+        // hm_sleep_ms host fn arrives in a later plan.
+        let spin_start = std::time::SystemTime::now();
+        while spin_start.elapsed().map(|d| d.as_secs() < 2).unwrap_or(true) {
             if host::should_cancel() {
-                return Err(PluginError::new(
-                    "cloud_cancelled",
-                    "watch cancelled by user",
-                ));
+                break;
             }
         }
     }
