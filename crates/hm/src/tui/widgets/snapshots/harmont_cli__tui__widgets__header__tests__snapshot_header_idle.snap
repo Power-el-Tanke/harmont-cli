@@ -1,0 +1,5 @@
+---
+source: crates/hm/src/tui/widgets/header.rs
+expression: buffer_to_string(&buf)
+---
+ HARMONT   hm run   run 00000000000000000000000000000000   ·   3 chains · 0/0 do
