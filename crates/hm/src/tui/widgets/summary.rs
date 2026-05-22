@@ -4,7 +4,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Widget};
+use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 use tui_big_text::{BigText, PixelSize};
 
 use crate::tui::app::{AppState, StepStatus};
@@ -85,27 +85,22 @@ impl Widget for Summary<'_> {
             slowest.as_ref().map_or_else(String::new, |(l, d)| format!("{l} ({d}ms)")),
         );
 
-        let lines: [(&str, Style); 7] = [
-            (&line_banner, banner_style),
-            ("", Style::default()),
-            (&line_total, Style::default()),
-            (&line_chains, Style::default()),
-            (&line_steps, Style::default()),
-            (&line_cache, Style::default()),
-            (&line_slowest, Style::default()),
+        let lines: Vec<Line<'_>> = vec![
+            Line::styled(line_banner, banner_style),
+            Line::raw(""),
+            Line::raw(line_total),
+            Line::raw(line_chains),
+            Line::raw(line_steps),
+            Line::raw(line_cache),
+            Line::raw(line_slowest),
         ];
-        for (i, (text, style)) in lines.iter().enumerate() {
-            let y = inner.y + 6 + u16::try_from(i).unwrap_or(u16::MAX);
-            if y >= inner.y + inner.height { break; }
-            let mut x = inner.x + 2;
-            for ch in text.chars() {
-                if x >= inner.x + inner.width { break; }
-                if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_symbol(&ch.to_string()).set_style(*style);
-                }
-                x += 1;
-            }
-        }
+        let body_area = Rect::new(
+            inner.x + 2,
+            inner.y + 6,
+            inner.width.saturating_sub(2),
+            inner.height.saturating_sub(6),
+        );
+        Paragraph::new(lines).render(body_area, buf);
     }
 }
 
