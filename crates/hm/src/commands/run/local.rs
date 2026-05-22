@@ -95,8 +95,13 @@ pub async fn handle(args: RunArgs, _ctx: RunContext) -> Result<i32> {
     let parallelism = args.parallelism.unwrap_or_else(|| {
         std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get)
     });
-    let exit_code =
-        crate::orchestrator::run(pipeline_wire, repo_root, parallelism, args.format.clone())
-            .await?;
+    let exit_code = crate::orchestrator::run(
+        pipeline_wire,
+        repo_root,
+        parallelism,
+        args.format.clone(),
+        None,
+    )
+    .await?;
     Ok(exit_code)
 }

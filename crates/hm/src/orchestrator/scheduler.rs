@@ -62,6 +62,7 @@ pub async fn run(
     repo_root: PathBuf,
     parallelism: usize,
     format_name: String,
+    extra_event_tx: Option<tokio::sync::mpsc::Sender<hm_plugin_protocol::BuildEvent>>,
 ) -> Result<i32> {
     // Build graph + chains directly from the wire-typed pipeline.
     let graph = Graph::build(&pipeline).context("build graph")?;
@@ -162,6 +163,23 @@ pub async fn run(
     // selected output-formatter plugin (default: `human`).
     let sink_handle =
         super::output_subscriber::spawn(bus.clone(), registry.clone(), format_name.clone());
+
+    let extra_handle = extra_event_tx.map(|tx| {
+        let mut rx = bus.subscribe();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(ev) => {
+                        if tx.send(ev).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        })
+    });
 
     // Announce build start.
     let started_at = chrono::Utc::now();
@@ -265,6 +283,10 @@ pub async fn run(
     // Wait briefly for the sink to drain the BuildEnd event. It exits
     // when it sees BuildEnd, so this completes quickly.
     let _ = tokio::time::timeout(std::time::Duration::from_secs(2), sink_handle).await;
+
+    if let Some(h) = extra_handle {
+        let _ = h.await;
+    }
 
     state::clear();
     drop(state_arc);
