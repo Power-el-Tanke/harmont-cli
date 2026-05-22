@@ -57,9 +57,21 @@ pub(crate) async fn ping_impl() -> bool {
 }
 
 pub(crate) async fn image_exists_impl(tag: String) -> bool {
-    let Some(s) = current() else { return false };
-    let Some(docker) = s.docker.as_ref() else { return false };
-    docker.image_exists(&tag).await.unwrap_or(false)
+    let Some(s) = current() else {
+        tracing::error!(%tag, "image_exists: no orchestrator state");
+        return false;
+    };
+    let Some(docker) = s.docker.as_ref() else {
+        tracing::error!(%tag, "image_exists: no docker client in orchestrator state");
+        return false;
+    };
+    match docker.image_exists(&tag).await {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::error!(%tag, error = %e, "image_exists: list_images failed");
+            false
+        }
+    }
 }
 
 pub(crate) async fn pull_impl(tag: String) -> Result<()> {
@@ -68,11 +80,16 @@ pub(crate) async fn pull_impl(tag: String) -> Result<()> {
         anyhow::bail!("no docker client in orchestrator state");
     };
     let cancel = s.cancel.clone();
-    let pull_fut = async move { docker.pull_image(&tag).await };
-    tokio::select! {
+    let pull_tag = tag.clone();
+    let pull_fut = async move { docker.pull_image(&pull_tag).await };
+    let result = tokio::select! {
         result = pull_fut => result,
         () = wait_cancel(&cancel) => Err(anyhow::anyhow!("cancelled during image pull")),
+    };
+    if let Err(e) = &result {
+        tracing::error!(%tag, error = format!("{e:#}"), "pull_impl failed");
     }
+    result
 }
 
 pub(crate) async fn start_container_impl(args: DockerStartArgs) -> Result<String> {

@@ -98,7 +98,7 @@ impl LoadedPlugin {
         let out_bytes = call_result.map_err(|e| HmError::PluginPanic {
             name: self.manifest.name.clone(),
             capability: export.to_string(),
-            message: e.to_string(),
+            message: format!("{e:#}"),
         })?;
         serde_json::from_slice(out_bytes).context("decode capability output")
     }
