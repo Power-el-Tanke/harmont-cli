@@ -5,7 +5,7 @@
 // Submodules added in later tasks:
 pub mod event;
 pub mod app;
-// pub mod source;
+pub mod source;
 // pub mod term;
 // pub mod theme;
 // pub mod fx;
