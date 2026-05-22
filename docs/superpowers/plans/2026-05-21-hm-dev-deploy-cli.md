@@ -2874,7 +2874,7 @@ Create `crates/hm/tests/dev_integration.rs`:
 //! Run with: `cargo test -p harmont-cli --features docker-integration -- --ignored`
 //! Requires:
 //!   * A reachable Docker daemon
-//!   * harmont-py installed in the env at HARMONT_PYTHON (defaults to python3)
+//!   * harmont-py installed in the env at `HARMONT_PYTHON` (defaults to python3)
 //!     with the `feat/hm-dev-deploy` branch checked out (or merged to main)
 //!
 //! Each test creates its own .harmont/ in a tmpdir to avoid step-on
@@ -2882,6 +2882,7 @@ Create `crates/hm/tests/dev_integration.rs`:
 
 #![cfg(feature = "docker-integration")]
 
+use std::io::Read;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -2901,21 +2902,20 @@ fn hm_bin() -> PathBuf {
 
 #[test]
 #[ignore]
-fn up_and_port_of_postgres() {
+fn up_serves_http_and_tears_down() {
     let tmp = tempfile::tempdir().unwrap();
     write_deploys_py(tmp.path(), r#"
 import harmont as hm
 
-@hm.deploy("db")
-def db():
+@hm.deploy("hello")
+def hello():
     return hm.dev.deploy(
-        image="postgres:16",
-        port_mapping={5432: hm.dev.port()},
-        env={"POSTGRES_PASSWORD": "dev"},
+        image="python:3.12-alpine",
+        cmd=["python", "-m", "http.server", "5678"],
+        port_mapping={5678: hm.dev.port()},
     )
 "#);
 
-    // Spawn `hm dev up` in the background.
     let mut up = Command::new(hm_bin())
         .args(["dev", "up"])
         .current_dir(tmp.path())
@@ -2924,9 +2924,7 @@ def db():
         .spawn()
         .expect("spawn hm dev up");
 
-    // Wait for "all up." marker on stderr.
     let stderr = up.stderr.as_mut().unwrap();
-    use std::io::Read;
     let mut buf = String::new();
     let mut chunk = [0u8; 1024];
     let started = std::time::Instant::now();
@@ -2936,44 +2934,76 @@ def db():
         buf.push_str(&String::from_utf8_lossy(&chunk[..n]));
         if buf.contains("all up.") { break; }
     }
-    assert!(buf.contains("all up."), "up did not become ready; stderr:\n{buf}");
+    assert!(buf.contains("all up."),
+        "up did not become ready; stderr:\n{buf}");
 
-    // Query the host port from another invocation.
     let port_of = Command::new(hm_bin())
-        .args(["dev", "port-of", "db", "5432"])
+        .args(["dev", "port-of", "hello", "5678"])
         .current_dir(tmp.path())
         .output()
         .unwrap();
-    assert!(port_of.status.success(), "port-of failed: {}", String::from_utf8_lossy(&port_of.stderr));
-    let host_port: u16 = String::from_utf8(port_of.stdout).unwrap().trim().parse().unwrap();
-    assert!(host_port > 1024, "expected ephemeral host port, got {host_port}");
+    assert!(port_of.status.success(),
+        "port-of failed: {}", String::from_utf8_lossy(&port_of.stderr));
+    let host_port: u16 = String::from_utf8(port_of.stdout)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert!(host_port > 1024,
+        "expected ephemeral host port, got {host_port}");
 
-    // Tear down via SIGINT.
+    // python -m http.server returns an HTML directory listing whose
+    // body always contains the literal "Directory listing for /".
+    let body = poll_http(&format!("http://127.0.0.1:{host_port}"));
+    assert!(
+        body.contains("Directory listing"),
+        "expected python http.server directory listing; got {body:?}",
+    );
+
     let _ = nix::sys::signal::kill(
         nix::unistd::Pid::from_raw(up.id() as i32),
         nix::sys::signal::Signal::SIGINT,
     );
     let _ = up.wait();
 
-    // After teardown, port-of should report not-running.
     let port_of_after = Command::new(hm_bin())
-        .args(["dev", "port-of", "db", "5432"])
+        .args(["dev", "port-of", "hello", "5678"])
         .current_dir(tmp.path())
         .output()
         .unwrap();
     assert_eq!(port_of_after.status.code(), Some(4),
-        "stopped slug should exit 4: {}", String::from_utf8_lossy(&port_of_after.stderr));
+        "stopped slug should exit 4: {}",
+        String::from_utf8_lossy(&port_of_after.stderr));
+}
+
+fn poll_http(url: &str) -> String {
+    let started = std::time::Instant::now();
+    let mut last_err = String::new();
+    while started.elapsed().as_secs() < 15 {
+        match ureq::get(url).call() {
+            Ok(resp) => {
+                if resp.status() == 200 {
+                    return resp.into_string().unwrap_or_default();
+                }
+                last_err = format!("status {}", resp.status());
+            }
+            Err(e) => last_err = e.to_string(),
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    panic!("HTTP poll failed against {url}: {last_err}");
 }
 ```
 
 - [ ] **Step 3: Add test-only deps to the workspace `[dev-dependencies]`**
 
-In `crates/hm/Cargo.toml`, ensure both `tempfile` and `nix` are present in `[dev-dependencies]`. If absent:
+In `crates/hm/Cargo.toml`, ensure `tempfile`, `nix`, and `ureq` are present in `[dev-dependencies]`. If absent:
 
 ```toml
 [dev-dependencies]
 tempfile = "3"
 nix = { version = "0.29", features = ["signal"] }
+ureq = { version = "2", default-features = false, features = ["tls"] }
 ```
 
 - [ ] **Step 4: Build + smoke**
@@ -2987,25 +3017,28 @@ Expected: clean build. Do **not** run the test in CI by default — it requires 
 - [ ] **Step 5: Optional: run the test locally if Docker is up**
 
 ```bash
-cargo test -p harmont-cli --features docker-integration -- --ignored up_and_port_of_postgres
+cargo test -p harmont-cli --features docker-integration -- --ignored up_serves_http_and_tears_down
 ```
 
-Expected: 1 passed (postgres pulls + boots + responds to port-of + tears down).
+Expected: 1 passed (python:3.12-alpine pulls + boots + HTTP GET asserts body contains "Directory listing" + tears down).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/hm/Cargo.toml crates/hm/tests/dev_integration.rs
+git add crates/hm/Cargo.toml crates/hm/tests/dev_integration.rs Cargo.lock
 git commit -m "$(cat <<'EOF'
-test(dev): docker-gated integration test for up + port-of + down
+test(dev): integration test boots python http.server + asserts HTTP body
 
-Covers the end-to-end happy path: spawn `hm dev up` against an
-in-tmpdir .harmont/deploys.py, wait for the "all up." marker, query
-port-of in a second process, SIGINT to tear down, then verify
-port-of returns exit 4 on the stopped slug.
+Swap the postgres-based integration test for `python -m http.server`
+running inside `python:3.12-alpine` — pulls 50MB instead of 80MB,
+boots in <1s, and uses Python's stdlib HTTP server (no third-party
+image dependency). Add an actual HTTP GET against the host port +
+body assertion (the response is python http.server's directory
+listing, whose body always contains "Directory listing for /") so
+the test validates the whole chain: container start → bridge net →
+port publish → image CMD honored → server actually serving.
 
-Gated behind --features docker-integration so CI without Docker
-skips it. Document HARMONT_PYTHON in the test header.
+ureq is the new dev-dep (default-features=false, just `tls` feature).
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF

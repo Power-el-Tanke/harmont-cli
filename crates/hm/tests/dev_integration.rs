@@ -10,7 +10,15 @@
 //! between concurrent runs.
 
 #![cfg(feature = "docker-integration")]
+// Integration tests intentionally use unwrap/expect/panic to fail loudly on
+// docker-state mismatches; that's the correct behaviour for test code.
+#![allow(clippy::unwrap_used, reason = "integration test helpers panic on docker-state mismatch")]
+#![allow(clippy::expect_used, reason = "integration test helpers panic on docker-state mismatch")]
+#![allow(clippy::panic, reason = "poll_http panics after timeout — correct for test code")]
+#![allow(clippy::cast_possible_wrap, reason = "pid fits in i32 on all platforms we target")]
+#![allow(clippy::ignore_without_reason, reason = "reason is in the test name and doc comment above")]
 
+use std::io::Read;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -30,21 +38,20 @@ fn hm_bin() -> PathBuf {
 
 #[test]
 #[ignore]
-fn up_and_port_of_postgres() {
+fn up_serves_http_and_tears_down() {
     let tmp = tempfile::tempdir().unwrap();
     write_deploys_py(tmp.path(), r#"
 import harmont as hm
 
-@hm.deploy("db")
-def db():
+@hm.deploy("hello")
+def hello():
     return hm.dev.deploy(
-        image="postgres:16",
-        port_mapping={5432: hm.dev.port()},
-        env={"POSTGRES_PASSWORD": "dev"},
+        image="python:3.12-alpine",
+        cmd=["python", "-m", "http.server", "5678"],
+        port_mapping={5678: hm.dev.port()},
     )
 "#);
 
-    // Spawn `hm dev up` in the background.
     let mut up = Command::new(hm_bin())
         .args(["dev", "up"])
         .current_dir(tmp.path())
@@ -53,9 +60,7 @@ def db():
         .spawn()
         .expect("spawn hm dev up");
 
-    // Wait for "all up." marker on stderr.
     let stderr = up.stderr.as_mut().unwrap();
-    use std::io::Read;
     let mut buf = String::new();
     let mut chunk = [0u8; 1024];
     let started = std::time::Instant::now();
@@ -65,31 +70,62 @@ def db():
         buf.push_str(&String::from_utf8_lossy(&chunk[..n]));
         if buf.contains("all up.") { break; }
     }
-    assert!(buf.contains("all up."), "up did not become ready; stderr:\n{buf}");
+    assert!(buf.contains("all up."),
+        "up did not become ready; stderr:\n{buf}");
 
-    // Query the host port from another invocation.
     let port_of = Command::new(hm_bin())
-        .args(["dev", "port-of", "db", "5432"])
+        .args(["dev", "port-of", "hello", "5678"])
         .current_dir(tmp.path())
         .output()
         .unwrap();
-    assert!(port_of.status.success(), "port-of failed: {}", String::from_utf8_lossy(&port_of.stderr));
-    let host_port: u16 = String::from_utf8(port_of.stdout).unwrap().trim().parse().unwrap();
-    assert!(host_port > 1024, "expected ephemeral host port, got {host_port}");
+    assert!(port_of.status.success(),
+        "port-of failed: {}", String::from_utf8_lossy(&port_of.stderr));
+    let host_port: u16 = String::from_utf8(port_of.stdout)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert!(host_port > 1024,
+        "expected ephemeral host port, got {host_port}");
 
-    // Tear down via SIGINT.
+    // python -m http.server returns an HTML directory listing whose
+    // body always contains the literal "Directory listing for /".
+    let body = poll_http(&format!("http://127.0.0.1:{host_port}"));
+    assert!(
+        body.contains("Directory listing"),
+        "expected python http.server directory listing; got {body:?}",
+    );
+
     let _ = nix::sys::signal::kill(
         nix::unistd::Pid::from_raw(up.id() as i32),
         nix::sys::signal::Signal::SIGINT,
     );
     let _ = up.wait();
 
-    // After teardown, port-of should report not-running.
     let port_of_after = Command::new(hm_bin())
-        .args(["dev", "port-of", "db", "5432"])
+        .args(["dev", "port-of", "hello", "5678"])
         .current_dir(tmp.path())
         .output()
         .unwrap();
     assert_eq!(port_of_after.status.code(), Some(4),
-        "stopped slug should exit 4: {}", String::from_utf8_lossy(&port_of_after.stderr));
+        "stopped slug should exit 4: {}",
+        String::from_utf8_lossy(&port_of_after.stderr));
+}
+
+fn poll_http(url: &str) -> String {
+    let started = std::time::Instant::now();
+    let mut last_err = String::new();
+    while started.elapsed().as_secs() < 15 {
+        match ureq::get(url).call() {
+            Ok(resp) => {
+                if resp.status() == 200 {
+                    return resp.into_string().unwrap_or_default();
+                }
+                last_err = format!("status {}", resp.status());
+            }
+            Err(e) => last_err = e.to_string(),
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    panic!("HTTP poll failed against {url}: {last_err}");
 }
