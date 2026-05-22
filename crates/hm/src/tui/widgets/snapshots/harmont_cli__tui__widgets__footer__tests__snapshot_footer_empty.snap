@@ -1,0 +1,5 @@
+---
+source: crates/hm/src/tui/widgets/footer.rs
+expression: buffer_to_string(&buf)
+---
+ [tab] chain · [l] logs · [/] filter · [q] quit  0 pass · 0 cache · 0 fail
