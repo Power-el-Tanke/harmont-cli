@@ -1,0 +1,10 @@
+---
+source: crates/hm/src/tui/widgets/log.rs
+expression: buffer_to_string(&buf)
+---
+┌ log · c0 ────────────────────────────┐
+│  beta cat                            │
+│  gamma cat                           │
+│                                      │
+│                                      │
+└──────────────────────────────────────┘
