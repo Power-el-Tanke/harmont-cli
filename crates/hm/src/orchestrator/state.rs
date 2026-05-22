@@ -40,6 +40,11 @@ pub struct OrchestratorState {
     pub cancel: CancellationToken,
     pub docker: DockerClient,
     pub run_id: Uuid,
+    /// Optional TUI mpsc sender; set by `scheduler::run` when the host
+    /// TUI is the active output renderer. Populated for both local
+    /// builds (via the bus forwarder) and cloud watch (via the
+    /// `hm_build_event_emit` host fn).
+    pub tui_event_tx: Option<tokio::sync::mpsc::Sender<hm_plugin_protocol::BuildEvent>>,
 }
 
 static CURRENT: OnceLock<Arc<OrchestratorState>> = OnceLock::new();

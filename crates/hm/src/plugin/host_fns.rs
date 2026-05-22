@@ -75,6 +75,7 @@ pub const HOST_FN_NAMES: &[&str] = &[
     "hm_tty_prompt",
     "hm_tty_confirm",
     "hm_browser_open",
+    "hm_build_event_emit",
     "hm_spawn_loopback",
     "hm_loopback_recv",
     "hm_should_cancel",
@@ -111,6 +112,11 @@ host_fn!(pub _hm_emit_step_log(_user_data: (); stream: Json<StdStream>, bytes: V
 host_fn!(pub _hm_emit_event(_user_data: (); event: Json<BuildEvent>) {
     let Json(event) = event;
     emit_event_impl(event);
+    Ok(())
+});
+
+host_fn!(pub _hm_build_event_emit(_user_data: (); bytes: Vec<u8>) {
+    build_event_emit_impl(&bytes);
     Ok(())
 });
 
@@ -405,6 +411,13 @@ pub fn all() -> Vec<Function> {
             _hm_browser_open,
         ),
         Function::new(
+            "hm_build_event_emit",
+            pty(1),
+            pty(0),
+            ud.clone(),
+            _hm_build_event_emit,
+        ),
+        Function::new(
             "hm_spawn_loopback",
             pty(1),
             pty(1),
@@ -576,6 +589,19 @@ fn emit_event_impl(event: BuildEvent) {
     if let Some(state) = crate::orchestrator::state::current() {
         state.event_bus.emit(event);
     }
+}
+
+fn build_event_emit_impl(bytes: &[u8]) {
+    let Ok(ev) = serde_json::from_slice::<BuildEvent>(bytes) else {
+        return; // best-effort: bad payload silently dropped
+    };
+    let Some(state) = crate::orchestrator::state::current() else {
+        return;
+    };
+    let Some(tx) = state.tui_event_tx.as_ref() else {
+        return;
+    };
+    let _ = tx.try_send(ev); // non-blocking; lag drops the event
 }
 
 fn kv_get_impl(scope: KvScope, key: &str) -> Option<Vec<u8>> {

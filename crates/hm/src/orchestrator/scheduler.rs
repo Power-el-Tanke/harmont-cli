@@ -94,6 +94,7 @@ pub async fn run(
         cancel: cancel.clone(),
         docker: docker.clone(),
         run_id,
+        tui_event_tx: extra_event_tx.clone(),
     });
     state::install(state_arc.clone());
 
@@ -164,7 +165,7 @@ pub async fn run(
     let sink_handle =
         super::output_subscriber::spawn(bus.clone(), registry.clone(), format_name.clone());
 
-    let extra_handle = extra_event_tx.map(|tx| {
+    let extra_handle = state_arc.tui_event_tx.as_ref().cloned().map(|tx| {
         let mut rx = bus.subscribe();
         tokio::spawn(async move {
             loop {
@@ -174,7 +175,7 @@ pub async fn run(
                             break;
                         }
                     }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {},
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
             }
