@@ -1,4 +1,5 @@
 pub mod format;
+pub mod formatters;
 pub mod spinner;
 pub mod status;
 
