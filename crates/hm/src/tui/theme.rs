@@ -20,16 +20,16 @@ impl Theme {
     #[must_use]
     pub const fn dark() -> Self {
         Self {
-            border_dim: Color::Indexed(244),
-            border_focus: Color::Indexed(51),
-            accent_a: Color::Indexed(51),
-            accent_b: Color::Indexed(33),
-            pass: Color::Indexed(42),
-            cache: Color::Indexed(220),
-            fail: Color::Indexed(196),
-            running: Color::Indexed(51),
-            pending: Color::Indexed(244),
-            text_dim: Color::Indexed(244),
+            border_dim: Color::DarkGray,
+            border_focus: Color::Cyan,
+            accent_a: Color::Cyan,
+            accent_b: Color::Blue,
+            pass: Color::Green,
+            cache: Color::Yellow,
+            fail: Color::Red,
+            running: Color::Cyan,
+            pending: Color::DarkGray,
+            text_dim: Color::DarkGray,
         }
     }
 
