@@ -2,6 +2,8 @@
 
 [![license](https://img.shields.io/crates/l/harmont-cli.svg)](#license)
 
+![hm run Mission Control TUI](docs/demo/run.gif)
+
 Run CI pipelines on your own machine, in Docker, from a Python pipeline definition checked into your repo.
 
 Define the pipeline with the [`harmont-py`](https://github.com/harmont-dev/harmont-py) DSL, then `hm run` builds a fresh container per chain, runs the steps, and reuses snapshots across runs. The same definition runs unchanged on the hosted [Harmont](https://harmont.dev) cloud via `hm cloud run`.
