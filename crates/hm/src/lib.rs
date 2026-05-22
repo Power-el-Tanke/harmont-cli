@@ -15,3 +15,4 @@ pub mod fs_util;
 pub mod orchestrator;
 pub mod output;
 pub mod plugin;
+pub mod tui;
