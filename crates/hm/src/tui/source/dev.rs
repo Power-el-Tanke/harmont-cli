@@ -22,27 +22,25 @@ pub fn spawn(
 ) -> mpsc::Receiver<TuiEvent> {
     let (tx, rx) = super::channel();
 
-    let tx_init = tx.clone();
-    let deploys_init = deploys.clone();
     tokio::spawn(async move {
         // Synthetic BuildStart so AppState header renders.
-        let _ = tx_init.send(TuiEvent::BuildStart {
+        let _ = tx.send(TuiEvent::BuildStart {
             run_id: uuid::Uuid::new_v4(),
             plan: hm_plugin_protocol::PlanSummary {
-                step_count: deploys_init.len(),
-                chain_count: deploys_init.len(),
+                step_count: deploys.len(),
+                chain_count: deploys.len(),
                 default_runner: "docker".into(),
             },
             started_at: Utc::now(),
         }).await;
 
-        for (idx, (slug, _deploy_id)) in deploys_init.iter().enumerate() {
-            let _ = tx_init.send(TuiEvent::ChainQueued {
+        for (idx, (slug, _deploy_id)) in deploys.iter().enumerate() {
+            let _ = tx.send(TuiEvent::ChainQueued {
                 chain_idx: idx,
                 label: slug.clone(),
                 parent: None,
             }).await;
-            let _ = tx_init.send(TuiEvent::DeployStatus {
+            let _ = tx.send(TuiEvent::DeployStatus {
                 deploy_id: slug.clone(),
                 label: slug.clone(),
                 state: DeployState::Healthy,
@@ -53,7 +51,7 @@ pub fn spawn(
 
         while let Some(line) = log_rx.recv().await {
             let payload = String::from_utf8_lossy(&line.bytes).into_owned();
-            if tx_init.send(TuiEvent::DeployLog {
+            if tx.send(TuiEvent::DeployLog {
                 deploy_id: line.slug,
                 stream: hm_plugin_protocol::StdStream::Stdout,
                 line: payload,
@@ -66,7 +64,7 @@ pub fn spawn(
         // logmux closed — mark every deploy stopped and synthesise
         // BuildEnd so the summary card renders.
         for (slug, _) in &deploys {
-            let _ = tx_init.send(TuiEvent::DeployStatus {
+            let _ = tx.send(TuiEvent::DeployStatus {
                 deploy_id: slug.clone(),
                 label: slug.clone(),
                 state: DeployState::Stopped,
@@ -74,7 +72,7 @@ pub fn spawn(
                 uptime_ms: 0,
             }).await;
         }
-        let _ = tx_init.send(TuiEvent::BuildEnd {
+        let _ = tx.send(TuiEvent::BuildEnd {
             exit_code: 0,
             duration_ms: 0,
         }).await;
