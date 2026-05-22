@@ -3,7 +3,9 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::widgets::{Block, Borders, Widget};
+use ratatui::style::Style;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 
 use crate::tui::app::{AppState, StepStatus};
 use crate::tui::theme::Theme;
@@ -39,28 +41,34 @@ impl Widget for Graph<'_> {
         block.render(area, buf);
 
         let max_rows = inner.height as usize;
-        for (row, chain) in self.state.chains.iter().enumerate().take(max_rows) {
-            let mut x = inner.x;
-            let mut first = true;
-            let y = inner.y + row as u16;
-            for sid in &chain.steps {
-                let Some(step) = self.state.steps.get(sid) else { continue };
-                if !first && x + 1 < inner.x + inner.width {
-                    if let Some(cell) = buf.cell_mut((x, y)) {
-                        cell.set_symbol("─");
+        let rows: Vec<Line<'_>> = self
+            .state
+            .chains
+            .iter()
+            .take(max_rows)
+            .map(|chain| {
+                let mut spans: Vec<Span<'_>> = Vec::new();
+                let mut first = true;
+                for sid in &chain.steps {
+                    let Some(step) = self.state.steps.get(sid) else { continue };
+                    if !first {
+                        spans.push(Span::raw("─"));
                     }
-                    x += 1;
+                    spans.push(Span::styled(
+                        glyph(&step.status).to_string(),
+                        self.theme.status(step.status.clone()),
+                    ));
+                    first = false;
                 }
-                if x < inner.x + inner.width {
-                    if let Some(cell) = buf.cell_mut((x, y)) {
-                        cell.set_symbol(glyph(&step.status))
-                            .set_style(self.theme.status(step.status.clone()));
-                    }
+                if spans.is_empty() {
+                    Line::from(Span::styled(String::new(), Style::default()))
+                } else {
+                    Line::from(spans)
                 }
-                x += 1;
-                first = false;
-            }
-        }
+            })
+            .collect();
+
+        Paragraph::new(rows).render(inner, buf);
     }
 }
 
