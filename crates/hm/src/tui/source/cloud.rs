@@ -1,4 +1,9 @@
-//! Cloud watch (host-fn fed) → TuiEvent adapter for
-//! `hm cloud build watch`.
+//! Cloud watch (host-fn fed) → TuiEvent adapter.
+//!
+//! The cloud plugin runs `watch` inside WASM and emits wire
+//! `BuildEvent`s via the `hm_build_event_emit` host fn. The host fn
+//! pushes them into the mpsc owned by `OrchestratorState::tui_event_tx`.
+//! This source spawns the same translator task as `local::spawn` —
+//! the wire format is identical.
 
-// Real impl arrives in Task 2.5.
+pub use super::local::spawn;
