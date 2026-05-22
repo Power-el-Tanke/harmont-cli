@@ -1,0 +1,12 @@
+---
+source: crates/hm/src/tui/widgets/graph.rs
+expression: buffer_to_string(&buf)
+---
+┌ graph ─────────────────────┐
+│◇                           │
+│◆                           │
+│◐                           │
+│                            │
+│                            │
+│                            │
+└────────────────────────────┘
