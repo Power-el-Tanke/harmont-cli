@@ -28,17 +28,68 @@ pub struct DockerClient {
 }
 
 impl DockerClient {
-    /// Open a Docker connection using the platform's default socket /
-    /// pipe. The handle is cheap to clone (refcounted internally).
+    /// Open a Docker connection, honoring `docker context` the way the
+    /// `docker` CLI does.
+    ///
+    /// Resolution order (matches Docker upstream):
+    /// 1. `DOCKER_HOST` env var.
+    /// 2. `DOCKER_CONTEXT` env var.
+    /// 3. `currentContext` in `~/.docker/config.json`.
+    /// 4. Platform default (`unix:///var/run/docker.sock` on Linux).
+    ///
+    /// This means Docker Desktop on Linux (which ships a `desktop-linux`
+    /// context pointing at `~/.docker/desktop/docker.sock`) works
+    /// without the user having to set `DOCKER_HOST`.
+    ///
+    /// The handle is cheap to clone (refcounted internally).
     ///
     /// # Errors
     ///
-    /// Returns [`HmError::Docker`] when bollard cannot resolve a
-    /// local Docker endpoint (no socket on `DOCKER_HOST`, no Windows
-    /// pipe, etc.).
+    /// Returns [`HmError::Docker`] when no reachable Docker endpoint
+    /// can be resolved, or when `DOCKER_CONTEXT` / `currentContext`
+    /// points at a context that doesn't exist on disk. The error
+    /// message includes a hint with the exact command to fix it.
     pub fn connect() -> Result<Self> {
-        let d = Docker::connect_with_local_defaults()
-            .map_err(|e| HmError::Docker(format!("connect: {e}")))?;
+        use super::docker_context::{Endpoint, resolve_endpoint};
+        use bollard::{API_DEFAULT_VERSION, Docker};
+
+        const TIMEOUT_SECS: u64 = 120;
+
+        let endpoint = resolve_endpoint().map_err(|e| {
+            HmError::Docker(format!(
+                "{e}\n  hint: run `docker context ls` to inspect, \
+                 or `export DOCKER_HOST=unix:///path/to/docker.sock`"
+            ))
+        })?;
+
+        let d = match endpoint {
+            Endpoint::Default => Docker::connect_with_local_defaults(),
+            Endpoint::Socket(path) => {
+                Docker::connect_with_socket(&path.to_string_lossy(), TIMEOUT_SECS, API_DEFAULT_VERSION)
+            }
+            Endpoint::Http(host) => {
+                Docker::connect_with_http(&host, TIMEOUT_SECS, API_DEFAULT_VERSION)
+            }
+            Endpoint::Https { host, tls_dir: _ } => {
+                // bollard is built without the `ssl` feature (would pull
+                // rustls + ring transitively). Remote HTTPS daemons are a
+                // niche case for `hm`; bail with a useful hint instead of
+                // silently downgrading.
+                return Err(HmError::Docker(format!(
+                    "remote HTTPS Docker daemons aren't supported by `hm` yet ({host}).\n  \
+                     hint: switch to a local context with `docker context use default`, \
+                     or expose the daemon over an unencrypted tunnel and \
+                     `export DOCKER_HOST=tcp://...`"
+                ))
+                .into());
+            }
+        }
+        .map_err(|e| {
+            HmError::Docker(format!(
+                "connect: {e}\n  hint: if you use Docker Desktop, ensure it is running and that \
+                 `docker version` succeeds; otherwise set DOCKER_HOST to your socket path"
+            ))
+        })?;
         Ok(Self { inner: Arc::new(d) })
     }
 
