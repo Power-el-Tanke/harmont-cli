@@ -73,6 +73,11 @@ schemars = { workspace = true }
 semver = { workspace = true }
 once_cell = "1"
 hex = "0.4"
+ratatui = "0.30.0"
+crossterm = "0.29.0"
+tachyonfx = "0.25.0"
+tui-big-text = "0.8.4"
+is-terminal = "0.4.17"
 
 [features]
 default = []
@@ -87,6 +92,7 @@ assert_fs = "1"
 tempfile = "3"
 nix = { version = "0.29", features = ["signal"] }
 ureq = { version = "2", default-features = false, features = ["tls"] }
+insta = { version = "1.47.2", features = ["yaml"] }
 
 [lints]
 workspace = true
