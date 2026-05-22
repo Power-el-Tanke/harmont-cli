@@ -6,6 +6,7 @@
 
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
+use is_terminal::IsTerminal;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
@@ -44,7 +45,7 @@ struct BootCtx {
 /// Returns an error if the registry dump fails, Docker is unreachable,
 /// network creation fails, or any container boot fails.
 #[allow(clippy::print_stderr, reason = "status messages to stderr are intentional for a foreground CLI")]
-pub async fn handle(args: DevUpArgs, _ctx: RunContext) -> Result<i32> {
+pub async fn handle(args: DevUpArgs, ctx: RunContext) -> Result<i32> {
     let worktree_root = resolve_worktree_root()?;
     let wt_hash = worktree_hash(&worktree_root);
     let session_id = fresh_session_id();
@@ -62,12 +63,24 @@ pub async fn handle(args: DevUpArgs, _ctx: RunContext) -> Result<i32> {
     let slug_width = boot_plan.slugs().map(str::len).max().unwrap_or(4);
 
     let (log_tx, log_rx) = mpsc::unbounded_channel::<LogLine>();
-    let log_color = std::env::var("NO_COLOR").is_err();
-    let log_task = tokio::spawn(run_logmux(log_rx, slug_width, log_color));
+
+    let want_tui = !ctx.no_tui
+        && std::env::var_os("NO_COLOR").is_none()
+        && std::io::stdout().is_terminal();
+    let log_color = std::env::var_os("NO_COLOR").is_none();
+
+    // Keep the receiver until we know who owns it: legacy logmux or the TUI.
+    let mut log_rx_holder = Some(log_rx);
+    let log_task = if want_tui {
+        None
+    } else {
+        let rx = log_rx_holder.take().expect("log_rx is present");
+        Some(tokio::spawn(run_logmux(rx, slug_width, log_color)))
+    };
 
     let mut booted: Vec<Booted> = Vec::new();
 
-    let ctx = BootCtx {
+    let boot_ctx = BootCtx {
         worktree_root,
         worktree_hash: wt_hash,
         session_id: session_id.clone(),
@@ -86,15 +99,42 @@ pub async fn handle(args: DevUpArgs, _ctx: RunContext) -> Result<i32> {
             let spec = spec.clone();
             let slug = slug.clone();
             let log_tx = log_tx.clone();
-            let ctx = ctx.clone();
+            let boot_ctx = boot_ctx.clone();
             joinset.spawn(async move {
-                boot_one(docker, slug, spec, ctx, log_tx).await
+                boot_one(docker, slug, spec, boot_ctx, log_tx).await
             });
         }
         while let Some(res) = joinset.join_next().await {
             let b = res??;
             booted.push(b);
         }
+    }
+
+    if want_tui {
+        // The legacy "all up" / "tearing down" banners are stderr-only
+        // in the streaming path; in the TUI they're redundant because the
+        // header + summary card communicate the same info.
+        let log_rx = log_rx_holder.take().expect("log_rx reserved for TUI");
+        let deploys: Vec<(String, String)> = booted
+            .iter()
+            .map(|b| (b.slug.clone(), b.container_id.clone()))
+            .collect();
+        let tui_rx = crate::tui::source::dev::spawn(log_rx, deploys);
+        let opts = crate::tui::TuiOptions {
+            fx_enabled: !ctx.no_fx && std::env::var_os("NO_COLOR").is_none(),
+            summary_card: true,
+            title: "hm dev up".into(),
+        };
+        // tui::run blocks until BuildEnd or user quits. While running,
+        // ctrl-c is handled by the TUI's own key dispatch (1 cancel,
+        // 2 force exit).
+        let _ = crate::tui::run(tui_rx, opts)
+            .await
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        eprintln!("[hm] tearing down...");
+        teardown(&docker, &net, &booted).await;
+        drop(log_tx); // close the channel so any in-flight log lines settle
+        return Ok(0);
     }
 
     eprintln!("[hm] all up. Ctrl-C to tear down. Logs follow.");
@@ -105,9 +145,10 @@ pub async fn handle(args: DevUpArgs, _ctx: RunContext) -> Result<i32> {
     eprintln!("[hm] tearing down...");
     teardown(&docker, &net, &booted).await;
 
-    // Drop the sender so the logmux channel closes and the task can finish.
     drop(log_tx);
-    let _ = log_task.await;
+    if let Some(handle) = log_task {
+        let _ = handle.await;
+    }
 
     Ok(0)
 }
