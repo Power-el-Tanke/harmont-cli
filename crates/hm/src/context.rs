@@ -19,6 +19,10 @@ pub struct RunContext {
     /// `--format` flag was retired in plan 3; per-subcommand `--format`
     /// is the only currently-wired source, so this defaults to human).
     pub output: OutputMode,
+    /// Disable the interactive TUI even when stdout is a TTY.
+    pub no_tui: bool,
+    /// Disable TUI animation effects.
+    pub no_fx: bool,
 }
 
 impl RunContext {
@@ -35,6 +39,11 @@ impl RunContext {
             interactive: std::io::stdout().is_terminal(),
         };
 
-        Ok(Self { config, output })
+        Ok(Self {
+            config,
+            output,
+            no_tui: cli.no_tui,
+            no_fx: cli.no_fx,
+        })
     }
 }

@@ -60,7 +60,7 @@ fn decode_plan_to_wire(bytes: &[u8]) -> anyhow::Result<hm_plugin_protocol::Pipel
 /// the resulting plan does not decode, the Docker daemon is unreachable,
 /// or the orchestrator surfaces an internal scheduler error. Non-zero
 /// step exit codes are returned as the `i32`, not as an Err.
-pub async fn handle(args: RunArgs, _ctx: RunContext) -> Result<i32> {
+pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
     let repo_root = match args.dir.clone() {
         Some(p) => p,
         None => std::env::current_dir().context("cannot determine current directory")?,
@@ -95,12 +95,48 @@ pub async fn handle(args: RunArgs, _ctx: RunContext) -> Result<i32> {
     let parallelism = args.parallelism.unwrap_or_else(|| {
         std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get)
     });
+    use is_terminal::IsTerminal;
+
+    let want_tui = args.format == "human"
+        && std::env::var_os("NO_COLOR").is_none()
+        && !ctx.no_tui
+        && std::io::stdout().is_terminal();
+
+    if want_tui {
+        let (bus_tx, tui_rx) = crate::tui::source::local::spawn();
+        let opts = crate::tui::TuiOptions {
+            fx_enabled: !ctx.no_fx,
+            summary_card: true,
+            title: "hm run".into(),
+        };
+        let orch_handle = {
+            let pipeline_wire = pipeline_wire.clone();
+            let repo_root = repo_root.clone();
+            let format = args.format.clone();
+            tokio::spawn(async move {
+                crate::orchestrator::run(
+                    pipeline_wire,
+                    repo_root,
+                    parallelism,
+                    format,
+                    Some(bus_tx),
+                )
+                .await
+            })
+        };
+        let tui_exit = crate::tui::run(tui_rx, opts)
+            .await
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        let orch_exit = orch_handle.await??;
+        return Ok(if tui_exit != 0 { tui_exit } else { orch_exit });
+    }
+
     let exit_code = crate::orchestrator::run(
         pipeline_wire,
         repo_root,
         parallelism,
         args.format.clone(),
-        None, // extra_event_tx: TUI is wired separately
+        None,
     )
     .await?;
     Ok(exit_code)
