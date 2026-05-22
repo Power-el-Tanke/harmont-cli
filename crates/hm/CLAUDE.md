@@ -9,11 +9,12 @@
   via `build.rs`) and resolves each step's `runner` field to a
   registered plugin in `scheduler.rs`.
 - Publishes `BuildEvent`s on a `tokio::sync::broadcast` (`events.rs`);
-  the `output_subscriber` task drains the bus and invokes the selected
-  output plugin's `hm_output_on_event` per event (`hm-plugin-output-human`
-  or `hm-plugin-output-json`, both embedded via `build.rs`). Default
-  `--format` is `human`; `--format json` writes one JSON event per
-  line on stdout.
+  the `output_subscriber` task drains the bus and dispatches to the
+  selected formatter. Built-in formatters (`human`, `json`) are
+  native Rust code in `crates/hm/src/output/formatters/`; external
+  WASM plugins registered in the plugin registry are still supported
+  as a fall-through. Default `--format` is `human`; `--format json`
+  writes one JSON event per line on stdout.
 - Streams cache decisions host-side (`cache.rs`), reads the workspace
   archive once into memory (`archive.rs` + `source.rs`), and drives
   the Docker daemon via the Bollard wrapper (`docker_client.rs`,

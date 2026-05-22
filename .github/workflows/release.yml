@@ -71,11 +71,11 @@ jobs:
         # crates/hm/Cargo.toml carries them into the tarball.
         run: |
           set -euo pipefail
-          for crate in hm-plugin-docker hm-plugin-output-human hm-plugin-output-json hm-plugin-cloud; do
+          for crate in hm-plugin-docker hm-plugin-cloud; do
             cargo build --target wasm32-wasip1 -p "$crate" --release
           done
           mkdir -p crates/hm/embedded
-          for name in hm_plugin_docker hm_plugin_output_human hm_plugin_output_json hm_plugin_cloud; do
+          for name in hm_plugin_docker hm_plugin_cloud; do
             cp "target/wasm32-wasip1/release/$name.wasm" "crates/hm/embedded/$name.wasm"
           done
           ls -la crates/hm/embedded/
