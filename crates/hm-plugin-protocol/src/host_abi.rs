@@ -143,3 +143,8 @@ pub struct DockerExtractArgs {
     pub archive_id: crate::ArchiveId,
     pub workdir: String,
 }
+
+/// Host fn used by plugins (currently `hm-plugin-cloud::watch`) to
+/// emit a wire `BuildEvent` directly into the host's TUI mpsc.
+/// Payload: `serde_json::to_vec(&BuildEvent)`. Returns nothing.
+pub const HM_BUILD_EVENT_EMIT: &str = "hm_build_event_emit";
