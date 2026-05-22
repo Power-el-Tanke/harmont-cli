@@ -3,7 +3,7 @@
 //! `docs/superpowers/specs/2026-05-22-tui-mission-control-design.md`.
 
 // Submodules added in later tasks:
-// pub mod event;
+pub mod event;
 // pub mod app;
 // pub mod source;
 // pub mod term;
