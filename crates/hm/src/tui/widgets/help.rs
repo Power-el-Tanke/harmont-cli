@@ -2,7 +2,8 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::widgets::{Block, Borders, Widget};
+use ratatui::text::Line;
+use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 
 use crate::tui::theme::Theme;
 
@@ -23,7 +24,7 @@ impl Widget for Help<'_> {
         let inner = block.inner(area);
         block.render(area, buf);
 
-        let lines = [
+        let lines: Vec<Line<'_>> = [
             "  q · Esc      quit",
             "  Tab          next chain",
             "  Shift-Tab    prev chain",
@@ -34,18 +35,16 @@ impl Widget for Help<'_> {
             "  g · G        top / bottom of log",
             "  ?            toggle this help",
             "  Ctrl-C       cancel run (twice to force)",
-        ];
-        for (i, l) in lines.iter().enumerate() {
-            let y = inner.y + 1 + u16::try_from(i).unwrap_or(u16::MAX);
-            if y >= inner.y + inner.height { break; }
-            let mut x = inner.x + 2;
-            for ch in l.chars() {
-                if x >= inner.x + inner.width { break; }
-                if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_symbol(&ch.to_string());
-                }
-                x += 1;
-            }
-        }
+        ]
+        .into_iter()
+        .map(Line::raw)
+        .collect();
+        let body_area = Rect::new(
+            inner.x + 2,
+            inner.y + 1,
+            inner.width.saturating_sub(2),
+            inner.height.saturating_sub(1),
+        );
+        Paragraph::new(lines).render(body_area, buf);
     }
 }
