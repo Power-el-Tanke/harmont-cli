@@ -4,7 +4,6 @@
 
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
-use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 use hm_plugin_protocol::{PlanSummary, StdStream};
@@ -88,10 +87,15 @@ pub struct AppState {
 }
 
 impl AppState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    // `DeployLog` arm uses contains_key+insert rather than entry() because the
+    // branch also pushes to `self.chains[chain_idx].steps`, which borrows `self`
+    // mutably — something `entry().or_insert_with()` cannot express.
+    #[allow(clippy::map_entry)]
     pub fn apply(&mut self, event: TuiEvent) {
         match event {
             TuiEvent::BuildStart { run_id, plan, started_at } => {
@@ -193,6 +197,7 @@ impl AppState {
         }
     }
 
+    #[must_use]
     pub fn focused_step_id(&self) -> Option<Uuid> {
         self.chains
             .get(self.focused_chain)
@@ -203,9 +208,11 @@ impl AppState {
         if self.chains.is_empty() {
             return;
         }
-        let len = self.chains.len() as isize;
-        let next = (self.focused_chain as isize + delta).rem_euclid(len);
-        self.focused_chain = next as usize;
+        let len = self.chains.len();
+        let len_i = isize::try_from(len).unwrap_or(isize::MAX);
+        let cur = isize::try_from(self.focused_chain).unwrap_or(0);
+        let next = (cur + delta).rem_euclid(len_i);
+        self.focused_chain = usize::try_from(next).unwrap_or(0);
     }
 
     fn find_or_create_deploy_chain(&mut self, deploy_id: &str, label: &str) -> usize {
@@ -227,9 +234,6 @@ impl AppState {
 fn uuid_from_deploy_id(deploy_id: &str) -> Uuid {
     Uuid::new_v5(&Uuid::NAMESPACE_OID, deploy_id.as_bytes())
 }
-
-#[allow(dead_code)]
-fn _instant_unused_marker() -> Instant { Instant::now() }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
