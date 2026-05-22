@@ -4,7 +4,8 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
-use ratatui::widgets::{Block, Borders, Widget};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 
 use crate::tui::app::{AppState, StepStatus};
 use crate::tui::theme::Theme;
@@ -44,56 +45,39 @@ impl Widget for Timeline<'_> {
             .sum::<u64>()
             .max(1);
         let bar_max = u64::from(inner.width.saturating_sub(28));
+        let bar_max_u16 = u16::try_from(bar_max).unwrap_or(u16::MAX);
 
-        for (row, chain) in self.state.chains.iter().enumerate().take(inner.height as usize) {
-            let Some(last_step_id) = chain.steps.last() else { continue };
-            let Some(step) = self.state.steps.get(last_step_id) else { continue };
-            let dur = step.duration_ms.unwrap_or(0);
+        let rows: Vec<Line<'_>> = self
+            .state
+            .chains
+            .iter()
+            .enumerate()
+            .take(inner.height as usize)
+            .filter_map(|(row, chain)| {
+                let last_step_id = chain.steps.last()?;
+                let step = self.state.steps.get(last_step_id)?;
+                let dur = step.duration_ms.unwrap_or(0);
 
-            #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
-            let fill = ((dur as f64 / total_ms as f64) * bar_max as f64) as u16;
+                #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
+                let fill = ((dur as f64 / total_ms as f64) * bar_max as f64) as u16;
 
-            let status_style = self.theme.status(step.status.clone());
-            let y = inner.y + u16::try_from(row).unwrap_or(0);
+                let status_style = self.theme.status(step.status.clone());
+                let label = format!("c{} ", row + 1);
+                let filled: String = "█".repeat(fill as usize);
+                let pending_len = bar_max_u16.saturating_sub(fill) as usize;
+                let pending: String = "░".repeat(pending_len);
+                let trail = format!(" {} {dur:>4}ms {:>5}", step.label, pill(&step.status));
 
-            // Chain label "c{row+1} "
-            let label = format!("c{} ", row + 1);
-            let mut x = inner.x;
-            for ch in label.chars() {
-                if x < inner.x + inner.width {
-                    if let Some(cell) = buf.cell_mut((x, y)) {
-                        cell.set_symbol(&ch.to_string());
-                    }
-                    x += 1;
-                }
-            }
-            // Bar
-            let bar_start = x;
-            for i in 0..u16::try_from(bar_max).unwrap_or(u16::MAX) {
-                if bar_start + i >= inner.x + inner.width { break; }
-                let symbol = if i < fill { "█" } else { "░" };
-                if let Some(cell) = buf.cell_mut((bar_start + i, y)) {
-                    cell.set_symbol(symbol)
-                        .set_style(if i < fill {
-                            status_style
-                        } else {
-                            Style::default().fg(self.theme.pending)
-                        });
-                }
-            }
-            // Trailing label + dur + pill
-            let trail = format!(" {} {dur:>4}ms {:>5}", step.label, pill(&step.status));
-            let trail_x = bar_start + u16::try_from(bar_max).unwrap_or(u16::MAX);
-            x = trail_x;
-            for ch in trail.chars() {
-                if x < inner.x + inner.width {
-                    if let Some(cell) = buf.cell_mut((x, y)) {
-                        cell.set_symbol(&ch.to_string());
-                    }
-                    x += 1;
-                }
-            }
-        }
+                Some(Line::from(vec![
+                    Span::raw(label),
+                    Span::styled(filled, status_style),
+                    Span::styled(pending, Style::default().fg(self.theme.pending)),
+                    Span::raw(trail),
+                ]))
+            })
+            .collect();
+
+        Paragraph::new(rows).render(inner, buf);
     }
 }
 
