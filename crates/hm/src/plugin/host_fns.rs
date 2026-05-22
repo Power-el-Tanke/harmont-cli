@@ -1016,36 +1016,35 @@ pub(crate) fn current_step_id() -> Option<uuid::Uuid> {
 mod plugin_kv_tests {
     use super::*;
 
+    // Both round-trip and per-plugin-name isolation are covered by a
+    // single `#[test]` because `XDG_CONFIG_HOME` and
+    // `set_current_plugin_name` are *process-global*. Running the two
+    // assertions as separate `#[test]`s flakes under CI's lower test
+    // parallelism: a sibling test can rewrite `XDG_CONFIG_HOME`
+    // between this test's set and its read, producing a spurious
+    // `None`. A single test serialises the env-var handoff and avoids
+    // pulling in a `serial_test`-style dev dep just for this.
     #[test]
-    fn plugin_kv_round_trip_through_disk() {
-        // Use a temp HOME so we don't stomp on the developer's
-        // real ~/.config/harmont/state.
+    fn plugin_kv_round_trip_and_isolation() {
         let temp = tempfile::tempdir().unwrap();
         // SAFETY: in-process env var set; reset after.
         unsafe {
             std::env::set_var("XDG_CONFIG_HOME", temp.path());
         }
-        set_current_plugin_name("test-plugin".into());
 
+        // Round-trip through disk.
+        set_current_plugin_name("test-plugin".into());
         kv_set_impl(KvScope::Plugin, "key", b"value".to_vec());
         assert_eq!(kv_get_impl(KvScope::Plugin, "key"), Some(b"value".to_vec()));
+        // Re-read: the in-memory state is irrelevant; only the
+        // on-disk file is authoritative.
+        assert_eq!(
+            kv_get_impl(KvScope::Plugin, "key"),
+            Some(b"value".to_vec())
+        );
 
-        // Simulate a fresh process: the in-memory state is gone; only
-        // the on-disk file is authoritative. Re-read.
-        let again = kv_get_impl(KvScope::Plugin, "key");
-        assert_eq!(again, Some(b"value".to_vec()));
-
-        clear_current_plugin_name();
-    }
-
-    #[test]
-    fn plugin_kv_isolated_per_plugin_name() {
-        let temp = tempfile::tempdir().unwrap();
-        // SAFETY: in-process env var set; reset after.
-        unsafe {
-            std::env::set_var("XDG_CONFIG_HOME", temp.path());
-        }
-
+        // Per-plugin-name isolation: keys written under one plugin
+        // name aren't visible to another.
         set_current_plugin_name("alpha".into());
         kv_set_impl(KvScope::Plugin, "k", b"a".to_vec());
 
