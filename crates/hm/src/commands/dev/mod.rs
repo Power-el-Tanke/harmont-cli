@@ -1,4 +1,8 @@
 //! `hm dev` — local Docker deployment subcommand tree.
+#![allow(
+    clippy::future_not_send,
+    reason = "tachyonfx::Shader is !Send by design; futures are .await'ed inline on the main task"
+)]
 //!
 //! Reads `.harmont/*.py` for `@hm.deploy` registrations (via a Python
 //! subprocess) and orchestrates long-lived containers on a per-session

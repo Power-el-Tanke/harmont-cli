@@ -1,4 +1,4 @@
-//! Cloud watch (host-fn fed) → TuiEvent adapter.
+//! Cloud watch (host-fn fed) → `TuiEvent` adapter.
 //!
 //! The cloud plugin runs `watch` inside WASM and emits wire
 //! `BuildEvent`s via the `hm_build_event_emit` host fn. The host fn

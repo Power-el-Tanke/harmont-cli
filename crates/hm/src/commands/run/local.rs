@@ -1,4 +1,10 @@
+#![allow(
+    clippy::future_not_send,
+    reason = "tachyonfx::Shader is !Send by design; futures are .await'ed inline on the main task"
+)]
+
 use anyhow::{Context, Result};
+use is_terminal::IsTerminal;
 
 use super::render::{ToolPaths, list_pipelines, render_pipeline_json};
 use crate::cli::RunArgs;
@@ -95,7 +101,6 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
     let parallelism = args.parallelism.unwrap_or_else(|| {
         std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get)
     });
-    use is_terminal::IsTerminal;
 
     let want_tui = args.format == "human"
         && std::env::var_os("NO_COLOR").is_none()

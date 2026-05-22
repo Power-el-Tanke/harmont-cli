@@ -1,7 +1,9 @@
-//! Human-readable BuildEvent formatter — writes prefixed step logs and
-//! brief status lines to stderr. Moved from the standalone
-//! `hm-plugin-output-human` WASM crate into the `hm` binary so the
-//! built-in formatter does not pay a WASM round-trip per event.
+//! Human-readable `BuildEvent` formatter.
+//!
+//! Writes prefixed step logs and brief status lines to stderr. Moved
+//! from the standalone `hm-plugin-output-human` WASM crate into the
+//! `hm` binary so the built-in formatter does not pay a WASM
+//! round-trip per event.
 
 use hm_plugin_protocol::BuildEvent;
 use std::collections::HashMap;
@@ -21,7 +23,7 @@ impl Human {
         }
     }
 
-    pub fn finalize(&mut self) {}
+    pub const fn finalize(&mut self) {}
 
     fn render(&mut self, ev: &BuildEvent) -> Vec<u8> {
         match ev {
@@ -36,10 +38,10 @@ impl Human {
             }
             BuildEvent::StepStart { step_id, runner, image } => {
                 let key = self.key_for(*step_id);
-                let line = match image {
-                    Some(img) => format!("[{key}] start (runner={runner} image={img})\n"),
-                    None => format!("[{key}] start (runner={runner})\n"),
-                };
+                let line = image.as_ref().map_or_else(
+                    || format!("[{key}] start (runner={runner})\n"),
+                    |img| format!("[{key}] start (runner={runner} image={img})\n"),
+                );
                 line.into_bytes()
             }
             BuildEvent::StepLog { step_id, line, .. } => {

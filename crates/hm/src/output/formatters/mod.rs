@@ -1,15 +1,18 @@
-//! Built-in BuildEvent formatters. External plugins can still register
-//! their own formatter via the `OutputFormatter` capability; these are
-//! the in-tree implementations that ship with every build of `hm`.
+//! Built-in `BuildEvent` formatters.
+//!
+//! External plugins can still register their own formatter via the
+//! `OutputFormatter` capability; these are the in-tree implementations
+//! that ship with every build of `hm`.
 
 use hm_plugin_protocol::BuildEvent;
 
 pub mod human;
 pub mod json;
 
-/// A formatter that lives inside the `hm` binary. Returned by
-/// [`builtin`] for names the orchestrator already knows. The
-/// orchestrator's output subscriber falls through to the WASM
+/// A formatter that lives inside the `hm` binary.
+///
+/// Returned by [`builtin`] for names the orchestrator already knows.
+/// The orchestrator's output subscriber falls through to the WASM
 /// plugin registry only when this returns `None`.
 #[derive(Debug)]
 pub enum Builtin {
@@ -25,7 +28,7 @@ impl Builtin {
         }
     }
 
-    pub fn finalize(&mut self) {
+    pub const fn finalize(&mut self) {
         match self {
             Self::Human(h) => h.finalize(),
             Self::Json(j) => j.finalize(),
@@ -37,7 +40,7 @@ impl Builtin {
 pub fn builtin(name: &str) -> Option<Builtin> {
     match name {
         "human" => Some(Builtin::Human(human::Human::default())),
-        "json" => Some(Builtin::Json(json::Json::default())),
+        "json" => Some(Builtin::Json(json::Json)),
         _ => None,
     }
 }

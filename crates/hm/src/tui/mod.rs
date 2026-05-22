@@ -1,4 +1,8 @@
 //! Mission Control TUI — host-side ratatui renderer.
+#![allow(
+    clippy::future_not_send,
+    reason = "tachyonfx::Shader is !Send by design; tui::run is .await'ed inline on the main task, never tokio::spawn'd."
+)]
 
 pub mod app;
 pub mod event;
@@ -55,7 +59,10 @@ const MIN_ROWS: u16 = 20;
 /// and renders until `BuildEnd` (or the user presses `q`/`Esc`/2×Ctrl-C).
 ///
 /// # Errors
+///
 /// Returns `TuiError::Io` for terminal-setup or draw failures.
+#[allow(clippy::too_many_lines, reason = "main event loop; splitting would obscure spawn/join symmetry")]
+#[allow(clippy::print_stderr, reason = "user-visible fallback notice on terminal-too-small resize")]
 pub async fn run(
     mut events: mpsc::Receiver<TuiEvent>,
     opts: TuiOptions,
@@ -139,12 +146,12 @@ pub async fn run(
                                 _ => {}
                             }
                         }
-                        CeEvent::Resize(cols, rows) => {
-                            if cols < MIN_COLS || rows < MIN_ROWS {
-                                drop(guard);
-                                eprintln!("[hm] terminal too small for TUI; falling back to streaming output");
-                                return Ok(consume_to_end(&mut events).await);
-                            }
+                        CeEvent::Resize(cols, rows)
+                            if cols < MIN_COLS || rows < MIN_ROWS =>
+                        {
+                            drop(guard);
+                            eprintln!("[hm] terminal too small for TUI; falling back to streaming output");
+                            return Ok(consume_to_end(&mut events).await);
                         }
                         _ => {}
                     }
@@ -216,12 +223,7 @@ pub async fn run(
             }
             ev = events.recv() => {
                 match ev {
-                    Some(e @ TuiEvent::StepCacheHit { .. }) => {
-                        needs_render = true;
-                        fx.push_sparkle(Rect::new(0, 2, 40, 6));
-                        state.apply(e);
-                    }
-                    Some(e @ TuiEvent::StepEnd { exit_code: 0, .. }) => {
+                    Some(e @ (TuiEvent::StepCacheHit { .. } | TuiEvent::StepEnd { exit_code: 0, .. })) => {
                         needs_render = true;
                         fx.push_sparkle(Rect::new(0, 2, 40, 6));
                         state.apply(e);
@@ -267,17 +269,18 @@ async fn consume_to_end(events: &mut mpsc::Receiver<TuiEvent>) -> i32 {
     code
 }
 
-/// Install a TUI-only `OrchestratorState` for non-orchestrated commands
-/// (e.g., `hm cloud build watch`). Returns the receiver the caller
-/// hands to `tui::run`. Internally, plugin emissions via
-/// `hm_build_event_emit` are translated `BuildEvent → TuiEvent` by the
-/// same translator the local source uses.
+/// Install a TUI-only `OrchestratorState` for non-orchestrated commands.
+///
+/// Returns the receiver the caller hands to `tui::run`. Internally,
+/// plugin emissions via `hm_build_event_emit` are translated
+/// `BuildEvent → TuiEvent` by the same translator the local source uses.
 ///
 /// # Panics
 ///
 /// Panics if a state is already installed (the orchestrator has run
 /// in this process). Cloud watch and the orchestrator are mutually
 /// exclusive within a single process invocation.
+#[must_use]
 pub fn install_session_sink() -> mpsc::Receiver<TuiEvent> {
     use crate::orchestrator::archive::ArchiveStore;
     use crate::orchestrator::events::EventBus;

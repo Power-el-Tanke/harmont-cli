@@ -40,10 +40,10 @@ impl Widget for Summary<'_> {
                 StepStatus::Failed => fail += 1,
                 _ => {}
             }
-            if let Some(d) = s.duration_ms {
-                if slowest.as_ref().map_or(true, |(_, p)| d > *p) {
-                    slowest = Some((s.label.clone(), d));
-                }
+            if let Some(d) = s.duration_ms
+                && slowest.as_ref().is_none_or(|(_, p)| d > *p)
+            {
+                slowest = Some((s.label.clone(), d));
             }
         }
         let total = self.state.steps.len().max(1);

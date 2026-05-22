@@ -100,6 +100,8 @@ mod tests {
             line: "hi".into(),
             ts: chrono::Utc::now(),
         };
-        let _ = ev.clone();
+        let cloned = ev.clone();
+        assert!(matches!(ev, TuiEvent::StepLog { .. }));
+        assert!(matches!(cloned, TuiEvent::StepLog { .. }));
     }
 }

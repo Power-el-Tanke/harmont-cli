@@ -12,6 +12,7 @@ use std::path::PathBuf;
     arg_required_else_help = true,
     disable_help_subcommand = true
 )]
+#[allow(clippy::struct_excessive_bools, reason = "flat CLI flag list; refactoring to a config struct is overkill for a clap derive")]
 pub struct Cli {
     /// Override the API base URL. Hidden flag — set `HARMONT_API_URL` instead.
     #[arg(long, global = true, env = "HARMONT_API_URL", hide = true)]

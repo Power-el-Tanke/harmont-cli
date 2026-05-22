@@ -21,7 +21,7 @@ impl std::fmt::Debug for Timeline<'_> {
     }
 }
 
-const fn pill(status: &StepStatus) -> &'static str {
+const fn pill(status: StepStatus) -> &'static str {
     match status {
         StepStatus::Queued => "queued",
         StepStatus::Running => "run",
@@ -61,12 +61,12 @@ impl Widget for Timeline<'_> {
                 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
                 let fill = ((dur as f64 / total_ms as f64) * bar_max as f64) as u16;
 
-                let status_style = self.theme.status(step.status.clone());
+                let status_style = self.theme.status(step.status);
                 let label = format!("c{} ", row + 1);
                 let filled: String = "█".repeat(fill as usize);
                 let pending_len = bar_max_u16.saturating_sub(fill) as usize;
                 let pending: String = "░".repeat(pending_len);
-                let trail = format!(" {} {dur:>4}ms {:>5}", step.label, pill(&step.status));
+                let trail = format!(" {} {dur:>4}ms {:>5}", step.label, pill(step.status));
 
                 Some(Line::from(vec![
                     Span::raw(label),

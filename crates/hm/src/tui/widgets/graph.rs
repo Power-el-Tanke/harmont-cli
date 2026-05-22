@@ -20,7 +20,7 @@ impl std::fmt::Debug for Graph<'_> {
     }
 }
 
-const fn glyph(status: &StepStatus) -> &'static str {
+const fn glyph(status: StepStatus) -> &'static str {
     match status {
         StepStatus::Queued => "●",
         StepStatus::Running => "◐",
@@ -54,8 +54,8 @@ impl Widget for Graph<'_> {
                         spans.push(Span::raw("─"));
                     }
                     spans.push(Span::styled(
-                        glyph(&step.status).to_string(),
-                        self.theme.status(step.status.clone()),
+                        glyph(step.status).to_string(),
+                        self.theme.status(step.status),
                     ));
                     first = false;
                 }

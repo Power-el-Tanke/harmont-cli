@@ -76,7 +76,7 @@ pub(crate) async fn image_exists_impl(tag: String) -> bool {
 
 pub(crate) async fn pull_impl(tag: String) -> Result<()> {
     let s = current().context("no orchestrator state")?;
-    let Some(docker) = s.docker.as_ref().cloned() else {
+    let Some(docker) = s.docker.clone() else {
         anyhow::bail!("no docker client in orchestrator state");
     };
     let cancel = s.cancel.clone();
@@ -94,7 +94,7 @@ pub(crate) async fn pull_impl(tag: String) -> Result<()> {
 
 pub(crate) async fn start_container_impl(args: DockerStartArgs) -> Result<String> {
     let s = current().context("no orchestrator state")?;
-    let Some(docker) = s.docker.as_ref().cloned() else {
+    let Some(docker) = s.docker.clone() else {
         anyhow::bail!("no docker client in orchestrator state");
     };
     let env_vec: Vec<String> = args
@@ -114,7 +114,7 @@ pub(crate) async fn extract_workspace_impl(args: DockerExtractArgs) -> Result<()
         anyhow::bail!("archive {} is empty or unknown", args.archive_id.0);
     }
     let cancel = s.cancel.clone();
-    let Some(docker) = s.docker.as_ref().cloned() else {
+    let Some(docker) = s.docker.clone() else {
         anyhow::bail!("no docker client in orchestrator state");
     };
     let cid = args.container_id;
@@ -154,7 +154,7 @@ pub(crate) async fn exec_impl(args: DockerExecArgs) -> Result<i32> {
 
     // Future doing the exec; we race it against cancellation.
     let cancel = s.cancel.clone();
-    let Some(docker) = s.docker.as_ref().cloned() else {
+    let Some(docker) = s.docker.clone() else {
         anyhow::bail!("no docker client in orchestrator state");
     };
     let cid = args.container_id.clone();
@@ -219,10 +219,10 @@ pub(crate) async fn remove_image_impl(tag: String) -> Result<()> {
 }
 
 pub(crate) async fn stop_remove_impl(container_id: String) {
-    if let Some(s) = current() {
-        if let Some(docker) = s.docker.as_ref() {
-            docker.stop_remove(&container_id).await;
-        }
+    if let Some(s) = current()
+        && let Some(docker) = s.docker.as_ref()
+    {
+        docker.stop_remove(&container_id).await;
     }
 }
 

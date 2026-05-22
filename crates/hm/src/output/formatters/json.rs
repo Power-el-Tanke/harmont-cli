@@ -1,4 +1,5 @@
-//! JSON-lines BuildEvent formatter — one event per line to stdout.
+//! JSON-lines `BuildEvent` formatter — one event per line to stdout.
+//!
 //! Moved from the standalone `hm-plugin-output-json` WASM crate.
 
 use hm_plugin_protocol::BuildEvent;
@@ -14,7 +15,7 @@ impl Json {
         }
     }
 
-    pub fn finalize(&mut self) {}
+    pub const fn finalize(&mut self) {}
 }
 
 /// Serialise `ev` to one JSON line (trailing `\n` included). Returns
@@ -27,7 +28,7 @@ fn format_event(ev: &BuildEvent) -> Option<Vec<u8>> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, reason = "test assertions intentionally use expect/unwrap")]
 mod tests {
     use super::*;
     use hm_plugin_protocol::PlanSummary;

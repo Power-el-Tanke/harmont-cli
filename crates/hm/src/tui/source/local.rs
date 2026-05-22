@@ -92,7 +92,7 @@ pub(crate) fn translate(ev: BuildEvent) -> TuiEvent {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic, reason = "test-only: panic on unexpected event variant is intentional")]
 mod tests {
     use super::*;
     use hm_plugin_protocol::PlanSummary;

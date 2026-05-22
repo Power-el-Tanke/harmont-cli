@@ -1,4 +1,8 @@
 //! Subcommand-plugin dispatcher.
+#![allow(
+    clippy::future_not_send,
+    reason = "tachyonfx::Shader is !Send by design; futures are .await'ed inline on the main task"
+)]
 //!
 //! Routes `hm <unknown-verb> <args...>` to the registered plugin
 //! whose manifest's `SubcommandSpec.verb` matches the first argv
@@ -18,21 +22,23 @@ use hm_plugin_protocol::{ExitInfo, SubcommandInput};
 use crate::error::HmError;
 use crate::plugin::{PluginRegistry, RegistryConfig};
 
-/// Entry point: invoke a plugin-provided subcommand. `argv` is the
-/// captured `external_subcommand` args INCLUDING the verb itself (clap's
-/// convention). `no_tui` suppresses the interactive TUI even when stdout
-/// is a TTY. Returns the process exit code.
+/// Entry point: invoke a plugin-provided subcommand.
+///
+/// `argv` is the captured `external_subcommand` args INCLUDING the verb
+/// itself (clap's convention). `no_tui` suppresses the interactive TUI
+/// even when stdout is a TTY. Returns the process exit code.
 ///
 /// # Errors
+///
 /// Returns an error if no plugin claims the verb, the plugin fails to
 /// load, or the plugin panics during dispatch. Non-zero `ExitInfo.exit_code`
 /// is surfaced as `Ok(i32)`, not as `Err`.
 pub async fn run(argv: Vec<String>, no_tui: bool) -> Result<i32> {
+    use is_terminal::IsTerminal;
+
     if argv.is_empty() {
         anyhow::bail!("dispatcher called with empty argv (clap bug)");
     }
-
-    use is_terminal::IsTerminal;
 
     // Detect `hm cloud build watch ...` to opt into the TUI session sink.
     let is_cloud_build_watch = argv.first().map(String::as_str) == Some("cloud")

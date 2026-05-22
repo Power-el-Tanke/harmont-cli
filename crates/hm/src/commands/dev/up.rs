@@ -1,4 +1,8 @@
 //! `hm dev up` — bring deployments up in the foreground.
+#![allow(
+    clippy::future_not_send,
+    reason = "tachyonfx::Shader is !Send by design; futures are .await'ed inline on the main task"
+)]
 //!
 //! Flow: registry dump (subprocess) → boot plan (topo) → create network
 //! → boot containers per level (parallel) → log mux → wait signal →
@@ -44,7 +48,13 @@ struct BootCtx {
 ///
 /// Returns an error if the registry dump fails, Docker is unreachable,
 /// network creation fails, or any container boot fails.
+///
+/// # Panics
+///
+/// Panics if the internal `log_rx` channel holder is unexpectedly empty
+/// (indicates a logic error in the TUI/logmux path selection).
 #[allow(clippy::print_stderr, reason = "status messages to stderr are intentional for a foreground CLI")]
+#[allow(clippy::expect_used, reason = "log_rx holder is guaranteed non-None by the branching logic above each take()")]
 pub async fn handle(args: DevUpArgs, ctx: RunContext) -> Result<i32> {
     let worktree_root = resolve_worktree_root()?;
     let wt_hash = worktree_hash(&worktree_root);

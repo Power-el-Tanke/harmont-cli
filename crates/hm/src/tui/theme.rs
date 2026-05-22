@@ -41,7 +41,7 @@ impl Theme {
     }
 
     #[must_use]
-    pub fn status(&self, status: crate::tui::app::StepStatus) -> Style {
+    pub const fn status(&self, status: crate::tui::app::StepStatus) -> Style {
         use crate::tui::app::StepStatus;
         let c = match status {
             StepStatus::Queued => self.pending,

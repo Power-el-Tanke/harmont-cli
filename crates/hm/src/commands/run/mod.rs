@@ -1,3 +1,8 @@
+#![allow(
+    clippy::future_not_send,
+    reason = "tachyonfx::Shader is !Send by design; futures are .await'ed inline on the main task"
+)]
+
 use anyhow::Result;
 
 use crate::cli::RunArgs;

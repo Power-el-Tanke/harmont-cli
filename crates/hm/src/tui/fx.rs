@@ -18,6 +18,7 @@ pub struct ActiveEffect {
     pub area: Rect,
 }
 
+#[allow(clippy::missing_fields_in_debug, reason = "Effect is not Debug; area is sufficient for diagnostics")]
 impl std::fmt::Debug for ActiveEffect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ActiveEffect").field("area", &self.area).finish()

@@ -1,7 +1,8 @@
-//! Event-source adapters. Each command surface (`hm run`, `hm dev up`,
-//! `hm cloud build watch`) constructs a source that converts its
-//! command-specific event stream into `TuiEvent`s sent on the mpsc
-//! channel `tui::run` consumes.
+//! Event-source adapters for the Mission Control TUI.
+//!
+//! Each command surface (`hm run`, `hm dev up`, `hm cloud build watch`)
+//! constructs a source that converts its command-specific event stream
+//! into `TuiEvent`s sent on the mpsc channel `tui::run` consumes.
 
 pub mod local;
 pub mod dev;

@@ -1,7 +1,9 @@
-//! Build-event subscriber that dispatches every `BuildEvent` into the
-//! selected output formatter. Built-in formatters (`human`, `json`) are
-//! resolved first and bypass the WASM plugin registry entirely; the
-//! registry lookup is only reached for externally-registered formatters.
+//! Build-event subscriber for output formatting.
+//!
+//! Dispatches every `BuildEvent` into the selected output formatter.
+//! Built-in formatters (`human`, `json`) are resolved first and bypass
+//! the WASM plugin registry entirely; the registry lookup is only
+//! reached for externally-registered formatters.
 //!
 //! Replaces the plan-2 stop-gap `stderr_sink`. The subscriber acquires
 //! an `Arc<LoadedPlugin>` from the registry per event; the actual

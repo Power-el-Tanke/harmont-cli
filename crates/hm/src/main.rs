@@ -3,6 +3,10 @@
     reason = "the panic banner in handle_error is the last-resort stderr writer"
 )]
 #![allow(
+    clippy::future_not_send,
+    reason = "tachyonfx::Shader is !Send by design; the main task is single-threaded"
+)]
+#![allow(
     clippy::multiple_crate_versions,
     reason = "transitive dependency version conflicts in rand/windows-sys/thiserror chains; not fixable without upstream updates"
 )]

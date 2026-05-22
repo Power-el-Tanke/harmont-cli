@@ -47,7 +47,7 @@ impl Widget for LogPane<'_> {
         let entries: Vec<_> = log
             .entries
             .iter()
-            .filter(|e| self.filter.map_or(true, |f| e.line.contains(f)))
+            .filter(|e| self.filter.is_none_or(|f| e.line.contains(f)))
             .collect();
 
         let height = inner.height as usize;
