@@ -111,20 +111,10 @@ pub async fn run(
         PluginRegistry::load(RegistryConfig {
             auto_discover: true,
             extra_paths: vec![],
-            embedded: vec![
-                (
-                    "harmont-docker",
-                    crate::plugin::embedded::DOCKER_PLUGIN_WASM,
-                ),
-                (
-                    "harmont-output-human",
-                    crate::plugin::embedded::OUTPUT_HUMAN_PLUGIN_WASM,
-                ),
-                (
-                    "harmont-output-json",
-                    crate::plugin::embedded::OUTPUT_JSON_PLUGIN_WASM,
-                ),
-            ],
+            embedded: vec![(
+                "harmont-docker",
+                crate::plugin::embedded::DOCKER_PLUGIN_WASM,
+            )],
             pool_sizes,
         })
         .context("load plugin registry")?,

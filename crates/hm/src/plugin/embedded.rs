@@ -5,16 +5,6 @@
 pub static DOCKER_PLUGIN_WASM: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/hm_plugin_docker.wasm"));
 
-/// Bytes of the in-tree human-readable output-formatter plugin.
-/// Loaded when `--format human` (the default) is selected.
-pub static OUTPUT_HUMAN_PLUGIN_WASM: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/hm_plugin_output_human.wasm"));
-
-/// Bytes of the in-tree JSON-lines output-formatter plugin.
-/// Loaded when `--format json` is selected.
-pub static OUTPUT_JSON_PLUGIN_WASM: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/hm_plugin_output_json.wasm"));
-
 /// Bytes of the in-tree cloud client plugin (`hm cloud …`). Loaded by
 /// the host dispatcher whenever the user invokes the `cloud` verb.
 pub static CLOUD_PLUGIN_WASM: &[u8] =

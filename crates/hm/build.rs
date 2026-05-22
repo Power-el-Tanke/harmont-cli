@@ -1,7 +1,6 @@
 //! Build script: compiles the embedded WASM plugins shipped with `hm`
-//! (`hm-plugin-docker`, `hm-plugin-output-human`, `hm-plugin-output-json`,
-//! `hm-plugin-cloud`) and stages their artifacts under `$OUT_DIR` so the
-//! host can `include_bytes!` them at runtime.
+//! (`hm-plugin-docker`, `hm-plugin-cloud`) and stages their artifacts under
+//! `$OUT_DIR` so the host can `include_bytes!` them at runtime.
 #![allow(
     clippy::expect_used,
     clippy::panic,
@@ -69,7 +68,5 @@ fn build_wasm_plugin(crate_name: &str) {
 
 fn build_embedded_plugins() {
     build_wasm_plugin("hm-plugin-docker");
-    build_wasm_plugin("hm-plugin-output-human");
-    build_wasm_plugin("hm-plugin-output-json");
     build_wasm_plugin("hm-plugin-cloud");
 }

@@ -77,14 +77,6 @@ async fn run_plugin(argv: Vec<String>) -> Result<i32> {
                 "harmont-docker",
                 crate::plugin::embedded::DOCKER_PLUGIN_WASM,
             ),
-            (
-                "harmont-output-human",
-                crate::plugin::embedded::OUTPUT_HUMAN_PLUGIN_WASM,
-            ),
-            (
-                "harmont-output-json",
-                crate::plugin::embedded::OUTPUT_JSON_PLUGIN_WASM,
-            ),
             ("harmont-cloud", crate::plugin::embedded::CLOUD_PLUGIN_WASM),
         ],
         pool_sizes: BTreeMap::new(),
