@@ -38,7 +38,9 @@ pub struct OrchestratorState {
     pub event_bus: Arc<EventBus>,
     pub archives: ArchiveStore,
     pub cancel: CancellationToken,
-    pub docker: DockerClient,
+    /// Optional — populated for build runs; absent for TUI-only sessions
+    /// (e.g., `hm cloud build watch`) that never call docker host fns.
+    pub docker: Option<DockerClient>,
     pub run_id: Uuid,
     /// Optional TUI mpsc sender; set by `scheduler::run` when the host
     /// TUI is the active output renderer. Populated for both local

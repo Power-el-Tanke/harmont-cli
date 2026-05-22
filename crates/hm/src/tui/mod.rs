@@ -266,3 +266,48 @@ async fn consume_to_end(events: &mut mpsc::Receiver<TuiEvent>) -> i32 {
     }
     code
 }
+
+/// Install a TUI-only `OrchestratorState` for non-orchestrated commands
+/// (e.g., `hm cloud build watch`). Returns the receiver the caller
+/// hands to `tui::run`. Internally, plugin emissions via
+/// `hm_build_event_emit` are translated `BuildEvent → TuiEvent` by the
+/// same translator the local source uses.
+///
+/// # Panics
+///
+/// Panics if a state is already installed (the orchestrator has run
+/// in this process). Cloud watch and the orchestrator are mutually
+/// exclusive within a single process invocation.
+pub fn install_session_sink() -> mpsc::Receiver<TuiEvent> {
+    use crate::orchestrator::archive::ArchiveStore;
+    use crate::orchestrator::events::EventBus;
+    use crate::orchestrator::state::{install, OrchestratorState};
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    let (bus_tx, mut bus_rx) = mpsc::channel::<hm_plugin_protocol::BuildEvent>(
+        source::TUI_CHANNEL_CAPACITY,
+    );
+    let (tui_tx, tui_rx) = source::channel();
+
+    tokio::spawn(async move {
+        while let Some(ev) = bus_rx.recv().await {
+            let translated = source::local::translate(ev);
+            if tui_tx.send(translated).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let state = Arc::new(OrchestratorState {
+        event_bus: EventBus::new(),
+        archives: ArchiveStore::new(),
+        cancel: crate::orchestrator::cancel::CancellationToken::new(),
+        docker: None,
+        run_id: Uuid::new_v4(),
+        tui_event_tx: Some(bus_tx),
+    });
+    install(state);
+
+    tui_rx
+}

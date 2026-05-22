@@ -50,18 +50,24 @@ pub(crate) async fn ping_impl() -> bool {
     let Some(s) = current() else {
         return false;
     };
-    s.docker.ping().await.is_ok()
+    let Some(docker) = s.docker.as_ref() else {
+        return false;
+    };
+    docker.ping().await.is_ok()
 }
 
 pub(crate) async fn image_exists_impl(tag: String) -> bool {
     let Some(s) = current() else { return false };
-    s.docker.image_exists(&tag).await.unwrap_or(false)
+    let Some(docker) = s.docker.as_ref() else { return false };
+    docker.image_exists(&tag).await.unwrap_or(false)
 }
 
 pub(crate) async fn pull_impl(tag: String) -> Result<()> {
     let s = current().context("no orchestrator state")?;
+    let Some(docker) = s.docker.as_ref().cloned() else {
+        anyhow::bail!("no docker client in orchestrator state");
+    };
     let cancel = s.cancel.clone();
-    let docker = s.docker.clone();
     let pull_fut = async move { docker.pull_image(&tag).await };
     tokio::select! {
         result = pull_fut => result,
@@ -71,12 +77,15 @@ pub(crate) async fn pull_impl(tag: String) -> Result<()> {
 
 pub(crate) async fn start_container_impl(args: DockerStartArgs) -> Result<String> {
     let s = current().context("no orchestrator state")?;
+    let Some(docker) = s.docker.as_ref().cloned() else {
+        anyhow::bail!("no docker client in orchestrator state");
+    };
     let env_vec: Vec<String> = args
         .env
         .into_iter()
         .map(|(k, v)| format!("{k}={v}"))
         .collect();
-    s.docker
+    docker
         .start_long_lived(&args.image, &env_vec, &args.workdir, &args.name_hint)
         .await
 }
@@ -88,7 +97,9 @@ pub(crate) async fn extract_workspace_impl(args: DockerExtractArgs) -> Result<()
         anyhow::bail!("archive {} is empty or unknown", args.archive_id.0);
     }
     let cancel = s.cancel.clone();
-    let docker = s.docker.clone();
+    let Some(docker) = s.docker.as_ref().cloned() else {
+        anyhow::bail!("no docker client in orchestrator state");
+    };
     let cid = args.container_id;
     let workdir = args.workdir;
     let cmd = vec![
@@ -126,7 +137,9 @@ pub(crate) async fn exec_impl(args: DockerExecArgs) -> Result<i32> {
 
     // Future doing the exec; we race it against cancellation.
     let cancel = s.cancel.clone();
-    let docker = s.docker.clone();
+    let Some(docker) = s.docker.as_ref().cloned() else {
+        anyhow::bail!("no docker client in orchestrator state");
+    };
     let cid = args.container_id.clone();
     let cmd = args.cmd.clone();
     let workdir = args.workdir.clone();
@@ -172,19 +185,27 @@ async fn wait_cancel(cancel: &crate::orchestrator::cancel::CancellationToken) {
 
 pub(crate) async fn commit_impl(args: DockerCommitArgs) -> Result<String> {
     let s = current().context("no orchestrator state")?;
-    s.docker
+    let Some(docker) = s.docker.as_ref() else {
+        anyhow::bail!("no docker client in orchestrator state");
+    };
+    docker
         .commit_container(&args.container_id, &args.tag)
         .await
 }
 
 pub(crate) async fn remove_image_impl(tag: String) -> Result<()> {
     let s = current().context("no orchestrator state")?;
-    s.docker.remove_image(&tag).await
+    let Some(docker) = s.docker.as_ref() else {
+        anyhow::bail!("no docker client in orchestrator state");
+    };
+    docker.remove_image(&tag).await
 }
 
 pub(crate) async fn stop_remove_impl(container_id: String) {
     if let Some(s) = current() {
-        s.docker.stop_remove(&container_id).await;
+        if let Some(docker) = s.docker.as_ref() {
+            docker.stop_remove(&container_id).await;
+        }
     }
 }
 

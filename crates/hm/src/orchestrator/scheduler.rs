@@ -92,7 +92,7 @@ pub async fn run(
         event_bus: bus.clone(),
         archives,
         cancel: cancel.clone(),
-        docker: docker.clone(),
+        docker: Some(docker.clone()),
         run_id,
         tui_event_tx: extra_event_tx.clone(),
     });
@@ -351,7 +351,11 @@ async fn run_chain(
         // Decide cache outcome host-side.
         let decision = {
             let s = state::current().context("no orchestrator state")?;
-            cache::decide(&s.docker, &step_wire).await?
+            let docker = s
+                .docker
+                .as_ref()
+                .context("no docker client in orchestrator state")?;
+            cache::decide(docker, &step_wire).await?
         };
         if let hm_plugin_protocol::CacheDecision::Hit { tag } = &decision {
             bus.emit(BuildEvent::StepCacheHit {
