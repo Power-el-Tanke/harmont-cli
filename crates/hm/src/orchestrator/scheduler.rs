@@ -162,8 +162,18 @@ pub async fn run(
 
     // Spawn the output subscriber. Dispatches every BuildEvent to the
     // selected output-formatter plugin (default: `human`).
-    let sink_handle =
-        super::output_subscriber::spawn(bus.clone(), registry.clone(), format_name.clone());
+    //
+    // Skip when a TUI sink is wired: the TUI owns stdout and the human
+    // formatter would scroll log lines over its rendering.
+    let sink_handle = if state_arc.tui_event_tx.is_none() {
+        Some(super::output_subscriber::spawn(
+            bus.clone(),
+            registry.clone(),
+            format_name.clone(),
+        ))
+    } else {
+        None
+    };
 
     let extra_handle = state_arc.tui_event_tx.clone().map(|tx| {
         let mut rx = bus.subscribe();
@@ -283,7 +293,9 @@ pub async fn run(
 
     // Wait briefly for the sink to drain the BuildEnd event. It exits
     // when it sees BuildEnd, so this completes quickly.
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), sink_handle).await;
+    if let Some(h) = sink_handle {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), h).await;
+    }
 
     if let Some(h) = extra_handle {
         let _ = h.await;
