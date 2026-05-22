@@ -3,7 +3,6 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 
@@ -60,11 +59,7 @@ impl Widget for Graph<'_> {
                     ));
                     first = false;
                 }
-                if spans.is_empty() {
-                    Line::from(Span::styled(String::new(), Style::default()))
-                } else {
-                    Line::from(spans)
-                }
+                Line::from(spans)
             })
             .collect();
 
