@@ -2,7 +2,9 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::widgets::Widget;
+use ratatui::style::Style;
+use ratatui::text::Line;
+use ratatui::widgets::{Paragraph, Widget};
 
 use crate::tui::theme::Theme;
 
@@ -20,14 +22,7 @@ impl std::fmt::Debug for Filter<'_> {
 impl Widget for Filter<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let prompt = format!(" /{}_", self.query);
-        let mut x = area.x;
-        for ch in prompt.chars() {
-            if x >= area.x + area.width { break; }
-            if let Some(cell) = buf.cell_mut((x, area.y)) {
-                cell.set_symbol(&ch.to_string())
-                    .set_style(ratatui::style::Style::default().fg(self.theme.accent_a));
-            }
-            x += 1;
-        }
+        let line = Line::styled(prompt, Style::default().fg(self.theme.accent_a));
+        Paragraph::new(line).render(area, buf);
     }
 }
