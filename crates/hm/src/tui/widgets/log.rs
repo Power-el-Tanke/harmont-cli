@@ -3,7 +3,8 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
-use ratatui::widgets::{Block, Borders, Widget};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 
 use crate::tui::app::AppState;
 use crate::tui::theme::Theme;
@@ -26,7 +27,9 @@ impl std::fmt::Debug for LogPane<'_> {
 
 impl Widget for LogPane<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let chain_label = self.state.chains
+        let chain_label = self
+            .state
+            .chains
             .get(self.state.focused_chain)
             .map(|c| c.label.clone())
             .unwrap_or_default();
@@ -41,46 +44,43 @@ impl Widget for LogPane<'_> {
         let Some(step_id) = self.state.focused_step_id() else { return };
         let Some(log) = self.state.logs.get(&step_id) else { return };
 
-        let lines: Vec<_> = log.entries.iter()
+        let entries: Vec<_> = log
+            .entries
+            .iter()
             .filter(|e| self.filter.map_or(true, |f| e.line.contains(f)))
             .collect();
 
         let height = inner.height as usize;
-        let start = lines.len().saturating_sub(height + self.scroll);
-        for (i, entry) in lines.iter().skip(start).take(height).enumerate() {
-            let prefix = match entry.stream {
-                hm_plugin_protocol::StdStream::Stdout => "  ",
-                hm_plugin_protocol::StdStream::Stderr => "! ",
-            };
-            let line = format!("{prefix}{}", entry.line);
-            let y = inner.y + u16::try_from(i).unwrap_or(u16::MAX);
-            let mut x = inner.x;
-            for ch in line.chars() {
-                if x >= inner.x + inner.width { break; }
-                if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_symbol(&ch.to_string())
-                        .set_style(if entry.stream == hm_plugin_protocol::StdStream::Stderr {
-                            Style::default().fg(self.theme.text_dim)
-                        } else {
-                            Style::default()
-                        });
-                }
-                x += 1;
-            }
-        }
+        let start = entries.len().saturating_sub(height + self.scroll);
+        let visible: Vec<Line<'_>> = entries
+            .iter()
+            .skip(start)
+            .take(height)
+            .map(|entry| {
+                let prefix = match entry.stream {
+                    hm_plugin_protocol::StdStream::Stdout => "  ",
+                    hm_plugin_protocol::StdStream::Stderr => "! ",
+                };
+                let style = if entry.stream == hm_plugin_protocol::StdStream::Stderr {
+                    Style::default().fg(self.theme.text_dim)
+                } else {
+                    Style::default()
+                };
+                Line::from(vec![
+                    Span::styled(prefix.to_string(), style),
+                    Span::styled(entry.line.clone(), style),
+                ])
+            })
+            .collect();
+
+        Paragraph::new(visible).render(inner, buf);
 
         if log.dropped > 0 {
             let drop_msg = format!("  … {} events dropped (lagged) …", log.dropped);
-            let y = inner.y;
-            let mut x = inner.x;
-            for ch in drop_msg.chars() {
-                if x >= inner.x + inner.width { break; }
-                if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_symbol(&ch.to_string())
-                        .set_style(Style::default().fg(self.theme.text_dim));
-                }
-                x += 1;
-            }
+            let style = Style::default().fg(self.theme.text_dim);
+            let line = Line::styled(drop_msg, style);
+            let drop_area = Rect::new(inner.x, inner.y, inner.width, 1);
+            Paragraph::new(line).render(drop_area, buf);
         }
     }
 }
