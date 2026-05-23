@@ -19,12 +19,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use hm_plugin_protocol::{Capability, ManifestError, PluginManifest};
+use hm_plugin_protocol::{Capability, PluginManifest};
 
+use crate::error::RuntimeError;
 use crate::host::LoadedPlugin;
 use crate::host_api::HostApiImpl;
 use crate::paths;
-use crate::error::RuntimeError;
 
 #[derive(Debug)]
 pub struct RegistryConfig {
@@ -79,7 +79,7 @@ impl PluginRegistry {
                     }
                     let p = LoadedPlugin::load(&path, config.host_api.clone())
                         .with_context(|| format!("load {}", path.display()))?;
-                    validate(&p.manifest)?;
+                    p.manifest.validate().map_err(RuntimeError::from)?;
                     plugins.push(Arc::new(p));
                 }
             }
@@ -88,7 +88,7 @@ impl PluginRegistry {
         for path in &config.extra_paths {
             let p = LoadedPlugin::load(path, config.host_api.clone())
                 .with_context(|| format!("load {}", path.display()))?;
-            validate(&p.manifest)?;
+            p.manifest.validate().map_err(RuntimeError::from)?;
             plugins.push(Arc::new(p));
         }
 
@@ -170,26 +170,3 @@ impl PluginRegistry {
     }
 }
 
-fn validate(m: &PluginManifest) -> Result<()> {
-    m.validate().map_err(|e| match e {
-        ManifestError::ApiVersion {
-            name,
-            found,
-            expected,
-        } => RuntimeError::PluginManifest {
-            name,
-            expected_api: expected,
-            found_api: found,
-        }
-        .into(),
-        ManifestError::NoCapabilities { ref name }
-        | ManifestError::BadRunnerName { ref name, .. }
-        | ManifestError::DuplicateSubcommandVerb { ref name, .. } => RuntimeError::PluginLoad {
-            name: name.clone(),
-            path: std::path::PathBuf::new(),
-            reason: e.to_string(),
-            doc_url: "https://harmont.dev/docs/plugins/manifest",
-        }
-        .into(),
-    })
-}

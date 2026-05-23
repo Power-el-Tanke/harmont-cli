@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+
+use hm_plugin_protocol::ManifestError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -47,4 +49,28 @@ pub enum RuntimeError {
         plugin_a: String,
         plugin_b: String,
     },
+}
+
+impl From<ManifestError> for RuntimeError {
+    fn from(e: ManifestError) -> Self {
+        match e {
+            ManifestError::ApiVersion {
+                name,
+                found,
+                expected,
+            } => Self::PluginManifest {
+                name,
+                expected_api: expected,
+                found_api: found,
+            },
+            ManifestError::NoCapabilities { ref name }
+            | ManifestError::BadRunnerName { ref name, .. }
+            | ManifestError::DuplicateSubcommandVerb { ref name, .. } => Self::PluginLoad {
+                name: name.clone(),
+                path: PathBuf::new(),
+                reason: e.to_string(),
+                doc_url: "https://harmont.dev/docs/plugins/manifest",
+            },
+        }
+    }
 }
