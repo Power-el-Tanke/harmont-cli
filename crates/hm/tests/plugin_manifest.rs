@@ -17,7 +17,7 @@ use harmont_cli::plugin::{PluginRegistry, RegistryConfig};
 
 #[test]
 fn rejects_wrong_api_version() {
-    let path = fixtures::fixture_path("bad_api_version");
+    let path = fixtures::fixture_path("hm-fixture-bad-api-version");
     let err = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
         extra_paths: vec![path],
@@ -41,7 +41,7 @@ fn rejects_wrong_api_version() {
 
 #[test]
 fn rejects_duplicate_runner() {
-    let path = fixtures::fixture_path("noop_executor");
+    let path = fixtures::fixture_path("hm-fixture-noop-executor");
     let err = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
         extra_paths: vec![path.clone(), path],

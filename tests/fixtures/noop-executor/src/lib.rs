@@ -2,11 +2,8 @@
 //! receives into a `Plugin`-scoped KV slot so tests can inspect it
 //! after invocation.
 
-#![no_main]
-// Test fixtures: relax the workspace's pedantic/nursery lints so the
-// manifest construction (`"...".into()`, `vec![...]`) and one-shot
-// `serde_json::to_vec` reads cleanly.
 #![allow(
+    unsafe_code,
     clippy::pedantic,
     clippy::nursery,
     clippy::cargo,
@@ -15,27 +12,34 @@
     clippy::missing_errors_doc
 )]
 
+use core::future::Future;
 use hm_plugin_sdk::*;
 
 #[derive(Default)]
 struct NoopExec;
 
 impl StepExecutor for NoopExec {
-    fn run(&self, input: ExecutorInput) -> Result<StepResult, PluginError> {
-        let key = format!("seen:{}", input.step.key);
-        let val =
-            serde_json::to_vec(&input).map_err(|e| PluginError::new("serde", e.to_string()))?;
-        host::kv_set(KvScope::Plugin, &key, &val);
-        host::log(Level::Info, &format!("noop ran step '{}'", input.step.key));
-        Ok(StepResult {
-            exit_code: 0,
-            committed_snapshot: None,
-            artifacts: vec![],
-        })
+    fn run<'a>(
+        &'a self,
+        ctx: &'a PluginContext<'a>,
+        input: ExecutorInput,
+    ) -> impl Future<Output = Result<StepResult, PluginError>> + Send + 'a {
+        async move {
+            let key = format!("seen:{}", input.step.key);
+            let val = serde_json::to_vec(&input)
+                .map_err(|e| PluginError::new("serde", e.to_string()))?;
+            ctx.kv_set(KvScope::Plugin, &key, &val);
+            ctx.log(Level::Info, &format!("noop ran step '{}'", input.step.key));
+            Ok(StepResult {
+                exit_code: 0,
+                committed_snapshot: None,
+                artifacts: vec![],
+            })
+        }
     }
 }
 
-register_plugin!(
+hm_plugin!(
     manifest = PluginManifest {
         api_version: HM_PLUGIN_API_VERSION,
         name: "harmont-fixture-noop".into(),
@@ -46,7 +50,7 @@ register_plugin!(
             default: false,
             step_schema: None,
         })],
-        required_host_fns: vec!["hm_log".into(), "hm_kv_set".into()],
+        required_host_fns: vec![],
         config_schema: None,
         allowed_hosts: vec![],
     },

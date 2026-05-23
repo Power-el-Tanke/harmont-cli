@@ -70,7 +70,7 @@ async fn runner_field_dispatches_to_named_plugin() {
     // 1. Load the freestyle fixture into a clean registry.
     let reg = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
-        extra_paths: vec![fixtures::fixture_path("freestyle_runner")],
+        extra_paths: vec![fixtures::fixture_path("hm-fixture-freestyle-runner")],
         embedded: vec![],
         ..Default::default()
     })

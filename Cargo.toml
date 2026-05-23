@@ -9,7 +9,12 @@ members = [
     "crates/hm-plugin-output-human",
     "crates/hm-plugin-output-json",
     "crates/hm-plugin-cloud",
-    "crates/hm-fixtures",
+    "tests/fixtures/noop-executor",
+    "tests/fixtures/recording-hook",
+    "tests/fixtures/failing-subcommand",
+    "tests/fixtures/host-fn-probe",
+    "tests/fixtures/bad-api-version",
+    "tests/fixtures/freestyle-runner",
 ]
 default-members = [
     "crates/hm",

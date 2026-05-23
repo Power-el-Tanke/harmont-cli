@@ -1,10 +1,4 @@
-//! Locates fixture `.wasm` files for tests.
-//!
-//! We do not depend on the `hm-fixtures` crate as a normal
-//! dependency because its target is `wasm32-wasip1`. Instead, tests
-//! invoke `cargo build --target wasm32-wasip1 -p hm-fixtures`
-//! lazily and read the output from
-//! `cli/target/wasm32-wasip1/debug/<name>.wasm`.
+//! Locates fixture dylib files for tests.
 
 #![allow(dead_code)]
 
@@ -14,8 +8,8 @@ use std::sync::OnceLock;
 
 static BUILT: OnceLock<()> = OnceLock::new();
 
-/// Build the `hm-fixtures` crate for `wasm32-wasip1` if it hasn't been
-/// built in this test process yet. Idempotent across threads.
+/// Build the fixture `cdylib` crates if they haven't been built in this
+/// test process yet. Idempotent across threads.
 ///
 /// # Panics
 ///
@@ -24,31 +18,44 @@ static BUILT: OnceLock<()> = OnceLock::new();
 /// is the right behaviour.
 pub fn ensure_built() {
     BUILT.get_or_init(|| {
-        let status = Command::new("cargo")
-            .args(["build", "--target", "wasm32-wasip1", "-p", "hm-fixtures"])
-            .current_dir(workspace_root())
-            .status()
-            .expect("invoke cargo build for hm-fixtures");
-        assert!(status.success(), "hm-fixtures wasm build failed");
+        let packages = [
+            "hm-fixture-noop-executor",
+            "hm-fixture-recording-hook",
+            "hm-fixture-failing-subcommand",
+            "hm-fixture-host-fn-probe",
+            "hm-fixture-bad-api-version",
+            "hm-fixture-freestyle-runner",
+        ];
+        for pkg in packages {
+            let status = Command::new("cargo")
+                .args(["build", "-p", pkg])
+                .current_dir(workspace_root())
+                .status()
+                .unwrap_or_else(|_| panic!("invoke cargo build for {pkg}"));
+            assert!(status.success(), "{pkg} build failed");
+        }
     });
 }
 
-/// Path to the compiled `.wasm` for a given fixture bin name (e.g.
-/// `"noop_executor"`). Triggers `ensure_built` on first call.
+/// Path to the compiled dylib for a fixture.
+/// `name` is the crate name with hyphens, e.g. `"hm-fixture-noop-executor"`.
+/// The dylib will be at `target/debug/lib<underscored>.{dylib,so,dll}`.
 #[must_use]
 pub fn fixture_path(name: &str) -> PathBuf {
     ensure_built();
-    workspace_root()
-        .join("target")
-        .join("wasm32-wasip1")
-        .join("debug")
-        .join(format!("{name}.wasm"))
+    let underscored = name.replace('-', "_");
+    let ext = std::env::consts::DLL_EXTENSION;
+    let lib_name = if cfg!(target_os = "windows") {
+        format!("{underscored}.{ext}")
+    } else {
+        format!("lib{underscored}.{ext}")
+    };
+    workspace_root().join("target").join("debug").join(lib_name)
 }
 
 fn workspace_root() -> PathBuf {
-    // cli/crates/hm/tests/common/fixtures.rs → cli/
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop(); // crates/hm → crates
-    p.pop(); // crates    → cli
+    p.pop(); // crates/hm -> crates
+    p.pop(); // crates    -> workspace root
     p
 }

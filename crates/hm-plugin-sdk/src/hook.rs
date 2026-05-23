@@ -11,9 +11,9 @@ pub trait LifecycleHook: Send + Sync + Default {
     /// Returns a [`PluginError`] describing the failure. The host
     /// converts errors into build events; whether the build aborts
     /// depends on the hook's declared `phase`.
-    fn on_event(
-        &self,
-        ctx: &PluginContext<'_>,
+    fn on_event<'a>(
+        &'a self,
+        ctx: &'a PluginContext<'a>,
         event: HookEvent,
-    ) -> impl Future<Output = Result<HookOutcome, PluginError>> + Send + '_;
+    ) -> impl Future<Output = Result<HookOutcome, PluginError>> + Send + 'a;
 }

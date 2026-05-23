@@ -1,8 +1,8 @@
 //! A subcommand plugin that always exits non-zero. Lets the host
 //! exercise `ExitInfo` plumbing.
 
-#![no_main]
 #![allow(
+    unsafe_code,
     clippy::pedantic,
     clippy::nursery,
     clippy::cargo,
@@ -11,22 +11,28 @@
     clippy::missing_errors_doc
 )]
 
+use core::future::Future;
 use hm_plugin_sdk::*;
-use serde_json::json;
 
 #[derive(Default)]
 struct Failing;
 
 impl SubcommandPlugin for Failing {
-    fn run(&self, _input: SubcommandInput) -> Result<ExitInfo, PluginError> {
-        Ok(ExitInfo {
-            exit_code: 7,
-            message: Some("intentional failure for tests".into()),
-        })
+    fn run<'a>(
+        &'a self,
+        _ctx: &'a PluginContext<'a>,
+        _input: SubcommandInput,
+    ) -> impl Future<Output = Result<ExitInfo, PluginError>> + Send + 'a {
+        async move {
+            Ok(ExitInfo {
+                exit_code: 7,
+                message: Some("intentional failure for tests".into()),
+            })
+        }
     }
 }
 
-register_plugin!(
+hm_plugin!(
     manifest = PluginManifest {
         api_version: HM_PLUGIN_API_VERSION,
         name: "harmont-fixture-failing".into(),
@@ -35,7 +41,7 @@ register_plugin!(
         capabilities: vec![Capability::Subcommand(SubcommandSpec {
             verb: "fixture-fail".into(),
             about: "Intentionally fails (test fixture)".into(),
-            args_schema: json!({"args": []}),
+            args_schema: serde_json::json!({"args": []}),
             subcommands: vec![],
         })],
         required_host_fns: vec![],

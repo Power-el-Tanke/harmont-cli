@@ -1153,13 +1153,75 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
-name = "hm-fixtures"
+name = "hm-fixture-bad-api-version"
 version = "0.0.0"
 dependencies = [
+ "hm-plugin-protocol",
  "hm-plugin-sdk",
  "semver",
  "serde",
  "serde_json",
+ "stabby",
+]
+
+[[package]]
+name = "hm-fixture-failing-subcommand"
+version = "0.0.0"
+dependencies = [
+ "hm-plugin-protocol",
+ "hm-plugin-sdk",
+ "semver",
+ "serde",
+ "serde_json",
+ "stabby",
+]
+
+[[package]]
+name = "hm-fixture-freestyle-runner"
+version = "0.0.0"
+dependencies = [
+ "hm-plugin-protocol",
+ "hm-plugin-sdk",
+ "semver",
+ "serde",
+ "serde_json",
+ "stabby",
+]
+
+[[package]]
+name = "hm-fixture-host-fn-probe"
+version = "0.0.0"
+dependencies = [
+ "hm-plugin-protocol",
+ "hm-plugin-sdk",
+ "semver",
+ "serde",
+ "serde_json",
+ "stabby",
+]
+
+[[package]]
+name = "hm-fixture-noop-executor"
+version = "0.0.0"
+dependencies = [
+ "hm-plugin-protocol",
+ "hm-plugin-sdk",
+ "semver",
+ "serde",
+ "serde_json",
+ "stabby",
+]
+
+[[package]]
+name = "hm-fixture-recording-hook"
+version = "0.0.0"
+dependencies = [
+ "hm-plugin-protocol",
+ "hm-plugin-sdk",
+ "semver",
+ "serde",
+ "serde_json",
+ "stabby",
 ]
 
 [[package]]

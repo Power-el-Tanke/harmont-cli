@@ -26,9 +26,9 @@ fn loads_three_fixtures_and_builds_indices() {
     let reg = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
         extra_paths: vec![
-            fixtures::fixture_path("noop_executor"),
-            fixtures::fixture_path("recording_hook"),
-            fixtures::fixture_path("failing_subcommand"),
+            fixtures::fixture_path("hm-fixture-noop-executor"),
+            fixtures::fixture_path("hm-fixture-recording-hook"),
+            fixtures::fixture_path("hm-fixture-failing-subcommand"),
         ],
         embedded: vec![],
         ..Default::default()
@@ -43,7 +43,7 @@ fn loads_three_fixtures_and_builds_indices() {
 async fn dispatches_subcommand_with_nonzero_exit_info() {
     let reg = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
-        extra_paths: vec![fixtures::fixture_path("failing_subcommand")],
+        extra_paths: vec![fixtures::fixture_path("hm-fixture-failing-subcommand")],
         embedded: vec![],
         ..Default::default()
     })
@@ -68,7 +68,7 @@ async fn dispatches_subcommand_with_nonzero_exit_info() {
 async fn dispatches_step_executor() {
     let reg = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
-        extra_paths: vec![fixtures::fixture_path("noop_executor")],
+        extra_paths: vec![fixtures::fixture_path("hm-fixture-noop-executor")],
         embedded: vec![],
         ..Default::default()
     })

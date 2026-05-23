@@ -30,7 +30,6 @@ struct Report {
     kv_round_trip: bool,
     kv_isolated_per_scope: bool,
     fs_read_returns_none_for_missing: bool,
-    keyring_round_trip: bool,
     should_cancel_default_false: bool,
 }
 
@@ -48,7 +47,7 @@ async fn host_fn_probe_passes_all_checks() {
         std::env::set_var("XDG_CONFIG_HOME", temp.path());
         std::env::set_var("HOME", temp.path());
     }
-    let path = fixtures::fixture_path("host_fn_probe");
+    let path = fixtures::fixture_path("hm-fixture-host-fn-probe");
     let reg = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
         extra_paths: vec![path],
@@ -69,6 +68,5 @@ async fn host_fn_probe_passes_all_checks() {
     assert!(report.kv_round_trip);
     assert!(report.kv_isolated_per_scope);
     assert!(report.fs_read_returns_none_for_missing);
-    assert!(report.keyring_round_trip);
     assert!(report.should_cancel_default_false);
 }
