@@ -5,6 +5,7 @@ The `crates/` directory holds a Cargo workspace rooted at the repo root.
 - `crates/hm-plugin-protocol/` — wire types (serde structs only).
 - `crates/hm-plugin-sdk/` — authoring SDK for plugin writers; exposes the stabby-based FFI traits.
 - `crates/hm-plugin-macros/` — proc-macro crate powering `register_plugin!`.
+- `crates/hm-plugin-runtime/` — plugin loading, discovery, host-API runtime. Owns `LoadedPlugin`, `PluginRegistry`, `HostApiImpl`.
 - `crates/hm-plugin-docker/`, `crates/hm-plugin-cloud/` — bundled plugins (native cdylib dylibs).
 - `tests/fixtures/` — test-only cdylib crates (`noop-executor`, `recording-hook`, etc.) built via `cargo build` as native shared libraries.
 

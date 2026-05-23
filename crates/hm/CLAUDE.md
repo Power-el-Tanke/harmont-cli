@@ -23,25 +23,10 @@
 
 ## Plugin system
 
-Plugins are native cdylib shared libraries (`.dylib`/`.so`/`.dll`)
-loaded via stabby + libloading. Each plugin exports a stabby
-ABI-stable trait object.
-
-- `plugin/registry.rs` — discovery and capability indexing. Scans
-  `~/.harmont/plugins/` and `<cwd>/.harmont/plugins/` for dylibs.
-  Extra paths can be added via `RegistryConfig.extra_paths`.
-- `plugin/host.rs` — `LoadedPlugin`, the loaded-library handle.
-- `plugin/host_api.rs` — `HostApiImpl`, the host-side implementation
-  of `RawHostApi` (11 methods, `extern "C"`, synchronous). Exposes
-  KV storage (plugin/build/step scoped), archive reads, logging,
-  cancellation, stdout/stderr writes, build event emission, and
-  config file reads.
-- `plugin/paths.rs` — filesystem locations for plugin discovery.
-- `plugin/install.rs` — `hm plugin install` implementation.
-- `plugin/manifest.rs` — manifest validation.
-
-No PluginPool, no embedded plugins, no WASM. Each `LoadedPlugin` is
-`Send + Sync` and can be invoked concurrently from multiple tasks.
+Plugin runtime lives in `crates/hm-plugin-runtime/`. The `plugin/`
+module in this crate re-exports everything from the runtime crate.
+See `crates/hm-plugin-runtime/` for details on `LoadedPlugin`,
+`PluginRegistry`, `HostApiImpl`, discovery paths, and installation.
 
 ## Cloud functionality
 
