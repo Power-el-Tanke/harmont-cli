@@ -163,16 +163,64 @@ impl Parse for PluginArgs {
 // Code generation
 // ---------------------------------------------------------------------------
 
+/// Generate struct fields for each registered capability.
+fn gen_struct_fields(args: &PluginArgs) -> TokenStream2 {
+    let executor_field = args.executor.as_ref().map(|ty| {
+        quote! { executor: #ty, }
+    });
+    let hook_field = args.hook.as_ref().map(|ty| {
+        quote! { hook: #ty, }
+    });
+    let subcommand_field = args.subcommand.as_ref().map(|ty| {
+        quote! { subcommand: #ty, }
+    });
+    let output_field = args.output.as_ref().map(|ty| {
+        quote! { output: #ty, }
+    });
+
+    quote! {
+        #executor_field
+        #hook_field
+        #subcommand_field
+        #output_field
+    }
+}
+
+/// Generate field initialisers (`field: <Ty as Default>::default()`) for
+/// each registered capability.
+fn gen_struct_init(args: &PluginArgs) -> TokenStream2 {
+    let executor_init = args.executor.as_ref().map(|ty| {
+        quote! { executor: <#ty as ::core::default::Default>::default(), }
+    });
+    let hook_init = args.hook.as_ref().map(|ty| {
+        quote! { hook: <#ty as ::core::default::Default>::default(), }
+    });
+    let subcommand_init = args.subcommand.as_ref().map(|ty| {
+        quote! { subcommand: <#ty as ::core::default::Default>::default(), }
+    });
+    let output_init = args.output.as_ref().map(|ty| {
+        quote! { output: <#ty as ::core::default::Default>::default(), }
+    });
+
+    quote! {
+        #executor_init
+        #hook_init
+        #subcommand_init
+        #output_init
+    }
+}
+
 fn gen_execute_step(executor: Option<&Path>) -> TokenStream2 {
     executor.map_or_else(
         || gen_not_implemented_stub("execute_step", "input"),
-        |ty| {
+        |_ty| {
             quote! {
                 extern "C" fn execute_step<'a>(
                     &'a self,
                     input: hm_plugin_sdk::ffi::FfiSlice<'a>,
                 ) -> stabby::future::DynFuture<'a, hm_plugin_sdk::ffi::FfiResult> {
                     let ctx = &self.ctx;
+                    let executor = &self.executor;
                     stabby::boxed::Box::new(async move {
                         let parsed: hm_plugin_sdk::ExecutorInput =
                             match serde_json::from_slice(input.as_ref()) {
@@ -191,8 +239,7 @@ fn gen_execute_step(executor: Option<&Path>) -> TokenStream2 {
                                     )
                                 }
                             };
-                        let plugin = <#ty as ::core::default::Default>::default();
-                        match hm_plugin_sdk::StepExecutor::run(&plugin, ctx, parsed).await {
+                        match hm_plugin_sdk::StepExecutor::run(executor, ctx, parsed).await {
                             Ok(r) => stabby::result::Result::Ok(
                                 __ffi_bytes(
                                     serde_json::to_vec(&r).unwrap_or_default(),
@@ -215,13 +262,14 @@ fn gen_execute_step(executor: Option<&Path>) -> TokenStream2 {
 fn gen_on_hook_event(hook: Option<&Path>) -> TokenStream2 {
     hook.map_or_else(
         || gen_not_implemented_stub("on_hook_event", "event"),
-        |ty| {
+        |_ty| {
             quote! {
                 extern "C" fn on_hook_event<'a>(
                     &'a self,
                     event: hm_plugin_sdk::ffi::FfiSlice<'a>,
                 ) -> stabby::future::DynFuture<'a, hm_plugin_sdk::ffi::FfiResult> {
                     let ctx = &self.ctx;
+                    let hook = &self.hook;
                     stabby::boxed::Box::new(async move {
                         let parsed: hm_plugin_sdk::HookEvent =
                             match serde_json::from_slice(event.as_ref()) {
@@ -240,8 +288,7 @@ fn gen_on_hook_event(hook: Option<&Path>) -> TokenStream2 {
                                     )
                                 }
                             };
-                        let plugin = <#ty as ::core::default::Default>::default();
-                        match hm_plugin_sdk::LifecycleHook::on_event(&plugin, ctx, parsed).await {
+                        match hm_plugin_sdk::LifecycleHook::on_event(hook, ctx, parsed).await {
                             Ok(r) => stabby::result::Result::Ok(
                                 __ffi_bytes(
                                     serde_json::to_vec(&r).unwrap_or_default(),
@@ -264,13 +311,14 @@ fn gen_on_hook_event(hook: Option<&Path>) -> TokenStream2 {
 fn gen_run_subcommand(subcommand: Option<&Path>) -> TokenStream2 {
     subcommand.map_or_else(
         || gen_not_implemented_stub("run_subcommand", "input"),
-        |ty| {
+        |_ty| {
             quote! {
                 extern "C" fn run_subcommand<'a>(
                     &'a self,
                     input: hm_plugin_sdk::ffi::FfiSlice<'a>,
                 ) -> stabby::future::DynFuture<'a, hm_plugin_sdk::ffi::FfiResult> {
                     let ctx = &self.ctx;
+                    let subcommand = &self.subcommand;
                     stabby::boxed::Box::new(async move {
                         let parsed: hm_plugin_sdk::SubcommandInput =
                             match serde_json::from_slice(input.as_ref()) {
@@ -289,8 +337,7 @@ fn gen_run_subcommand(subcommand: Option<&Path>) -> TokenStream2 {
                                     )
                                 }
                             };
-                        let plugin = <#ty as ::core::default::Default>::default();
-                        match hm_plugin_sdk::SubcommandPlugin::run(&plugin, ctx, parsed).await {
+                        match hm_plugin_sdk::SubcommandPlugin::run(subcommand, ctx, parsed).await {
                             Ok(r) => stabby::result::Result::Ok(
                                 __ffi_bytes(
                                     serde_json::to_vec(&r).unwrap_or_default(),
@@ -313,13 +360,14 @@ fn gen_run_subcommand(subcommand: Option<&Path>) -> TokenStream2 {
 fn gen_on_output_event(output: Option<&Path>) -> TokenStream2 {
     output.map_or_else(
         || gen_not_implemented_stub("on_output_event", "event"),
-        |ty| {
+        |_ty| {
             quote! {
                 extern "C" fn on_output_event<'a>(
                     &'a self,
                     event: hm_plugin_sdk::ffi::FfiSlice<'a>,
                 ) -> stabby::future::DynFuture<'a, hm_plugin_sdk::ffi::FfiResult> {
                     let ctx = &self.ctx;
+                    let output = &self.output;
                     stabby::boxed::Box::new(async move {
                         let parsed: hm_plugin_sdk::BuildEvent =
                             match serde_json::from_slice(event.as_ref()) {
@@ -338,8 +386,7 @@ fn gen_on_output_event(output: Option<&Path>) -> TokenStream2 {
                                     )
                                 }
                             };
-                        let plugin = <#ty as ::core::default::Default>::default();
-                        match hm_plugin_sdk::OutputFormatter::on_event(&plugin, ctx, parsed).await {
+                        match hm_plugin_sdk::OutputFormatter::on_event(output, ctx, parsed).await {
                             Ok(()) => stabby::result::Result::Ok(
                                 __ffi_bytes(
                                     serde_json::to_vec(&()).unwrap_or_default(),
@@ -381,15 +428,15 @@ fn gen_finalize_output(output: Option<&Path>) -> TokenStream2 {
                 }
             }
         },
-        |ty| {
+        |_ty| {
             quote! {
                 extern "C" fn finalize_output<'a>(
                     &'a self,
                 ) -> stabby::future::DynFuture<'a, hm_plugin_sdk::ffi::FfiResult> {
                     let ctx = &self.ctx;
+                    let output = &self.output;
                     stabby::boxed::Box::new(async move {
-                        let plugin = <#ty as ::core::default::Default>::default();
-                        match hm_plugin_sdk::OutputFormatter::finalize(&plugin, ctx).await {
+                        match hm_plugin_sdk::OutputFormatter::finalize(output, ctx).await {
                             Ok(bytes) => stabby::result::Result::Ok(
                                 __ffi_bytes(bytes),
                             ),
@@ -475,6 +522,9 @@ fn expand(args: &PluginArgs) -> TokenStream2 {
     let host_ref = host_ref_type();
     let plugin_dyn = plugin_dyn_type();
 
+    let struct_fields = gen_struct_fields(args);
+    let struct_init = gen_struct_init(args);
+
     let execute_step = gen_execute_step(args.executor.as_ref());
     let on_hook_event = gen_on_hook_event(args.hook.as_ref());
     let run_subcommand = gen_run_subcommand(args.subcommand.as_ref());
@@ -497,6 +547,7 @@ fn expand(args: &PluginArgs) -> TokenStream2 {
             struct __HmPluginImpl {
                 ctx: hm_plugin_sdk::PluginContext<'static>,
                 manifest_bytes: hm_plugin_sdk::ffi::FfiBytes,
+                #struct_fields
             }
 
             impl hm_plugin_sdk::ffi::RawPlugin for __HmPluginImpl {
@@ -513,6 +564,8 @@ fn expand(args: &PluginArgs) -> TokenStream2 {
 
             // SAFETY: __HmPluginImpl holds a PluginContext (which is
             // Send + Sync) and FfiBytes (which is Send + Sync).
+            // Capability types must also be Send + Sync (enforced by
+            // the trait bounds on StepExecutor, LifecycleHook, etc.).
             unsafe impl Send for __HmPluginImpl {}
             unsafe impl Sync for __HmPluginImpl {}
 
@@ -529,6 +582,7 @@ fn expand(args: &PluginArgs) -> TokenStream2 {
                 let plugin = __HmPluginImpl {
                     ctx: context,
                     manifest_bytes,
+                    #struct_init
                 };
                 stabby::result::Result::Ok(
                     stabby::boxed::Box::new(plugin).into()
