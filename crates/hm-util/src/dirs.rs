@@ -43,6 +43,14 @@ pub fn harmont_project_plugins_dir() -> Option<PathBuf> {
         .map(|p| p.join(".harmont").join("plugins"))
 }
 
+/// All directories the plugin host should scan for installed plugins,
+/// in priority order (user-global first, then project-local).
+pub fn plugin_discovery_dirs() -> impl Iterator<Item = PathBuf> {
+    [harmont_user_plugins_dir(), harmont_project_plugins_dir()]
+        .into_iter()
+        .flatten()
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

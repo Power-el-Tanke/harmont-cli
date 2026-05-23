@@ -62,10 +62,7 @@ impl PluginRegistry {
         let dll_ext = std::env::consts::DLL_EXTENSION;
 
         if config.auto_discover {
-            for dir in [paths::user_plugins_dir(), paths::project_plugins_dir()]
-                .into_iter()
-                .flatten()
-            {
+            for dir in paths::discovery_dirs() {
                 if !dir.is_dir() {
                     continue;
                 }
