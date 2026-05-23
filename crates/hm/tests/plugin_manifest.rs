@@ -12,7 +12,7 @@
 pub mod common;
 
 use common::fixtures;
-use harmont_cli::error::HmError;
+use hm_plugin_runtime::error::RuntimeError;
 use harmont_cli::plugin::{PluginRegistry, RegistryConfig};
 
 #[test]
@@ -24,9 +24,9 @@ fn rejects_wrong_api_version() {
         ..Default::default()
     })
     .expect_err("should fail to load");
-    let hm_err: &HmError = err.downcast_ref().expect("HmError");
-    match hm_err {
-        HmError::PluginManifest {
+    let rt_err: &RuntimeError = err.downcast_ref().expect("RuntimeError");
+    match rt_err {
+        RuntimeError::PluginManifest {
             found_api,
             expected_api,
             ..
@@ -48,6 +48,6 @@ fn rejects_duplicate_runner() {
         ..Default::default()
     })
     .expect_err("should detect duplicate");
-    let hm_err: &HmError = err.downcast_ref().expect("HmError");
-    assert!(matches!(hm_err, HmError::PluginConflict { verb, .. } if verb == "runner:noop"));
+    let rt_err: &RuntimeError = err.downcast_ref().expect("RuntimeError");
+    assert!(matches!(rt_err, RuntimeError::PluginConflict { verb, .. } if verb == "runner:noop"));
 }

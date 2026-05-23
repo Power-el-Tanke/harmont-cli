@@ -1,14 +1,10 @@
-//! In-process plugin host.
-//!
-//! Loads native shared-library plugins (`.dylib`/`.so`/`.dll`) via
-//! stabby's ABI-stable trait objects.
+//! Plugin system — re-exports from `hm_plugin_runtime`.
 
-pub mod host;
-pub mod host_api;
-pub mod install;
-pub mod manifest;
-pub mod paths;
-pub mod registry;
+pub use hm_plugin_runtime::host;
+pub use hm_plugin_runtime::host_api;
+pub use hm_plugin_runtime::install;
+pub use hm_plugin_runtime::manifest;
+pub use hm_plugin_runtime::paths;
+pub use hm_plugin_runtime::registry;
 
-pub use host::LoadedPlugin;
-pub use registry::{PluginRegistry, RegistryConfig};
+pub use hm_plugin_runtime::{LoadedPlugin, PluginRegistry, RegistryConfig};

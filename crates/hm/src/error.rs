@@ -61,50 +61,8 @@ pub enum HmError {
     #[error("local scheduler error: {0}")]
     LocalScheduling(String),
 
-    #[error("plugin '{name}' failed to load from {path}: {reason}")]
-    PluginLoad {
-        name: String,
-        path: std::path::PathBuf,
-        reason: String,
-        doc_url: &'static str,
-    },
-
-    #[error("plugin '{name}': API version mismatch (plugin={found_api}, host={expected_api})")]
-    PluginManifest {
-        name: String,
-        expected_api: u32,
-        found_api: u32,
-    },
-
-    #[error(
-        "plugin '{name}': required host fn '{fn_name}' is unavailable (this hm build is too old; needs >= {min_hm_version})"
-    )]
-    PluginMissingHostFn {
-        name: String,
-        fn_name: String,
-        min_hm_version: semver::Version,
-    },
-
-    #[error("plugin '{name}' panicked during '{capability}': {message}")]
-    PluginPanic {
-        name: String,
-        capability: String,
-        message: String,
-    },
-
-    #[error("plugin '{name}' timed out after {after_ms}ms during '{capability}'")]
-    PluginTimeout {
-        name: String,
-        capability: String,
-        after_ms: u32,
-    },
-
-    #[error("plugin conflict: both '{plugin_a}' and '{plugin_b}' claim '{verb}'")]
-    PluginConflict {
-        verb: String,
-        plugin_a: String,
-        plugin_b: String,
-    },
+    #[error(transparent)]
+    PluginRuntime(#[from] hm_plugin_runtime::error::RuntimeError),
 
     #[error(
         "step '{step_key}' requested runner '{runner}', but no plugin provides it (available: {available:?})"
@@ -201,13 +159,18 @@ impl HmError {
             | Self::LocalScheduling(_) => ErrorCategory::Api,
             // Network: Network (reqwest), Docker (daemon unreachable)
             Self::Network(_) | Self::Docker(_) => ErrorCategory::Network,
-            // Plugin load failures (exit 5).
-            Self::PluginLoad { .. }
-            | Self::PluginManifest { .. }
-            | Self::PluginMissingHostFn { .. }
-            | Self::PluginConflict { .. } => ErrorCategory::PluginLoad,
-            // Plugin runtime failures (exit 6).
-            Self::PluginPanic { .. } | Self::PluginTimeout { .. } => ErrorCategory::PluginRuntime,
+            // Plugin failures — delegate categorisation to the inner enum.
+            Self::PluginRuntime(e) => {
+                use hm_plugin_runtime::error::RuntimeError;
+                match e {
+                    RuntimeError::PluginLoad { .. }
+                    | RuntimeError::PluginManifest { .. }
+                    | RuntimeError::PluginMissingHostFn { .. }
+                    | RuntimeError::PluginConflict { .. } => ErrorCategory::PluginLoad,
+                    RuntimeError::PluginPanic { .. }
+                    | RuntimeError::PluginTimeout { .. } => ErrorCategory::PluginRuntime,
+                }
+            }
             // Pipeline-level invalid config (exit 7).
             Self::UnknownRunner { .. } | Self::NoDefaultExecutor => ErrorCategory::PipelineInvalid,
             // Generic build failure: anyhow-wrapped errors propagate here.

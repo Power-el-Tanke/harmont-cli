@@ -57,6 +57,7 @@ hm-plugin-sdk = { workspace = true }
 stabby = { workspace = true }
 borsh = { workspace = true }
 libloading = "0.8"
+hm-plugin-runtime = { workspace = true }
 hm-util = { workspace = true }
 schemars = { workspace = true }
 semver = { workspace = true }

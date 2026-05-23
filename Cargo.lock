@@ -1078,6 +1078,7 @@ dependencies = [
  "futures-util",
  "hex",
  "hm-plugin-protocol",
+ "hm-plugin-runtime",
  "hm-plugin-sdk",
  "hm-util",
  "ignore",
