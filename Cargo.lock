@@ -1288,6 +1288,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "hm-plugin-runtime"
+version = "0.0.0-dev"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "hex",
+ "hm-plugin-protocol",
+ "hm-plugin-sdk",
+ "hm-util",
+ "libloading",
+ "reqwest",
+ "semver",
+ "serde_json",
+ "sha2",
+ "stabby",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "hm-plugin-sdk"
 version = "0.0.0-dev"
 dependencies = [

@@ -5,6 +5,7 @@ members = [
     "crates/hm-plugin-protocol",
     "crates/hm-plugin-macros",
     "crates/hm-plugin-sdk",
+    "crates/hm-plugin-runtime",
     "crates/hm-util",
     "crates/hm/plugins/hm-plugin-docker",
     "crates/hm/plugins/hm-plugin-cloud",
@@ -19,6 +20,7 @@ default-members = [
     "crates/hm",
     "crates/hm-plugin-protocol",
     "crates/hm-plugin-sdk",
+    "crates/hm-plugin-runtime",
     "crates/hm-util",
 ]
 
@@ -31,6 +33,7 @@ repository = "https://github.com/harmont-dev/harmont-cli"
 hm-plugin-protocol = { path = "crates/hm-plugin-protocol", version = "0.0.0-dev" }
 hm-plugin-macros   = { path = "crates/hm-plugin-macros",   version = "0.0.0-dev" }
 hm-plugin-sdk      = { path = "crates/hm-plugin-sdk",      version = "0.0.0-dev" }
+hm-plugin-runtime  = { path = "crates/hm-plugin-runtime",  version = "0.0.0-dev" }
 hm-util            = { path = "crates/hm-util",            version = "0.0.0-dev" }
 serde       = { version = "1", features = ["derive"] }
 serde_json  = "1"
