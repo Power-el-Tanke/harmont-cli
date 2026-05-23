@@ -18,7 +18,7 @@
     clippy::too_many_lines,
     clippy::missing_panics_doc,
     // `significant_drop_tightening`: the registry MutexGuard in the
-    // --format validation block is held only across constant-time
+    // runner-resolution block is held only across constant-time
     // hash-map lookups; the lint would have us scatter `drop(reg)`
     // calls that add no clarity.
     clippy::significant_drop_tightening
@@ -40,6 +40,7 @@ use crate::error::HmError;
 use crate::orchestrator::docker_client::DockerClient;
 use crate::orchestrator::graph::Graph;
 use crate::orchestrator::source::build_archive_bytes;
+use crate::output::OutputMode;
 use crate::plugin::{PluginRegistry, RegistryConfig};
 
 use super::archive::ArchiveStore;
@@ -61,7 +62,7 @@ pub async fn run(
     pipeline: hm_plugin_protocol::Pipeline,
     repo_root: PathBuf,
     parallelism: usize,
-    format_name: String,
+    format: OutputMode,
 ) -> Result<i32> {
     // Build graph + chains directly from the wire-typed pipeline.
     let graph = Graph::build(&pipeline).context("build graph")?;
@@ -118,28 +119,6 @@ pub async fn run(
         .context("load plugin registry")?,
     ));
 
-    // Validate the requested output format BEFORE emitting BuildStart
-    // so an invalid `--format` fails fast without producing any output.
-    // We materialise the available list under the lock and then drop
-    // the guard before the (rare) bail to satisfy
-    // `clippy::significant_drop_tightening`.
-    let bad_format: Option<Vec<String>> = {
-        let reg = registry.lock().await;
-        if reg.output_formatter_index.contains_key(&format_name) {
-            None
-        } else {
-            let mut names: Vec<String> = reg.output_formatter_index.keys().cloned().collect();
-            names.sort();
-            Some(names)
-        }
-    };
-    if let Some(available) = bad_format {
-        anyhow::bail!(
-            "unknown --format '{format_name}'; available: {}",
-            available.join(", ")
-        );
-    }
-
     let semaphore = Arc::new(tokio::sync::Semaphore::new(parallelism));
 
     // Cross-chain snapshot lineage. When a step completes, we stash
@@ -148,10 +127,9 @@ pub async fn run(
     // image to boot from. Mirrors legacy `SharedState::node_image`.
     let node_image: Arc<Mutex<HashMap<usize, SnapshotRef>>> = Arc::new(Mutex::new(HashMap::new()));
 
-    // Spawn the output subscriber. Dispatches every BuildEvent to the
-    // selected output-formatter plugin (default: `human`).
-    let sink_handle =
-        super::output_subscriber::spawn(bus.clone(), registry.clone(), format_name.clone());
+    // Spawn the output subscriber. Renders every BuildEvent directly
+    // via BuildEventRenderer (no plugin dispatch).
+    let sink_handle = super::output_subscriber::spawn(bus.clone(), format);
 
     // Announce build start.
     let started_at = chrono::Utc::now();

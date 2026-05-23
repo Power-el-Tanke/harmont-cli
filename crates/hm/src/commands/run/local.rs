@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 use super::render::{ToolPaths, list_pipelines, render_pipeline_json};
 use crate::cli::RunArgs;
 use crate::context::RunContext;
+use crate::output::OutputMode;
 use crate::output::format::banner;
 
 /// Execute a v0 IR pipeline locally; return the final container id.
@@ -86,7 +87,16 @@ pub async fn handle(args: RunArgs, _ctx: RunContext) -> Result<i32> {
         }
     };
 
-    if args.format == "human" {
+    let format = if args.format == "json" {
+        OutputMode::Json
+    } else {
+        OutputMode::Human {
+            color: true,
+            interactive: true,
+        }
+    };
+
+    if format.is_human() {
         banner("run --local", &format!("slug={slug}"));
     }
 
@@ -96,7 +106,6 @@ pub async fn handle(args: RunArgs, _ctx: RunContext) -> Result<i32> {
         std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get)
     });
     let exit_code =
-        crate::orchestrator::run(pipeline_wire, repo_root, parallelism, args.format.clone())
-            .await?;
+        crate::orchestrator::run(pipeline_wire, repo_root, parallelism, format).await?;
     Ok(exit_code)
 }
