@@ -36,9 +36,7 @@ fn manifest_round_trip() {
             default: true,
             step_schema: None,
         })],
-        required_host_fns: vec!["hm_log".into(), "hm_unix_socket_connect".into()],
         config_schema: None,
-        allowed_hosts: vec![],
     };
     rt(&m);
 }

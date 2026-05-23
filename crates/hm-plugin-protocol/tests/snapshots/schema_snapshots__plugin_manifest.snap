@@ -5,14 +5,13 @@ expression: schema
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "PluginManifest",
-  "description": "Returned by an Extism plugin's `hm_manifest()` export.",
+  "description": "Returned by a plugin's manifest export at load time.",
   "type": "object",
   "required": [
     "api_version",
     "capabilities",
     "description",
     "name",
-    "required_host_fns",
     "version"
   ],
   "properties": {
@@ -39,23 +38,8 @@ expression: schema
         "$ref": "#/definitions/Capability"
       }
     },
-    "required_host_fns": {
-      "description": "Host functions the plugin needs. Load fails fast if any are not exported by this build of `hm`.",
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
     "config_schema": {
       "description": "Optional JSON Schema describing plugin-specific configuration that lives in the project's `.harmont/plugins.toml`."
-    },
-    "allowed_hosts": {
-      "description": "HTTPS hosts the plugin is permitted to contact via `extism_pdk::http::request`. Defaults to empty (no HTTP). The host wires this into extism's per-instance manifest at load time; attempting to contact a host not in this list fails inside the plugin.",
-      "default": [],
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
     }
   },
   "definitions": {

@@ -16,7 +16,7 @@ pub type JsonSchema = serde_json::Value;
 /// (added in [`hm-plugin-sdk`]).
 pub type ClapJson = serde_json::Value;
 
-/// Returned by an Extism plugin's `hm_manifest()` export.
+/// Returned by a plugin's manifest export at load time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
 pub struct PluginManifest {
     /// Must equal [`crate::HM_PLUGIN_API_VERSION`] or the host rejects
@@ -28,19 +28,9 @@ pub struct PluginManifest {
     pub version: semver::Version,
     pub description: String,
     pub capabilities: Vec<Capability>,
-    /// Host functions the plugin needs. Load fails fast if any are
-    /// not exported by this build of `hm`.
-    pub required_host_fns: Vec<String>,
     /// Optional JSON Schema describing plugin-specific configuration
     /// that lives in the project's `.harmont/plugins.toml`.
     pub config_schema: Option<JsonSchema>,
-    /// HTTPS hosts the plugin is permitted to contact via
-    /// `extism_pdk::http::request`. Defaults to empty (no HTTP).
-    /// The host wires this into extism's per-instance manifest at
-    /// load time; attempting to contact a host not in this list
-    /// fails inside the plugin.
-    #[serde(default)]
-    pub allowed_hosts: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]

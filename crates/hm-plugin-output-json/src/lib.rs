@@ -46,9 +46,7 @@ hm_plugin!(
             name: "json".into(),
             mime: "application/x-ndjson".into(),
         })],
-        required_host_fns: vec![],
         config_schema: None,
-        allowed_hosts: vec![],
     },
     output = Json,
 );

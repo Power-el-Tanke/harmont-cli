@@ -100,9 +100,7 @@ mod tests {
                 default: false,
                 step_schema: None,
             })],
-            required_host_fns: vec![],
             config_schema: None,
-            allowed_hosts: vec![],
         };
         assert!(matches!(
             validate_standalone(&m),
@@ -122,9 +120,7 @@ mod tests {
                 default: false,
                 step_schema: None,
             })],
-            required_host_fns: vec!["hm_log".into()],
             config_schema: None,
-            allowed_hosts: vec![],
         };
         assert!(validate_standalone(&m).is_ok());
     }

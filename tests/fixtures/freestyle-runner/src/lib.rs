@@ -53,9 +53,7 @@ hm_plugin!(
             default: false,
             step_schema: None,
         })],
-        required_host_fns: vec![],
         config_schema: None,
-        allowed_hosts: vec![],
     },
     executor = Freestyle,
 );

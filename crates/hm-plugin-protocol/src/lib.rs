@@ -24,11 +24,7 @@ pub use error::{ExitInfo, PluginError};
 pub use events::{BuildEvent, PlanSummary, StdStream};
 pub use executor::{ArchiveId, ArtifactRef, CacheDecision, ExecutorInput, SnapshotRef, StepResult};
 pub use hook::{HookEvent, HookEventKind, HookOutcome, HookPhase};
-pub use host_abi::{
-    ArchiveReadArgs, CallbackData, DockerCommitArgs, DockerExecArgs, DockerExtractArgs,
-    DockerStartArgs, KeyringArgs, KeyringSetArgs, KvScope, Level, LoopbackHandle, LoopbackRecvArgs,
-    SocketHandle, SocketReadArgs, SocketWriteArgs, TtyConfirmArgs, TtyPromptArgs,
-};
+pub use host_abi::{ArchiveReadArgs, KvScope, Level};
 pub use ir::{Cache, CommandStep, Pipeline, Step, WaitStep};
 pub use manifest::{
     Capability, ClapJson, JsonSchema, LifecycleHookSpec, OutputFormatterSpec, PluginManifest,
@@ -39,4 +35,4 @@ pub use subcommand::SubcommandInput;
 /// Wire-format version. Plugins whose manifest reports a different
 /// version are rejected at load time. Bump when adding *any* new
 /// required field to any wire-level struct.
-pub const HM_PLUGIN_API_VERSION: u32 = 1;
+pub const HM_PLUGIN_API_VERSION: u32 = 2;

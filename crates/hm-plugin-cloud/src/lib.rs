@@ -54,9 +54,7 @@ hm_plugin!(
             args_schema: serde_json::json!({}),
             subcommands: vec![],
         })],
-        required_host_fns: vec![],
         config_schema: None,
-        allowed_hosts: vec![],
     },
     subcommand = Cloud,
 );

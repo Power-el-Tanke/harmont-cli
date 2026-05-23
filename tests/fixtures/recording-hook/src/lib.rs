@@ -66,9 +66,7 @@ hm_plugin!(
             phase: HookPhase::After,
             timeout_ms: 5000,
         })],
-        required_host_fns: vec![],
         config_schema: None,
-        allowed_hosts: vec![],
     },
     hook = RecHook,
 );
