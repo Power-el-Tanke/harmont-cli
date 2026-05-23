@@ -3,7 +3,8 @@ if not ok then
   return
 end
 
-local current = require("telescope.config").values.file_ignore_patterns or {}
+local ok_config, config = pcall(require, "telescope.config")
+local current = ok_config and config.values.file_ignore_patterns or {}
 table.insert(current, "^docs/plans/")
 
 telescope.setup({
