@@ -54,9 +54,7 @@ bollard = "0.18"
 which = "6"
 hm-plugin-protocol = { workspace = true }
 hm-plugin-sdk = { workspace = true }
-stabby = { workspace = true }
 borsh = { workspace = true }
-libloading = "0.8"
 hm-plugin-runtime = { workspace = true }
 hm-util = { workspace = true }
 schemars = { workspace = true }
