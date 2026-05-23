@@ -62,7 +62,7 @@ pub enum HmError {
     LocalScheduling(String),
 
     #[error(transparent)]
-    PluginRuntime(#[from] hm_plugin_runtime::error::RuntimeError),
+    PluginRuntime(#[from] crate::plugin::error::RuntimeError),
 
     #[error(
         "step '{step_key}' requested runner '{runner}', but no plugin provides it (available: {available:?})"
@@ -161,7 +161,7 @@ impl HmError {
             Self::Network(_) | Self::Docker(_) => ErrorCategory::Network,
             // Plugin failures — delegate categorisation to the inner enum.
             Self::PluginRuntime(e) => {
-                use hm_plugin_runtime::error::RuntimeError;
+                use crate::plugin::error::RuntimeError;
                 match e {
                     RuntimeError::PluginLoad { .. }
                     | RuntimeError::PluginManifest { .. }

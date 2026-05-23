@@ -1,5 +1,6 @@
 //! Plugin system — re-exports from `hm_plugin_runtime`.
 
+pub use hm_plugin_runtime::error;
 pub use hm_plugin_runtime::host;
 pub use hm_plugin_runtime::host_api;
 pub use hm_plugin_runtime::install;

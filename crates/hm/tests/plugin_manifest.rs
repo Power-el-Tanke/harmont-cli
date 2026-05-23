@@ -12,7 +12,7 @@
 pub mod common;
 
 use common::fixtures;
-use hm_plugin_runtime::error::RuntimeError;
+use harmont_cli::plugin::error::RuntimeError;
 use harmont_cli::plugin::{PluginRegistry, RegistryConfig};
 
 #[test]
