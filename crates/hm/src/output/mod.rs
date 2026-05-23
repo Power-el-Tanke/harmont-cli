@@ -1,3 +1,4 @@
+pub mod build_events;
 pub mod format;
 pub mod spinner;
 pub mod status;
