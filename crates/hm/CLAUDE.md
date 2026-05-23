@@ -10,10 +10,10 @@
   resolves each step's `runner` field to a registered plugin in
   `scheduler.rs`.
 - Publishes `BuildEvent`s on a `tokio::sync::broadcast` (`events.rs`);
-  the `output_subscriber` task drains the bus and invokes the selected
-  output plugin's `on_output_event` method per event (`hm-plugin-output-human`
-  or `hm-plugin-output-json`). Default `--format` is `human`; `--format
-  json` writes one JSON event per line on stdout.
+  the `output_subscriber` task drains the bus and renders events
+  directly via `BuildEventRenderer` (`output/build_events.rs`).
+  `--format human` (default) writes coloured progress to stderr;
+  `--format json` writes one JSON event per line to stdout.
 - Streams cache decisions host-side (`cache.rs`), reads the workspace
   archive once into memory (`archive.rs` + `source.rs`), and drives
   the Docker daemon via the Bollard wrapper (`docker_client.rs`).

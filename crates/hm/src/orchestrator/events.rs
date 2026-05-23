@@ -1,9 +1,8 @@
 //! Build-event broadcast channel.
 //!
-//! Subscribers (output formatter plugin, lifecycle hook plugins,
-//! the human-readable progress sink) all subscribe to the same
-//! channel; the host's `emit_event` / `emit_step_log` host fns
-//! publish into it.
+//! Subscribers (output subscriber, lifecycle hook plugins) subscribe
+//! to the same channel; the host's `emit_event` / `emit_step_log`
+//! host fns publish into it.
 
 // `new()` returning `Arc<Self>` is intentional (the bus is always
 // shared); `subscribe()` returns a tokio receiver that callers must

@@ -33,8 +33,8 @@ pub struct RunArgs {
     #[arg(long, value_name = "N")]
     pub parallelism: Option<usize>,
 
-    /// Output formatter (matches an installed output-formatter plugin
-    /// `name`). Built-ins: `human`, `json`. Default: `human`.
+    /// Output format. `human` (default) prints coloured progress to
+    /// stderr; `json` writes one event per line to stdout.
     #[arg(long, value_name = "NAME", default_value = "human", global = false)]
     pub format: String,
 }
