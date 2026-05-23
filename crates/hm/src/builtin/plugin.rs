@@ -89,7 +89,8 @@ async fn install_cmd(source: &str, pin: Option<&str>) -> Result<()> {
 #[allow(clippy::unused_async)]
 async fn remove(name: &str) -> Result<()> {
     let dir = crate::plugin::paths::install_dir().context("no install dir")?;
-    let target = dir.join(format!("{name}.wasm"));
+    let dll_ext = std::env::consts::DLL_EXTENSION;
+    let target = dir.join(format!("{name}.{dll_ext}"));
     if !target.is_file() {
         anyhow::bail!("no plugin file at {}", target.display());
     }

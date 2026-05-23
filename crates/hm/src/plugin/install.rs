@@ -16,7 +16,7 @@ use super::paths;
 /// the SHA-256 of the downloaded bytes (hex, lowercase).
 ///
 /// On success, the plugin is written to
-/// `<user-plugins-dir>/<manifest-name>.wasm`.
+/// `<user-plugins-dir>/<manifest-name>.<dll-ext>`.
 ///
 /// # Errors
 ///

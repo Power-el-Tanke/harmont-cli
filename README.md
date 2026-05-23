@@ -222,7 +222,7 @@ This repo mirrors the `cli/` and `examples/` directories of the private Harmont 
 
 ## Plugin authoring
 
-`hm` is plugin-driven via [Extism](https://extism.org). To write one, start a `cdylib` crate and depend on the SDK:
+`hm` is plugin-driven via native shared-library plugins (`.dylib`/`.so`/`.dll`) loaded through stabby's ABI-stable FFI. To write one, start a `cdylib` crate and depend on the SDK:
 
 ```sh
 cargo new --lib my-plugin
@@ -230,19 +230,20 @@ cd my-plugin
 cargo add --git https://github.com/harmont-dev/harmont-cli hm-plugin-sdk
 ```
 
-Implement one of `StepExecutor`, `SubcommandPlugin`, `LifecycleHook`, or `OutputFormatter`, declare a `PluginManifest`, and call `register_plugin!(...)`. Then build to WebAssembly:
+Implement one of `StepExecutor`, `SubcommandPlugin`, `LifecycleHook`, or `OutputFormatter`, declare a `PluginManifest`, and call `register_plugin!(...)`. Then build:
 
 ```sh
-cargo build --target wasm32-wasip1 --release
+cargo build --release
 ```
 
-Install the resulting `.wasm`:
+Install the resulting shared library:
 
 ```sh
-hm plugin install ./target/wasm32-wasip1/release/my_plugin.wasm
+hm plugin install ./target/release/libmy_plugin.dylib   # macOS
+hm plugin install ./target/release/libmy_plugin.so       # Linux
 ```
 
-Built-in output formatters: `human` (default), `json`. Select with `hm run --format <name>`. Working examples live in `crates/hm-fixtures/src/bin/`.
+Built-in output formatters: `human` (default), `json`. Select with `hm run --format <name>`. Working examples live in `tests/fixtures/`.
 
 ## See also
 

@@ -2,7 +2,7 @@
 //!
 //! This crate is pure data: serde structs, enums, and the
 //! [`HM_PLUGIN_API_VERSION`] constant. It has no runtime — no async,
-//! no Extism, no Tokio. Bumping `HM_PLUGIN_API_VERSION` is the explicit
+//! no Tokio. Bumping `HM_PLUGIN_API_VERSION` is the explicit
 //! signal that the wire format changed and plugins must be rebuilt.
 
 #![forbid(unsafe_code)]

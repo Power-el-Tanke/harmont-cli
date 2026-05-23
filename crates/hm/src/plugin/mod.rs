@@ -1,8 +1,7 @@
 //! In-process plugin host.
 //!
 //! Loads native shared-library plugins (`.dylib`/`.so`/`.dll`) via
-//! stabby's ABI-stable trait objects. Replaces the prior extism/WASM
-//! pipeline.
+//! stabby's ABI-stable trait objects.
 
 pub mod host;
 pub mod host_api;

@@ -133,8 +133,7 @@ hm run --help                          # full flag reference
 ## Cloud
 
 `hm cloud <verb>` talks to the hosted Harmont API at `api.harmont.dev`.
-Every cloud verb is delivered by the embedded `hm-plugin-cloud` WASM
-plugin (no separate install step):
+Every cloud verb is delivered by the `hm-plugin-cloud` native plugin:
 
 ```sh
 hm cloud login                  # browser-loopback OAuth (or --paste to
@@ -187,7 +186,7 @@ at your option.
 
 ## Plugin authoring
 
-`hm` is plugin-driven via [Extism](https://extism.org). To write a plugin:
+`hm` is plugin-driven via native shared-library plugins (`.dylib`/`.so`/`.dll`) loaded through stabby's ABI-stable FFI. To write a plugin:
 
 ```bash
 cargo new --lib my-plugin
@@ -200,16 +199,17 @@ Implement one of `StepExecutor`, `SubcommandPlugin`, `LifecycleHook`, or
 `register_plugin!(...)`. Build with:
 
 ```bash
-cargo build --target wasm32-wasip1 --release
+cargo build --release
 ```
 
-The output `.wasm` can be installed with:
+The output shared library can be installed with:
 
 ```bash
-hm plugin install ./target/wasm32-wasip1/release/my_plugin.wasm
+hm plugin install ./target/release/libmy_plugin.dylib   # macOS
+hm plugin install ./target/release/libmy_plugin.so       # Linux
 ```
 
-See `cli/crates/hm-fixtures/src/bin/` for minimal working examples.
+See `tests/fixtures/` for minimal working examples.
 
 ### Output formatter
 

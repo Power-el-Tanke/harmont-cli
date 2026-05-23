@@ -12,6 +12,8 @@ use wiremock::matchers::{method, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires hm-plugin-cloud installed in ~/.harmont/plugins/ — \
+            the test sets HOME to a clean tempdir so no plugins are discovered"]
 async fn cloud_run_submits_and_prints_build_url() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

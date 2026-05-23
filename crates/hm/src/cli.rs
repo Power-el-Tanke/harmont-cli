@@ -101,7 +101,7 @@ pub struct RunArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum PluginCommand {
-    /// List installed plugins (embedded + user + project).
+    /// List installed plugins (user + project).
     List,
 
     /// Show one plugin's manifest in detail.
@@ -114,7 +114,7 @@ pub enum PluginCommand {
     ///
     /// HTTPS URLs require `--pin <sha256>` for integrity.
     Install {
-        /// Plugin source: local path (`./foo.wasm`) or HTTPS URL.
+        /// Plugin source: local path (`./foo.dylib`) or HTTPS URL.
         source: String,
 
         /// SHA-256 hex digest to verify against. Required for HTTPS

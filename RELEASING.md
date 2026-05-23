@@ -39,10 +39,10 @@ workflow in `.github/workflows/release.yml` triggers on any tag matching
 `v*`, seds the version from the tag into all three crates' `Cargo.toml`
 files plus the `workspace.dependencies` pins, and publishes
 `hm-plugin-protocol`, `hm-plugin-sdk`, and `harmont-cli` to crates.io in
-that order. The bundled WASM plugins (`hm-plugin-docker`,
+that order. The native cdylib plugins (`hm-plugin-docker`,
 `hm-plugin-output-human`, `hm-plugin-output-json`, `hm-plugin-cloud`)
-and `hm-fixtures` are not published — they ship embedded inside the
-`hm` binary.
+and the test fixtures in `tests/fixtures/` are not published — they
+are loaded from disk at runtime.
 
 ### Prerequisites (one-time)
 

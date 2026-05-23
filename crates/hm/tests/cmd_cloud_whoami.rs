@@ -14,6 +14,8 @@ use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires hm-plugin-cloud installed in ~/.harmont/plugins/ — \
+            the test sets HOME to a clean tempdir so no plugins are discovered"]
 async fn cloud_whoami_uses_token_from_env() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -45,6 +47,8 @@ async fn cloud_whoami_uses_token_from_env() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires hm-plugin-cloud installed in ~/.harmont/plugins/ — \
+            the test sets HOME to a clean tempdir so no plugins are discovered"]
 async fn cloud_whoami_without_token_returns_helpful_error() {
     let temp = tempfile::tempdir().unwrap();
     Command::cargo_bin("hm")
