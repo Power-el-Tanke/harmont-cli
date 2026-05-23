@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use clap::{Parser, Subcommand};
 use hm_plugin_protocol::{ExitInfo, PluginError};
+use hm_plugin_sdk::PluginContext;
 
 use crate::{auth, verbs};
 
@@ -147,7 +148,8 @@ pub(crate) enum BillingCommand {
     Redeem { code: String },
 }
 
-pub(crate) fn dispatch(
+pub(crate) async fn dispatch(
+    ctx: &PluginContext<'_>,
     argv: Vec<String>,
     env: BTreeMap<String, String>,
 ) -> Result<ExitInfo, PluginError> {
@@ -163,16 +165,11 @@ pub(crate) fn dispatch(
             // clap surfaces `--help` / `--version` as errors with
             // specific kinds; render them as a successful exit so the
             // user sees the help text without an error code.
-            //
-            // TODO: route help/version through host::write_stdout so
-            // output framing matches the rest of the plugin. For now
-            // `eprintln!` is fine because clap's renderer is wired to
-            // stderr/stdout via std::io which the host captures.
             use clap::error::ErrorKind;
             let msg = e.to_string();
             return match e.kind() {
                 ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
-                    hm_plugin_sdk::host::write_stdout(msg.as_bytes());
+                    ctx.write_stdout(msg.as_bytes());
                     Ok(ExitInfo {
                         exit_code: 0,
                         message: None,
@@ -186,15 +183,15 @@ pub(crate) fn dispatch(
         }
     };
     let result = match parsed.command {
-        CloudCommand::Login { paste } => auth::login::run(&env, paste),
-        CloudCommand::Logout => auth::logout::run(&env),
-        CloudCommand::Whoami => auth::whoami::run(&env),
-        CloudCommand::Org(cmd) => verbs::org::run(&env, cmd),
-        CloudCommand::Pipeline(cmd) => verbs::pipeline::run(&env, cmd),
-        CloudCommand::Build(cmd) => verbs::build::run(&env, cmd),
-        CloudCommand::Job(cmd) => verbs::job::run(&env, cmd),
-        CloudCommand::Billing(cmd) => verbs::billing::run(&env, cmd),
-        CloudCommand::Run(args) => verbs::run::run(&env, args),
+        CloudCommand::Login { paste } => auth::login::run(ctx, &env, paste).await,
+        CloudCommand::Logout => auth::logout::run(ctx, &env).await,
+        CloudCommand::Whoami => auth::whoami::run(ctx, &env).await,
+        CloudCommand::Org(cmd) => verbs::org::run(ctx, &env, cmd).await,
+        CloudCommand::Pipeline(cmd) => verbs::pipeline::run(ctx, &env, cmd).await,
+        CloudCommand::Build(cmd) => verbs::build::run(ctx, &env, cmd).await,
+        CloudCommand::Job(cmd) => verbs::job::run(ctx, &env, cmd).await,
+        CloudCommand::Billing(cmd) => verbs::billing::run(ctx, &env, cmd).await,
+        CloudCommand::Run(args) => verbs::run::run(ctx, &env, args).await,
     };
     match result {
         Ok(()) => Ok(ExitInfo {

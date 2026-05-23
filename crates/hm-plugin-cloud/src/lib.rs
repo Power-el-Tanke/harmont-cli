@@ -1,10 +1,9 @@
 //! Built-in cloud client plugin for the hm CLI.
 //!
 //! Implements `hm cloud {login,logout,whoami,org,pipeline,build,job,billing,run}`.
-//! All HTTP traffic goes through extism-pdk's host-mediated http_request
-//! (enforced by the manifest's allowed_hosts list).
+//! HTTP traffic goes through reqwest directly (native dylib, no WASM sandbox).
 
-#![allow(unsafe_code, reason = "extism-pdk host_fn imports require unsafe")]
+#![allow(unsafe_code)]
 #![allow(
     clippy::pedantic,
     clippy::nursery,
@@ -12,7 +11,6 @@
     clippy::multiple_crate_versions,
     clippy::cargo_common_metadata,
     clippy::missing_errors_doc,
-    reason = "matches the test-fixtures allow-list; plugin authoring crate"
 )]
 
 mod api;
@@ -25,21 +23,26 @@ mod output;
 mod state;
 mod verbs;
 
+use core::future::Future;
 use hm_plugin_sdk::*;
 
 #[derive(Default)]
 struct Cloud;
 
 impl SubcommandPlugin for Cloud {
-    fn run(&self, input: SubcommandInput) -> Result<ExitInfo, PluginError> {
-        // Parse argv inside the plugin. input.verb_path[0] is "cloud";
-        // the rest is the nested verb + args.
-        let argv = input.verb_path.clone();
-        cli::dispatch(argv, input.env)
+    fn run<'a>(
+        &'a self,
+        ctx: &'a PluginContext<'a>,
+        input: SubcommandInput,
+    ) -> impl Future<Output = Result<ExitInfo, PluginError>> + Send + 'a {
+        async move {
+            let argv = input.verb_path.clone();
+            cli::dispatch(ctx, argv, input.env).await
+        }
     }
 }
 
-register_plugin!(
+hm_plugin!(
     manifest = PluginManifest {
         api_version: HM_PLUGIN_API_VERSION,
         name: "harmont-cloud".into(),
@@ -51,34 +54,9 @@ register_plugin!(
             args_schema: serde_json::json!({}),
             subcommands: vec![],
         })],
-        required_host_fns: vec![
-            "hm_log".into(),
-            "hm_write_stdout".into(),
-            "hm_write_stderr".into(),
-            "hm_tty_prompt".into(),
-            "hm_tty_confirm".into(),
-            "hm_browser_open".into(),
-            "hm_spawn_loopback".into(),
-            "hm_loopback_recv".into(),
-            "hm_keyring_get".into(),
-            "hm_keyring_set".into(),
-            "hm_keyring_delete".into(),
-            "hm_kv_get".into(),
-            "hm_kv_set".into(),
-            "hm_should_cancel".into(),
-        ],
+        required_host_fns: vec![],
         config_schema: None,
-        allowed_hosts: vec![
-            "api.harmont.dev".into(),
-            "*.harmont.dev".into(),
-            // Test-only: wiremock binds 127.0.0.1 on a random port.
-            // extism's HTTP gate matches by host, not port, so adding
-            // these patterns lets integration tests target a local
-            // mock server via `HARMONT_API_URL=http://127.0.0.1:<port>`
-            // without compromising the prod allowlist.
-            "127.0.0.1".into(),
-            "localhost".into(),
-        ],
+        allowed_hosts: vec![],
     },
     subcommand = Cloud,
 );

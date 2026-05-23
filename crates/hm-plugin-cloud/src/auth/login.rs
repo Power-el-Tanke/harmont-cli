@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use hm_plugin_protocol::PluginError;
-use hm_plugin_sdk::host;
+use hm_plugin_sdk::PluginContext;
 
 use crate::api::types::{CliExchangeRequest, CliExchangeResponse, User};
 use crate::config::Config;
@@ -14,25 +14,36 @@ use crate::http::Client;
     dead_code,
     reason = "wired by `cli::dispatch` in the next cluster (Task 15)"
 )]
-pub(crate) fn run(env: &BTreeMap<String, String>, paste: bool) -> Result<(), PluginError> {
+pub(crate) async fn run(
+    ctx: &PluginContext<'_>,
+    env: &BTreeMap<String, String>,
+    paste: bool,
+) -> Result<(), PluginError> {
     let cfg = Config::from_env(env);
     let (verifier, challenge) = pkce_pair()?;
 
     if paste {
-        login_paste(env, &cfg, &verifier, &challenge)
+        login_paste(ctx, env, &cfg, &verifier, &challenge).await
     } else {
-        login_loopback(&cfg, &verifier, &challenge)
+        login_loopback(ctx, &cfg, &verifier, &challenge).await
     }
 }
 
-fn login_loopback(cfg: &Config, verifier: &str, challenge: &str) -> Result<(), PluginError> {
-    let handle = host::spawn_loopback(None).ok_or_else(|| {
-        PluginError::new(
-            "cloud_loopback_spawn",
-            "host could not bind a loopback socket",
-        )
-    })?;
-    let port = handle.0;
+async fn login_loopback(
+    ctx: &PluginContext<'_>,
+    cfg: &Config,
+    verifier: &str,
+    challenge: &str,
+) -> Result<(), PluginError> {
+    // Bind a one-shot axum server on localhost:0 to receive the OAuth callback.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| PluginError::new("cloud_loopback_spawn", format!("bind loopback: {e}")))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| PluginError::new("cloud_loopback_spawn", format!("local_addr: {e}")))?
+        .port();
+
     let redirect = format!("http://127.0.0.1:{port}/cb");
     let auth_url = format!(
         "{}/cli/login?challenge={}&redirect_uri={}",
@@ -41,33 +52,70 @@ fn login_loopback(cfg: &Config, verifier: &str, challenge: &str) -> Result<(), P
         urlencoding(&redirect),
     );
 
-    host::log(
+    ctx.log(
         hm_plugin_protocol::Level::Info,
         &format!("opening browser to {auth_url}"),
     );
-    if !host::browser_open(&auth_url) {
-        write_stderr(&format!(
-            "couldn't auto-open the browser. Open this URL manually:\n  {auth_url}\n"
+    if webbrowser::open(&auth_url).is_err() {
+        ctx.write_stderr(
+            format!("couldn't auto-open the browser. Open this URL manually:\n  {auth_url}\n")
+                .as_bytes(),
+        );
+    }
+
+    // Use a oneshot channel to receive the code from the callback handler.
+    let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+    let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+
+    let app = axum::Router::new().route(
+        "/cb",
+        axum::routing::get(
+            move |axum::extract::Query(params): axum::extract::Query<BTreeMap<String, String>>| {
+                let code = params.get("code").cloned().unwrap_or_default();
+                if let Some(sender) = tx.lock().ok().and_then(|mut g| g.take()) {
+                    let _ = sender.send(code);
+                }
+                async { "Login received. You can close this tab." }
+            },
+        ),
+    );
+
+    // Serve the axum app in the background; shut down after we get the code.
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .await
+            .ok();
+    });
+
+    let code = tokio::time::timeout(std::time::Duration::from_secs(180), rx)
+        .await
+        .map_err(|_| {
+            PluginError::new(
+                "cloud_login_timeout",
+                "browser callback did not arrive within 3 minutes",
+            )
+        })?
+        .map_err(|_| {
+            PluginError::new(
+                "cloud_login_timeout",
+                "callback channel closed unexpectedly",
+            )
+        })?;
+
+    server.abort();
+
+    if code.is_empty() {
+        return Err(PluginError::new(
+            "cloud_login_missing_code",
+            "callback had no 'code' query parameter",
         ));
     }
 
-    let data = host::loopback_recv(handle, 180_000).ok_or_else(|| {
-        PluginError::new(
-            "cloud_login_timeout",
-            "browser callback did not arrive within 3 minutes",
-        )
-    })?;
-    let code = data.query.get("code").cloned().ok_or_else(|| {
-        PluginError::new(
-            "cloud_login_missing_code",
-            "callback had no 'code' query parameter",
-        )
-    })?;
-
-    finalize(cfg, &code, verifier)
+    finalize(ctx, cfg, &code, verifier).await
 }
 
-fn login_paste(
+async fn login_paste(
+    ctx: &PluginContext<'_>,
     env: &BTreeMap<String, String>,
     cfg: &Config,
     verifier: &str,
@@ -77,72 +125,70 @@ fn login_paste(
         "{}/cli/login?challenge={}&redirect_uri=urn:ietf:wg:oauth:2.0:oob",
         cfg.api_base, challenge,
     );
-    write_stderr(&format!(
-        "Open this URL in your browser, then paste the code:\n  {auth_url}\n"
-    ));
-    let _ = host::browser_open(&auth_url);
+    ctx.write_stderr(
+        format!("Open this URL in your browser, then paste the code:\n  {auth_url}\n").as_bytes(),
+    );
+    let _ = webbrowser::open(&auth_url);
 
     // Tests inject the code via `HARMONT_LOGIN_CODE` to avoid TTY.
     let code = if let Some(c) = env.get("HARMONT_LOGIN_CODE") {
         c.clone()
     } else {
-        host::tty_prompt("code: ", false)
+        dialoguer::Input::<String>::new()
+            .with_prompt("code")
+            .interact_text()
+            .map_err(|e| PluginError::new("cloud_login_tty", format!("prompt failed: {e}")))?
     };
     let code = code.trim().to_string();
     if code.is_empty() {
         return Err(PluginError::new("cloud_login_empty_code", "no code pasted"));
     }
-    finalize(cfg, &code, verifier)
+    finalize(ctx, cfg, &code, verifier).await
 }
 
-fn finalize(cfg: &Config, code: &str, verifier: &str) -> Result<(), PluginError> {
+async fn finalize(
+    ctx: &PluginContext<'_>,
+    cfg: &Config,
+    code: &str,
+    verifier: &str,
+) -> Result<(), PluginError> {
     let client = Client::anonymous(cfg);
-    let resp: CliExchangeResponse = client.post(
-        "/cli/exchange",
-        &CliExchangeRequest {
-            code: code.to_string(),
-            verifier: verifier.to_string(),
-        },
-    )?;
+    let resp: CliExchangeResponse = client
+        .post(
+            "/cli/exchange",
+            &CliExchangeRequest {
+                code: code.to_string(),
+                verifier: verifier.to_string(),
+            },
+        )
+        .await?;
     creds::save_token(&cfg.api_base, &resp.token);
 
     let auth_client = Client::new(cfg, Some(resp.token));
-    let me: User = auth_client.get("/auth/me")?;
-    write_stderr(&format!(
-        "logged in as {} ({})\n",
-        me.display_name.clone().unwrap_or_else(|| me.email.clone()),
-        me.email,
-    ));
+    let me: User = auth_client.get("/auth/me").await?;
+    ctx.write_stderr(
+        format!(
+            "logged in as {} ({})\n",
+            me.display_name.clone().unwrap_or_else(|| me.email.clone()),
+            me.email,
+        )
+        .as_bytes(),
+    );
     Ok(())
 }
 
-/// Generate a PKCE verifier + S256 challenge.
-///
-/// WASM has no entropy source, so we derive 32 bytes from the system
-/// clock's nanos. This is INSECURE for production — replace with a
-/// proper host fn `hm_random_bytes` in a follow-up.
-///
-/// TODO(plan-5): add `hm_random_bytes(len) -> Vec<u8>` host fn.
+/// Generate a PKCE verifier + S256 challenge using real entropy.
 fn pkce_pair() -> Result<(String, String), PluginError> {
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use rand::RngCore;
     use sha2::{Digest, Sha256};
 
     let mut seed = [0u8; 32];
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    for (i, b) in seed.iter_mut().enumerate() {
-        *b = ((now >> (i % 16)) & 0xFF) as u8;
-    }
+    rand::thread_rng().fill_bytes(&mut seed);
     let verifier = URL_SAFE_NO_PAD.encode(seed);
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     Ok((verifier, challenge))
-}
-
-fn write_stderr(msg: &str) {
-    host::write_stderr(msg.as_bytes());
 }
 
 fn urlencoding(s: &str) -> String {

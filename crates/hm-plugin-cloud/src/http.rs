@@ -1,14 +1,14 @@
-//! Thin HTTP wrapper around extism-pdk's host-mediated `http_request`.
-//! Bearer-token injection, JSON ser/de, status-code → stable error code
-//! mapping.
+//! Async HTTP wrapper around reqwest. Bearer-token injection, JSON
+//! ser/de, status-code to stable error code mapping.
 
-use extism_pdk::{HttpRequest, HttpResponse, http::request};
 use hm_plugin_protocol::PluginError;
+use reqwest::Client as ReqwestClient;
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::config::Config;
 
 pub(crate) struct Client {
+    inner: ReqwestClient,
     base: String,
     token: Option<String>,
 }
@@ -20,6 +20,7 @@ impl Client {
     )]
     pub(crate) fn new(config: &Config, token: Option<String>) -> Self {
         Self {
+            inner: ReqwestClient::new(),
             base: config.api_base.clone(),
             token,
         }
@@ -32,62 +33,66 @@ impl Client {
 
     /// Issue a GET. Body deserialised as `O`.
     #[allow(dead_code, reason = "consumed by verbs in a later cluster")]
-    pub(crate) fn get<O: DeserializeOwned>(&self, path: &str) -> Result<O, PluginError> {
-        self.send::<(), O>("GET", path, None)
+    pub(crate) async fn get<O: DeserializeOwned>(&self, path: &str) -> Result<O, PluginError> {
+        self.send::<(), O>("GET", path, None).await
     }
 
     #[allow(dead_code, reason = "consumed by verbs in a later cluster")]
-    pub(crate) fn post<I: Serialize, O: DeserializeOwned>(
+    pub(crate) async fn post<I: Serialize, O: DeserializeOwned>(
         &self,
         path: &str,
         body: &I,
     ) -> Result<O, PluginError> {
-        self.send::<I, O>("POST", path, Some(body))
+        self.send::<I, O>("POST", path, Some(body)).await
     }
 
     #[allow(dead_code, reason = "consumed by verbs in a later cluster")]
-    pub(crate) fn delete<O: DeserializeOwned>(&self, path: &str) -> Result<O, PluginError> {
-        self.send::<(), O>("DELETE", path, None)
+    pub(crate) async fn delete<O: DeserializeOwned>(&self, path: &str) -> Result<O, PluginError> {
+        self.send::<(), O>("DELETE", path, None).await
     }
 
-    fn send<I, O>(&self, method: &str, path: &str, body: Option<&I>) -> Result<O, PluginError>
+    async fn send<I, O>(&self, method: &str, path: &str, body: Option<&I>) -> Result<O, PluginError>
     where
         I: Serialize,
         O: DeserializeOwned,
     {
         let url = format!("{}{path}", self.base);
-        let mut req = HttpRequest::new(&url).with_method(method);
+        let mut req = self.inner.request(
+            method
+                .parse()
+                .map_err(|e| PluginError::new("cloud_http", format!("{e}")))?,
+            &url,
+        );
         if let Some(token) = &self.token {
-            req = req.with_header("Authorization", format!("Bearer {token}"));
+            req = req.bearer_auth(token);
         }
-        req = req.with_header("Accept", "application/json");
-        let body_bytes: Option<Vec<u8>> = body
-            .map(serde_json::to_vec)
-            .transpose()
-            .map_err(|e| PluginError::new("cloud_http_serialize", e.to_string()))?;
-        if body_bytes.is_some() {
-            req = req.with_header("Content-Type", "application/json");
+        req = req.header("Accept", "application/json");
+        if let Some(b) = body {
+            req = req.json(b);
         }
-        let response: HttpResponse = request(&req, body_bytes.as_deref())
+        let resp = req
+            .send()
+            .await
             .map_err(|e| PluginError::new("cloud_http_request", format!("{method} {url}: {e}")))?;
-        let status = response.status_code();
-        let body = response.body();
+        let status = resp.status().as_u16();
         if !(200..300).contains(&status) {
-            let snippet = String::from_utf8_lossy(&body)
-                .chars()
-                .take(500)
-                .collect::<String>();
+            let snippet = resp.text().await.unwrap_or_default();
+            let snippet: String = snippet.chars().take(500).collect();
             return Err(PluginError::new(
                 map_status_code(status),
-                format!("{method} {url} → HTTP {status}: {snippet}"),
+                format!("{method} {url} \u{2192} HTTP {status}: {snippet}"),
             ));
         }
-        if body.is_empty() {
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| PluginError::new("cloud_http_decode", e.to_string()))?;
+        if bytes.is_empty() {
             // Treat as unit type if `O` accepts `null` (e.g., `()`).
             return serde_json::from_slice(b"null")
                 .map_err(|e| PluginError::new("cloud_http_decode", e.to_string()));
         }
-        serde_json::from_slice(&body)
+        serde_json::from_slice(&bytes)
             .map_err(|e| PluginError::new("cloud_http_decode", e.to_string()))
     }
 }

@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use hm_plugin_protocol::PluginError;
-use hm_plugin_sdk::host;
+use hm_plugin_sdk::PluginContext;
 
 use crate::config::Config;
 use crate::creds;
@@ -12,9 +12,12 @@ use crate::creds;
     dead_code,
     reason = "wired by `cli::dispatch` in the next cluster (Task 15)"
 )]
-pub(crate) fn run(env: &BTreeMap<String, String>) -> Result<(), PluginError> {
+pub(crate) async fn run(
+    ctx: &PluginContext<'_>,
+    env: &BTreeMap<String, String>,
+) -> Result<(), PluginError> {
     let cfg = Config::from_env(env);
     creds::clear_token(&cfg.api_base);
-    host::write_stderr(format!("logged out of {}\n", cfg.api_base).as_bytes());
+    ctx.write_stderr(format!("logged out of {}\n", cfg.api_base).as_bytes());
     Ok(())
 }

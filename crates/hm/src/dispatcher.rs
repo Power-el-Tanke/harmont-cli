@@ -11,11 +11,13 @@
 )]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use hm_plugin_protocol::{ExitInfo, SubcommandInput};
 
 use crate::error::HmError;
+use crate::plugin::host_api::HostApiImpl;
 use crate::plugin::{PluginRegistry, RegistryConfig};
 
 /// Entry point: invoke a plugin-provided subcommand. `argv` is the
@@ -35,22 +37,7 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
     let registry = PluginRegistry::load(RegistryConfig {
         auto_discover: true,
         extra_paths: vec![],
-        embedded: vec![
-            (
-                "harmont-docker",
-                crate::plugin::embedded::DOCKER_PLUGIN_WASM,
-            ),
-            (
-                "harmont-output-human",
-                crate::plugin::embedded::OUTPUT_HUMAN_PLUGIN_WASM,
-            ),
-            (
-                "harmont-output-json",
-                crate::plugin::embedded::OUTPUT_JSON_PLUGIN_WASM,
-            ),
-            ("harmont-cloud", crate::plugin::embedded::CLOUD_PLUGIN_WASM),
-        ],
-        pool_sizes: BTreeMap::new(),
+        host_api: Arc::new(HostApiImpl::new_noop()),
     })
     .context("load plugin registry")?;
 
@@ -78,7 +65,7 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
     };
 
     let info: ExitInfo = plugin
-        .call_capability("hm_subcommand_run", &input)
+        .run_subcommand(&input)
         .await
         .with_context(|| format!("invoke plugin for verb '{verb}'"))?;
 

@@ -10,9 +10,9 @@ pub trait SubcommandPlugin: Send + Sync + Default {
     /// # Errors
     /// Returns a [`PluginError`] describing the failure. The host
     /// renders the error and exits the process with code 1.
-    fn run(
-        &self,
-        ctx: &PluginContext<'_>,
+    fn run<'a>(
+        &'a self,
+        ctx: &'a PluginContext<'a>,
         input: SubcommandInput,
-    ) -> impl Future<Output = Result<ExitInfo, PluginError>> + Send + '_;
+    ) -> impl Future<Output = Result<ExitInfo, PluginError>> + Send + 'a;
 }

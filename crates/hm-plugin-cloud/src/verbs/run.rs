@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use clap::Parser;
 use hm_plugin_protocol::PluginError;
-use hm_plugin_sdk::host;
+use hm_plugin_sdk::PluginContext;
 
 use crate::api::types::{Build, CreateBuildRequest};
 use crate::config::Config;
@@ -36,13 +36,17 @@ pub(crate) struct RunArgs {
     pub no_watch: bool,
 }
 
-pub(crate) fn run(env: &BTreeMap<String, String>, args: RunArgs) -> Result<(), PluginError> {
+pub(crate) async fn run(
+    ctx: &PluginContext<'_>,
+    env: &BTreeMap<String, String>,
+    args: RunArgs,
+) -> Result<(), PluginError> {
     let cfg = Config::from_env(env);
     let token = creds::load_token(&cfg.api_base, env).ok_or_else(|| {
         PluginError::new("cloud_not_logged_in", "not logged in; run `hm cloud login`")
     })?;
     let client = Client::new(&cfg, Some(token));
-    let org = CloudState::load().active_org.ok_or_else(|| {
+    let org = CloudState::load(ctx).active_org.ok_or_else(|| {
         PluginError::new(
             "cloud_no_active_org",
             "no active organization; run `hm cloud org switch <slug>`",
@@ -53,7 +57,7 @@ pub(crate) fn run(env: &BTreeMap<String, String>, args: RunArgs) -> Result<(), P
     // host's existing rendering pipeline (or the user) is responsible
     // for materialising the JSON.
     let plan_path = args.plan_file.as_deref().unwrap_or("plan.json");
-    let bytes = host::fs_read_config(plan_path).ok_or_else(|| {
+    let bytes = ctx.fs_read_config(plan_path).ok_or_else(|| {
         PluginError::new(
             "cloud_plan_missing",
             format!("could not read plan file '{plan_path}'; render the plan first"),
@@ -73,10 +77,12 @@ pub(crate) fn run(env: &BTreeMap<String, String>, args: RunArgs) -> Result<(), P
             .collect(),
         plan_json,
     };
-    let build: Build = client.post(
-        &format!("/organizations/{org}/pipelines/{}/builds", args.pipeline),
-        &req,
-    )?;
+    let build: Build = client
+        .post(
+            &format!("/organizations/{org}/pipelines/{}/builds", args.pipeline),
+            &req,
+        )
+        .await?;
     let url = format!(
         "{}/{}/{}/builds/{}",
         cfg.api_base.trim_end_matches("/api"),
@@ -84,16 +90,18 @@ pub(crate) fn run(env: &BTreeMap<String, String>, args: RunArgs) -> Result<(), P
         args.pipeline,
         build.number
     );
-    host::write_stderr(format!("submitted build #{}: {url}\n", build.number).as_bytes());
+    ctx.write_stderr(format!("submitted build #{}: {url}\n", build.number).as_bytes());
     if args.no_watch {
         return Ok(());
     }
     // Watch loop: same shape as verbs::build::watch.
     crate::verbs::build::run(
+        ctx,
         env,
         crate::cli::BuildCommand::Watch {
             pipeline: args.pipeline.clone(),
             number: build.number,
         },
     )
+    .await
 }
