@@ -1,6 +1,6 @@
-//! Discovers `.wasm` plugins under the user and project plugin dirs,
-//! validates each manifest, and builds a capability index used by
-//! the dispatcher.
+//! Discovers native shared-library plugins under the user and project
+//! plugin dirs, validates each manifest, and builds a capability index
+//! used by the dispatcher.
 
 // Pedantic-bucket nags accepted at module scope:
 // - `missing_errors_doc`: every fallible fn returns `anyhow::Result`
@@ -14,7 +14,7 @@
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::collapsible_if)]
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -22,12 +22,12 @@ use anyhow::{Context, Result};
 use hm_plugin_protocol::{Capability, PluginManifest};
 
 use super::host::LoadedPlugin;
-use super::host_fns::HOST_FN_NAMES;
+use super::host_api::HostApiImpl;
 use super::manifest::{ManifestError, validate_standalone};
 use super::paths;
 use crate::error::HmError;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct RegistryConfig {
     /// If `false`, skip discovery and only registers explicitly added
     /// plugins. Used by integration tests.
@@ -35,14 +35,18 @@ pub struct RegistryConfig {
     /// Extra plugin paths to load (in addition to discovery). Used by
     /// tests to load fixture plugins.
     pub extra_paths: Vec<PathBuf>,
-    /// Embedded plugin bytes — registered first, before disk plugins.
-    /// Plan 2 onward stuffs `docker.wasm`, etc. in here.
-    pub embedded: Vec<(&'static str, &'static [u8])>,
-    /// Per-runner instance pool size override. Keyed by `runner` name.
-    /// Defaults to 1 when a runner isn't present here. The orchestrator
-    /// sets this to `parallelism` for the default-runner plugin so
-    /// concurrent chains stop serialising on a single plugin instance.
-    pub pool_sizes: BTreeMap<String, usize>,
+    /// The host API implementation shared by all loaded plugins.
+    pub host_api: Arc<HostApiImpl>,
+}
+
+impl Default for RegistryConfig {
+    fn default() -> Self {
+        Self {
+            auto_discover: false,
+            extra_paths: Vec::new(),
+            host_api: Arc::new(HostApiImpl::new_noop()),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -56,29 +60,8 @@ pub struct PluginRegistry {
 
 impl PluginRegistry {
     pub fn load(config: RegistryConfig) -> Result<Self> {
-        let host_fns: HashSet<&str> = HOST_FN_NAMES.iter().copied().collect();
         let mut plugins: Vec<Arc<LoadedPlugin>> = Vec::new();
-
-        // Chicken-and-egg: we'd need the manifest to know if a plugin
-        // is a step executor before sizing its pool. Resolve by using
-        // the max pool size across all declared runners — the
-        // semaphore guarantees we never exceed it, and non-step
-        // plugins simply never grow past their single pre-allocated
-        // instance.
-        let max_instances = config
-            .pool_sizes
-            .values()
-            .copied()
-            .max()
-            .unwrap_or(1)
-            .max(1);
-
-        for (name, bytes) in &config.embedded {
-            let p = LoadedPlugin::from_bytes(bytes, max_instances)
-                .with_context(|| format!("embedded plugin '{name}'"))?;
-            validate(&p.manifest, &host_fns)?;
-            plugins.push(Arc::new(p));
-        }
+        let dll_ext = std::env::consts::DLL_EXTENSION;
 
         if config.auto_discover {
             for dir in [paths::user_plugins_dir(), paths::project_plugins_dir()]
@@ -93,21 +76,21 @@ impl PluginRegistry {
                 for ent in entries {
                     let Ok(ent) = ent else { continue };
                     let path = ent.path();
-                    if path.extension().and_then(|s| s.to_str()) != Some("wasm") {
+                    if path.extension().and_then(|s| s.to_str()) != Some(dll_ext) {
                         continue;
                     }
-                    let p = LoadedPlugin::from_file(path.clone(), max_instances)
+                    let p = LoadedPlugin::load(&path, config.host_api.clone())
                         .with_context(|| format!("load {}", path.display()))?;
-                    validate(&p.manifest, &host_fns)?;
+                    validate(&p.manifest)?;
                     plugins.push(Arc::new(p));
                 }
             }
         }
 
         for path in &config.extra_paths {
-            let p = LoadedPlugin::from_file(path.clone(), max_instances)
+            let p = LoadedPlugin::load(path, config.host_api.clone())
                 .with_context(|| format!("load {}", path.display()))?;
-            validate(&p.manifest, &host_fns)?;
+            validate(&p.manifest)?;
             plugins.push(Arc::new(p));
         }
 
@@ -181,8 +164,8 @@ impl PluginRegistry {
 
     /// Return a cheap clone of the plugin at `idx`. Callers should
     /// drop any registry-level lock they hold before awaiting on the
-    /// returned plugin — the per-plugin pool is what serialises
-    /// concurrent calls, not the registry.
+    /// returned plugin — the trait object is `Send + Sync`, so
+    /// concurrent callers can invoke methods directly.
     #[must_use]
     pub fn get(&self, idx: usize) -> Option<Arc<LoadedPlugin>> {
         self.plugins.get(idx).cloned()
@@ -200,8 +183,8 @@ impl PluginRegistry {
     }
 }
 
-fn validate(m: &PluginManifest, host_fns: &HashSet<&str>) -> Result<()> {
-    validate_standalone(m, host_fns).map_err(|e| match e {
+fn validate(m: &PluginManifest) -> Result<()> {
+    validate_standalone(m).map_err(|e| match e {
         ManifestError::ApiVersion {
             name,
             found,
@@ -210,12 +193,6 @@ fn validate(m: &PluginManifest, host_fns: &HashSet<&str>) -> Result<()> {
             name,
             expected_api: expected,
             found_api: found,
-        }
-        .into(),
-        ManifestError::MissingHostFn { name, fn_name } => HmError::PluginMissingHostFn {
-            name,
-            fn_name,
-            min_hm_version: semver::Version::new(0, 0, 0),
         }
         .into(),
         ManifestError::NoCapabilities { ref name }

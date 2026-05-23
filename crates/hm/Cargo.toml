@@ -8,18 +8,6 @@ description = "Command-line client for the Harmont CI platform."
 readme = "README.md"
 keywords = ["ci", "harmont", "cli"]
 categories = ["command-line-utilities", "development-tools"]
-# Explicit include list: cargo's default ("everything tracked by git")
-# would drop crates/hm/embedded/*.wasm (gitignored — they are CI-built
-# artifacts, not source). The release workflow stages the four
-# embedded plugin wasms into embedded/ before invoking `cargo publish`,
-# and this glob carries them into the tarball.
-include = [
-    "src/**/*",
-    "build.rs",
-    "Cargo.toml",
-    "README.md",
-    "embedded/*.wasm",
-]
 
 [lib]
 name = "harmont_cli"
@@ -69,6 +57,10 @@ bollard = "0.18"
 which = "6"
 extism = { workspace = true }
 hm-plugin-protocol = { workspace = true }
+hm-plugin-sdk = { workspace = true }
+stabby = { workspace = true }
+borsh = { workspace = true }
+libloading = "0.8"
 schemars = { workspace = true }
 semver = { workspace = true }
 once_cell = "1"

@@ -10,10 +10,11 @@
 
 use std::path::PathBuf;
 
-/// `~/.config/harmont/plugins/` (or the platform's XDG equivalent).
-/// User-global plugins live here.
+/// `~/.harmont/plugins/`. User-global plugins live here. Both
+/// built-in and third-party plugins are installed here by `install.sh`
+/// and `hm plugin install`.
 pub fn user_plugins_dir() -> Option<PathBuf> {
-    dirs::config_dir().map(|p| p.join("harmont").join("plugins"))
+    dirs::home_dir().map(|p| p.join(".harmont").join("plugins"))
 }
 
 /// `<cwd>/.harmont/plugins/`. Project-local plugins live here.
@@ -34,7 +35,7 @@ mod tests {
 
     #[test]
     fn user_plugins_dir_resolves() {
-        let p = user_plugins_dir().expect("config dir resolves");
-        assert!(p.ends_with("harmont/plugins"));
+        let p = user_plugins_dir().expect("home dir resolves");
+        assert!(p.ends_with(".harmont/plugins"));
     }
 }

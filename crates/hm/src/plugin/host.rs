@@ -1,107 +1,363 @@
-//! Thin wrapper around `extism::Plugin` instances loaded into a
-//! per-plugin pool. Concurrent invocations from chain tasks acquire
-//! a pool slot rather than blocking on a single plugin instance.
+//! Thin wrapper around stabby-loaded native plugin dylibs.
+//!
+//! Each `LoadedPlugin` owns a `libloading::Library` and a stabby
+//! trait object implementing `RawPlugin + Send + Sync`. The trait
+//! object is ABI-stable across compiler versions thanks to stabby.
 
+// stabby trait objects and libloading require unsafe for loading
+// and calling into foreign code.
+#![allow(unsafe_code)]
 // Pedantic-bucket nags that don't add safety on this module:
 // - `missing_errors_doc`: every public fn here returns `anyhow::Result`
 //   with a context message; an `# Errors` section would just restate it.
-// - `significant_drop_tightening` on `call_capability`: the `PoolGuard`
-//   intentionally lives until after `serde_json::from_slice` returns,
-//   because the `&[u8]` we just borrowed from the plugin's memory
-//   only stays valid while the plugin instance is in scope.
-#![allow(clippy::missing_errors_doc, clippy::significant_drop_tightening)]
+#![allow(clippy::missing_errors_doc)]
 
-use std::path::PathBuf;
+use std::mem::ManuallyDrop;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use hm_plugin_protocol::PluginManifest;
+use hm_plugin_sdk::ffi::RawPluginDyn as _;
+use stabby::libloading::StabbyLibrary;
 
-use super::pool::PluginPool;
+use super::host_api::HostApiImpl;
 use crate::error::HmError;
 
-#[derive(Debug)]
+// Type aliases matching the macro crate's `host_ref_type()` and
+// `plugin_dyn_type()` outputs. These are the exact stabby compound-vtable
+// types that the `#[stabby::export] fn hm_load_plugin(...)` symbol
+// uses on both sides of the FFI boundary.
+
+/// The stabby `DynRef` wrapping a `&'static dyn RawHostApi + Send + Sync`.
+type HostRef = stabby::DynRef<
+    'static,
+    <dyn Sync as stabby::abi::vtable::CompoundVt<'static>>::Vt<
+        <dyn Send as stabby::abi::vtable::CompoundVt<'static>>::Vt<
+            <dyn hm_plugin_sdk::ffi::RawHostApi as stabby::abi::vtable::CompoundVt<'static>>::Vt<
+                stabby::abi::vtable::VtDrop,
+            >,
+        >,
+    >,
+>;
+
+/// The stabby `Dyn` wrapping a `Box<dyn RawPlugin + Send + Sync>`.
+type PluginDyn = stabby::Dyn<
+    'static,
+    stabby::boxed::Box<()>,
+    <dyn Sync as stabby::abi::vtable::CompoundVt<'static>>::Vt<
+        <dyn Send as stabby::abi::vtable::CompoundVt<'static>>::Vt<
+            <dyn hm_plugin_sdk::ffi::RawPlugin as stabby::abi::vtable::CompoundVt<'static>>::Vt<
+                stabby::abi::vtable::VtDrop,
+            >,
+        >,
+    >,
+>;
+
+/// The entry point function signature exported by plugins via
+/// `#[stabby::export]`.
+type LoadPluginFn = extern "C" fn(
+    HostRef,
+) -> stabby::result::Result<
+    PluginDyn,
+    hm_plugin_sdk::ffi::FfiBytes,
+>;
+
+/// A loaded native plugin. Holds the library handle and the stabby
+/// trait object. Field ordering matters: `plugin` (which borrows from
+/// the library's code) must be dropped before `_lib`.
 pub struct LoadedPlugin {
     pub manifest: PluginManifest,
-    /// Path the plugin was loaded from. `None` if loaded from embedded
-    /// bytes (`include_bytes!`).
+    /// Path the plugin was loaded from.
     pub source: Option<PathBuf>,
-    pool: PluginPool,
+    /// The stabby trait object implementing RawPlugin. Wrapped in
+    /// `ManuallyDrop` so we can control drop order: this must be
+    /// dropped before `_lib`.
+    plugin: ManuallyDrop<PluginDyn>,
+    /// The dynamically loaded library. Kept alive for the lifetime of
+    /// the trait object. Must be dropped AFTER `plugin`.
+    _lib: libloading::Library,
+    /// The host API reference. Leaked to `'static` so the plugin can
+    /// hold it for its entire lifetime. The `Arc` prevents the
+    /// underlying data from being freed.
+    _host_api: Arc<HostApiImpl>,
+}
+
+// SAFETY: PluginDyn carries Send + Sync vtable markers. The Library
+// handle is an opaque OS handle (safe to move between threads). The
+// HostApiImpl is Send + Sync by construction.
+unsafe impl Send for LoadedPlugin {}
+// SAFETY: see above — all fields are safe for shared references.
+unsafe impl Sync for LoadedPlugin {}
+
+impl std::fmt::Debug for LoadedPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LoadedPlugin")
+            .field("manifest", &self.manifest)
+            .field("source", &self.source)
+            .field("plugin", &"<stabby::Dyn<RawPlugin>>")
+            .finish()
+    }
+}
+
+impl Drop for LoadedPlugin {
+    fn drop(&mut self) {
+        // SAFETY: we manually drop `plugin` before `_lib` goes out of
+        // scope (which happens immediately after, when the struct is
+        // dropped). This guarantees the trait object's code is still
+        // loaded when its destructor runs.
+        unsafe {
+            ManuallyDrop::drop(&mut self.plugin);
+        }
+    }
 }
 
 impl LoadedPlugin {
-    /// Build a plugin from an on-disk `.wasm` file. The Extism manifest
-    /// disables WASI filesystem access entirely (host-mediated reads
-    /// only).
+    /// Obtain a `&'static PluginDyn` from our stored plugin.
     ///
-    /// Two-phase load: instantiate with no allowed hosts, read the
-    /// plugin's [`PluginManifest`], then rebuild the pool with the
-    /// allowlist the plugin declared. The throwaway pool is dropped
-    /// before the real one is built.
-    pub fn from_file(path: PathBuf, max_instances: usize) -> Result<Self> {
-        let probe = PluginPool::from_file(path.clone(), max_instances)
-            .with_context(|| format!("load plugin from {}", path.display()))?;
-        let manifest = read_manifest(&probe)?;
-        drop(probe);
-        let pool = PluginPool::from_file_with_hosts(
-            path.clone(),
-            max_instances,
-            manifest.allowed_hosts.clone(),
-        )
-        .with_context(|| format!("reload plugin from {} with allowed_hosts", path.display()))?;
+    /// The stabby vtable for `Dyn<'static, ...>` requires `&'static self`
+    /// to call its methods (because the vtable's function pointers carry
+    /// `PhantomData<&'a &'static ()>` which forces `'a: 'static`). Since
+    /// the `LoadedPlugin` owns both the `PluginDyn` and the `Library`,
+    /// and every returned future is `.await`-ed immediately (never stored
+    /// or moved), the borrow cannot actually outlive the struct.
+    ///
+    /// # Safety
+    /// The caller must `.await` the returned future before dropping `self`.
+    unsafe fn plugin_static(&self) -> &'static PluginDyn {
+        unsafe { &*(&*self.plugin as *const PluginDyn) }
+    }
+
+    /// Extend a `FfiSlice` to `'static` lifetime.
+    ///
+    /// The plugin's generated code deserializes the input data at the
+    /// very start of the async block (before any yield point). The
+    /// `in_bytes` local outlives the `.await`, so the borrow is sound
+    /// even though Rust can't prove it statically.
+    ///
+    /// # Safety
+    /// The backing data must remain valid until the returned future
+    /// completes its first poll (which copies the data).
+    unsafe fn staticify_slice(
+        s: hm_plugin_sdk::ffi::FfiSlice<'_>,
+    ) -> hm_plugin_sdk::ffi::FfiSlice<'static> {
+        unsafe { core::mem::transmute(s) }
+    }
+
+    /// Load a native plugin from a shared library on disk.
+    ///
+    /// The `host_api` is leaked to a `&'static` reference (via
+    /// `Arc::into_raw`) so the plugin can hold it for its full lifetime.
+    pub fn load(path: &Path, host_api: Arc<HostApiImpl>) -> Result<Self> {
+        // SAFETY: Loading a shared library executes its init routines.
+        // We trust plugins built with the SDK.
+        let lib = unsafe { libloading::Library::new(path) }
+            .with_context(|| format!("dlopen {}", path.display()))?;
+
+        // SAFETY: The symbol was generated by `#[stabby::export]` and
+        // has ABI-stable layout checked by stabby's report mechanism.
+        let load_fn = unsafe {
+            lib.get_stabbied::<LoadPluginFn>(b"hm_load_plugin")
+        }
+        .map_err(|e| anyhow::anyhow!(
+            "get hm_load_plugin symbol from {}: {e}",
+            path.display()
+        ))?;
+
+        // Create a DynRef to the host API. We leak the Arc to obtain a
+        // `&'static HostApiImpl`, then wrap it in a stabby DynRef.
+        let host_ref: &'static HostApiImpl = {
+            let ptr = Arc::into_raw(Arc::clone(&host_api));
+            // SAFETY: ptr is valid for 'static because the Arc is kept
+            // alive in `_host_api`.
+            unsafe { &*ptr }
+        };
+
+        // Convert &'static HostApiImpl to HostRef (DynRef<'static, ...>).
+        let dyn_ref: HostRef = stabby::DynRef::from(host_ref);
+
+        // Call the plugin's entry point.
+        let stabby_result = (*load_fn)(dyn_ref);
+
+        // Convert stabby::result::Result to core::result::Result
+        let std_result: core::result::Result<PluginDyn, hm_plugin_sdk::ffi::FfiBytes> =
+            stabby_result.into();
+
+        let plugin = match std_result {
+            Ok(p) => p,
+            Err(err_bytes) => {
+                // Re-claim the Arc we leaked so it doesn't actually leak.
+                let ptr = host_ref as *const HostApiImpl;
+                unsafe { Arc::from_raw(ptr); }
+                let err_str = String::from_utf8_lossy(err_bytes.as_slice());
+                anyhow::bail!(
+                    "plugin {} refused to load: {err_str}",
+                    path.display()
+                );
+            }
+        };
+
+        // Wrap in ManuallyDrop first so we can use plugin_static().
+        let plugin = ManuallyDrop::new(plugin);
+
+        // Read the manifest from the plugin. `manifest()` takes
+        // `&'static self` due to the stabby vtable lifetime; use
+        // the same staticify trick.
+        //
+        // SAFETY: `plugin` is alive (we just created it) and we use
+        // the result synchronously (no escaping borrow).
+        let manifest_bytes = {
+            let static_ref: &'static PluginDyn =
+                unsafe { &*(&*plugin as *const PluginDyn) };
+            static_ref.manifest()
+        };
+        let manifest: PluginManifest = serde_json::from_slice(manifest_bytes.as_slice())
+            .with_context(|| {
+                format!("decode manifest from {}", path.display())
+            })?;
+
         Ok(Self {
             manifest,
-            source: Some(path),
-            pool,
+            source: Some(path.to_path_buf()),
+            plugin,
+            _lib: lib,
+            _host_api: host_api,
         })
     }
 
-    /// Build a plugin from embedded bytes (used for in-tree builtins).
-    ///
-    /// Two-phase load: see [`LoadedPlugin::from_file`].
-    pub fn from_bytes(bytes: &'static [u8], max_instances: usize) -> Result<Self> {
-        let probe = PluginPool::from_bytes(bytes, max_instances).context("load embedded plugin")?;
-        let manifest = read_manifest(&probe)?;
-        drop(probe);
-        let pool =
-            PluginPool::from_bytes_with_hosts(bytes, max_instances, manifest.allowed_hosts.clone())
-                .context("reload embedded plugin with allowed_hosts")?;
-        Ok(Self {
-            manifest,
-            source: None,
-            pool,
-        })
+    /// Execute a step. Serializes `input` as JSON, calls the plugin's
+    /// `execute_step`, and deserializes the result.
+    pub async fn execute_step(
+        &self,
+        input: &hm_plugin_protocol::ExecutorInput,
+    ) -> Result<hm_plugin_protocol::StepResult> {
+        let in_bytes = serde_json::to_vec(input).context("serialize ExecutorInput")?;
+        // SAFETY: see `plugin_static()` and `staticify_slice()` docs.
+        // The data in `in_bytes` outlives the `.await`, and the plugin
+        // copies it before yielding.
+        let ffi_input = unsafe {
+            Self::staticify_slice(hm_plugin_sdk::ffi::FfiSlice::from(in_bytes.as_slice()))
+        };
+        let future = unsafe { self.plugin_static() }.execute_step(ffi_input);
+        let stabby_result = future.await;
+        let std_result: core::result::Result<
+            hm_plugin_sdk::ffi::FfiBytes,
+            hm_plugin_sdk::ffi::FfiBytes,
+        > = stabby_result.into();
+        match std_result {
+            Ok(out) => {
+                serde_json::from_slice(out.as_slice()).context("deserialize StepResult")
+            }
+            Err(err) => Err(ffi_err_to_anyhow(&self.manifest.name, "execute_step", &err)),
+        }
     }
 
-    /// Call a capability export. Acquires a pool slot for the duration
-    /// of the call, then returns it. Generic over the input/output
-    /// types.
-    ///
-    /// The `Send + Sync` bound on `I` is required so the returned
-    /// future is `Send` — chain tasks await this future across a
-    /// `tokio::spawn` boundary.
-    pub async fn call_capability<I, O>(&self, export: &str, input: &I) -> Result<O>
-    where
-        I: serde::Serialize + Sync,
-        O: serde::de::DeserializeOwned,
-    {
-        let in_bytes = serde_json::to_vec(input).context("serialise capability input")?;
-        let mut guard = self
-            .pool
-            .acquire()
-            .await
-            .context("acquire plugin instance")?;
-        // Set the per-plugin thread-local so `hm_kv_*` host fns can
-        // resolve `KvScope::Plugin` to the right on-disk file.
-        crate::plugin::host_fns::set_current_plugin_name(self.manifest.name.clone());
-        let call_result = guard.plugin().call::<Vec<u8>, &[u8]>(export, in_bytes);
-        crate::plugin::host_fns::clear_current_plugin_name();
-        let out_bytes = call_result.map_err(|e| HmError::PluginPanic {
-            name: self.manifest.name.clone(),
-            capability: export.to_string(),
-            message: e.to_string(),
-        })?;
-        serde_json::from_slice(out_bytes).context("decode capability output")
+    /// Dispatch a lifecycle hook event.
+    pub async fn on_hook_event(
+        &self,
+        event: &hm_plugin_protocol::HookEvent,
+    ) -> Result<hm_plugin_protocol::HookOutcome> {
+        let in_bytes = serde_json::to_vec(event).context("serialize HookEvent")?;
+        // SAFETY: see `plugin_static()` and `staticify_slice()` docs.
+        let ffi_input = unsafe {
+            Self::staticify_slice(hm_plugin_sdk::ffi::FfiSlice::from(in_bytes.as_slice()))
+        };
+        let future = unsafe { self.plugin_static() }.on_hook_event(ffi_input);
+        let stabby_result = future.await;
+        let std_result: core::result::Result<
+            hm_plugin_sdk::ffi::FfiBytes,
+            hm_plugin_sdk::ffi::FfiBytes,
+        > = stabby_result.into();
+        match std_result {
+            Ok(out) => {
+                serde_json::from_slice(out.as_slice()).context("deserialize HookOutcome")
+            }
+            Err(err) => Err(ffi_err_to_anyhow(&self.manifest.name, "on_hook_event", &err)),
+        }
     }
+
+    /// Run a subcommand.
+    pub async fn run_subcommand(
+        &self,
+        input: &hm_plugin_protocol::SubcommandInput,
+    ) -> Result<hm_plugin_protocol::ExitInfo> {
+        let in_bytes = serde_json::to_vec(input).context("serialize SubcommandInput")?;
+        // SAFETY: see `plugin_static()` and `staticify_slice()` docs.
+        let ffi_input = unsafe {
+            Self::staticify_slice(hm_plugin_sdk::ffi::FfiSlice::from(in_bytes.as_slice()))
+        };
+        let future = unsafe { self.plugin_static() }.run_subcommand(ffi_input);
+        let stabby_result = future.await;
+        let std_result: core::result::Result<
+            hm_plugin_sdk::ffi::FfiBytes,
+            hm_plugin_sdk::ffi::FfiBytes,
+        > = stabby_result.into();
+        match std_result {
+            Ok(out) => {
+                serde_json::from_slice(out.as_slice()).context("deserialize ExitInfo")
+            }
+            Err(err) => Err(ffi_err_to_anyhow(&self.manifest.name, "run_subcommand", &err)),
+        }
+    }
+
+    /// Handle an output event (for output-formatter plugins).
+    pub async fn on_output_event(
+        &self,
+        event: &hm_plugin_protocol::BuildEvent,
+    ) -> Result<()> {
+        let in_bytes = serde_json::to_vec(event).context("serialize BuildEvent")?;
+        // SAFETY: see `plugin_static()` and `staticify_slice()` docs.
+        let ffi_input = unsafe {
+            Self::staticify_slice(hm_plugin_sdk::ffi::FfiSlice::from(in_bytes.as_slice()))
+        };
+        let future = unsafe { self.plugin_static() }.on_output_event(ffi_input);
+        let stabby_result = future.await;
+        let std_result: core::result::Result<
+            hm_plugin_sdk::ffi::FfiBytes,
+            hm_plugin_sdk::ffi::FfiBytes,
+        > = stabby_result.into();
+        match std_result {
+            Ok(_) => Ok(()),
+            Err(err) => Err(ffi_err_to_anyhow(&self.manifest.name, "on_output_event", &err)),
+        }
+    }
+
+    /// Finalize output (for output-formatter plugins). Returns the
+    /// accumulated output bytes.
+    pub async fn finalize_output(&self) -> Result<Vec<u8>> {
+        // SAFETY: see `plugin_static()` doc. We `.await` immediately.
+        let future = unsafe { self.plugin_static() }.finalize_output();
+        let stabby_result = future.await;
+        let std_result: core::result::Result<
+            hm_plugin_sdk::ffi::FfiBytes,
+            hm_plugin_sdk::ffi::FfiBytes,
+        > = stabby_result.into();
+        match std_result {
+            Ok(out) => Ok(out.as_slice().to_vec()),
+            Err(err) => Err(ffi_err_to_anyhow(&self.manifest.name, "finalize_output", &err)),
+        }
+    }
+}
+
+/// Convert an FFI error response (serialized `PluginError`) into an
+/// `anyhow::Error` wrapping `HmError::PluginPanic`.
+fn ffi_err_to_anyhow(
+    plugin_name: &str,
+    capability: &str,
+    err: &hm_plugin_sdk::ffi::FfiBytes,
+) -> anyhow::Error {
+    let plugin_err: hm_plugin_protocol::PluginError =
+        serde_json::from_slice(err.as_slice())
+            .unwrap_or_else(|_| hm_plugin_protocol::PluginError::new(
+                capability,
+                String::from_utf8_lossy(err.as_slice()).to_string(),
+            ));
+    HmError::PluginPanic {
+        name: plugin_name.to_string(),
+        capability: capability.to_string(),
+        message: plugin_err.message,
+    }
+    .into()
 }
 
 /// Test helper: synthesises a `SubcommandInput` shaped JSON value for
@@ -120,38 +376,4 @@ pub fn dummy_subcommand_input() -> serde_json::Value {
         "args": {},
         "env": {}
     })
-}
-
-/// Read the manifest from a freshly-instantiated plugin. Runs the
-/// `hm_manifest` export and decodes the JSON.
-///
-/// Loading happens synchronously from startup paths (`hm version`,
-/// `hm plugin list`) as well as from inside an existing tokio runtime
-/// (`orchestrator::scheduler::run`). Use the current handle if
-/// present; otherwise spin up a small single-threaded runtime.
-fn read_manifest(pool: &PluginPool) -> Result<PluginManifest> {
-    let task = async {
-        let mut guard = pool.acquire().await?;
-        let bytes = guard
-            .plugin()
-            .call::<&str, &[u8]>("hm_manifest", "")
-            .context("call hm_manifest")?
-            .to_vec();
-        let manifest: PluginManifest =
-            serde_json::from_slice(&bytes).context("decode hm_manifest output")?;
-        Ok::<PluginManifest, anyhow::Error>(manifest)
-    };
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        tokio::task::block_in_place(|| handle.block_on(task))
-    } else {
-        // No runtime; spin up a tiny one. Happens only when
-        // `LoadedPlugin::from_*` is called from a truly synchronous
-        // entry point (none in production today — kept for robustness
-        // and unit tests that drive `LoadedPlugin` directly).
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .context("build adhoc tokio runtime for manifest read")?;
-        rt.block_on(task)
-    }
 }

@@ -1,11 +1,11 @@
 //! In-process plugin host.
 //!
-//! Loads `.wasm` plugins via Extism, validates their manifests, exposes the
-//! host-fn surface from the design spec (see
-//! `docs/superpowers/specs/2026-05-18-hm-local-first-redesign-design.md` §3.3).
+//! Loads native shared-library plugins (`.dylib`/`.so`/`.dll`) via
+//! stabby's ABI-stable trait objects. Replaces the prior extism/WASM
+//! pipeline.
 
-pub mod embedded;
 pub mod host;
+pub mod host_api;
 pub mod host_fns;
 pub mod install;
 pub mod manifest;
