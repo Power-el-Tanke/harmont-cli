@@ -199,6 +199,5 @@ impl PluginRegistry {
     pub fn get(&self, idx: usize) -> Option<Arc<LoadedPlugin>> {
         self.plugins.get(idx).cloned()
     }
-
 }
 
