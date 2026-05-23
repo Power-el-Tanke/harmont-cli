@@ -1,4 +1,5 @@
 pub mod dev;
+pub mod external;
 pub mod plugin;
 pub mod run;
 pub mod version;
