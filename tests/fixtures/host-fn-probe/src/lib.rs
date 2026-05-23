@@ -73,7 +73,7 @@ hm_plugin!(
         capabilities: vec![Capability::Subcommand(SubcommandSpec {
             verb: "fixture-probe".into(),
             about: "Probe host-fn surface".into(),
-            args_schema: serde_json::json!({"args": []}),
+            args: vec![],
             subcommands: vec![],
         })],
         config_schema: None,

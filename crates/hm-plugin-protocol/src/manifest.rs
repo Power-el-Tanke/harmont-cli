@@ -14,10 +14,41 @@ use crate::hook::{HookEventKind, HookPhase};
 /// plugin-specific config blobs and `runner_args`.
 pub type JsonSchema = serde_json::Value;
 
-/// Clap-derived JSON describing a subcommand's argument schema.
-/// Produced by the SDK helper [`crate::manifest::clap_json_from`]
-/// (added in [`hm-plugin-sdk`]).
-pub type ClapJson = serde_json::Value;
+/// A single argument that a subcommand accepts. The host uses these
+/// to build a `clap::Command` on the plugin's behalf, so the plugin
+/// never has to link clap itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ArgSpec {
+    Positional {
+        name: String,
+        help: Option<String>,
+        required: bool,
+        value_type: ValueType,
+    },
+    Option {
+        long: String,
+        short: Option<char>,
+        help: Option<String>,
+        required: bool,
+        value_type: ValueType,
+        default: Option<String>,
+    },
+    Flag {
+        long: String,
+        short: Option<char>,
+        help: Option<String>,
+    },
+}
+
+/// The value type for a positional or option argument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ValueType {
+    String,
+    Int,
+    Bool,
+}
 
 /// Returned by a plugin's manifest export at load time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
@@ -50,9 +81,10 @@ pub struct SubcommandSpec {
     /// same `verb`.
     pub verb: String,
     pub about: String,
-    /// Clap-shaped JSON for argument parsing (the host re-parses on
-    /// the plugin's behalf via `clap`).
-    pub args_schema: ClapJson,
+    /// Arguments that this subcommand accepts. The host builds a
+    /// `clap::Command` from these specs so the plugin never links
+    /// clap itself.
+    pub args: Vec<ArgSpec>,
     pub subcommands: Vec<Self>,
 }
 
@@ -186,5 +218,18 @@ mod tests {
         let s = serde_json::to_string(&cap).unwrap();
         assert!(s.contains(r#""kind":"step_executor""#), "got: {s}");
         assert!(s.contains(r#""runner":"docker""#), "got: {s}");
+    }
+
+    #[test]
+    fn arg_spec_round_trips_through_json() {
+        let spec = ArgSpec::Positional {
+            name: "slug".into(),
+            help: Some("Organization slug".into()),
+            required: true,
+            value_type: ValueType::String,
+        };
+        let json = serde_json::to_string(&spec).unwrap();
+        let back: ArgSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(spec, back);
     }
 }

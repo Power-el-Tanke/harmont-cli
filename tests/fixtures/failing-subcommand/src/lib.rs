@@ -41,7 +41,7 @@ hm_plugin!(
         capabilities: vec![Capability::Subcommand(SubcommandSpec {
             verb: "fixture-fail".into(),
             about: "Intentionally fails (test fixture)".into(),
-            args_schema: serde_json::json!({"args": []}),
+            args: vec![],
             subcommands: vec![],
         })],
         config_schema: None,

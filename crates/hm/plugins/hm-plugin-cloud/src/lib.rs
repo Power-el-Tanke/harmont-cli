@@ -51,7 +51,7 @@ hm_plugin!(
         capabilities: vec![Capability::Subcommand(SubcommandSpec {
             verb: "cloud".into(),
             about: "Talk to the Harmont cloud API".into(),
-            args_schema: serde_json::json!({}),
+            args: vec![],
             subcommands: vec![],
         })],
         config_schema: None,

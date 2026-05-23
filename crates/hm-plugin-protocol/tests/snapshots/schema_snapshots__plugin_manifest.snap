@@ -1,5 +1,6 @@
 ---
 source: crates/hm-plugin-protocol/tests/schema_snapshots.rs
+assertion_line: 20
 expression: schema
 ---
 {
@@ -49,7 +50,7 @@ expression: schema
           "type": "object",
           "required": [
             "about",
-            "args_schema",
+            "args",
             "kind",
             "subcommands",
             "verb"
@@ -68,8 +69,12 @@ expression: schema
             "about": {
               "type": "string"
             },
-            "args_schema": {
-              "description": "Clap-shaped JSON for argument parsing (the host re-parses on the plugin's behalf via `clap`)."
+            "args": {
+              "description": "Arguments that this subcommand accepts. The host builds a `clap::Command` from these specs so the plugin never links clap itself.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ArgSpec"
+              }
             },
             "subcommands": {
               "type": "array",
@@ -139,11 +144,135 @@ expression: schema
         }
       ]
     },
+    "ArgSpec": {
+      "description": "A single argument that a subcommand accepts. The host uses these to build a `clap::Command` on the plugin's behalf, so the plugin never has to link clap itself.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "name",
+            "required",
+            "value_type"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "positional"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "help": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "required": {
+              "type": "boolean"
+            },
+            "value_type": {
+              "$ref": "#/definitions/ValueType"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "long",
+            "required",
+            "value_type"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "option"
+              ]
+            },
+            "long": {
+              "type": "string"
+            },
+            "short": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 1,
+              "minLength": 1
+            },
+            "help": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "required": {
+              "type": "boolean"
+            },
+            "value_type": {
+              "$ref": "#/definitions/ValueType"
+            },
+            "default": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "long"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "flag"
+              ]
+            },
+            "long": {
+              "type": "string"
+            },
+            "short": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 1,
+              "minLength": 1
+            },
+            "help": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ValueType": {
+      "description": "The value type for a positional or option argument.",
+      "type": "string",
+      "enum": [
+        "string",
+        "int",
+        "bool"
+      ]
+    },
     "SubcommandSpec": {
       "type": "object",
       "required": [
         "about",
-        "args_schema",
+        "args",
         "subcommands",
         "verb"
       ],
@@ -155,8 +284,12 @@ expression: schema
         "about": {
           "type": "string"
         },
-        "args_schema": {
-          "description": "Clap-shaped JSON for argument parsing (the host re-parses on the plugin's behalf via `clap`)."
+        "args": {
+          "description": "Arguments that this subcommand accepts. The host builds a `clap::Command` from these specs so the plugin never links clap itself.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ArgSpec"
+          }
         },
         "subcommands": {
           "type": "array",
