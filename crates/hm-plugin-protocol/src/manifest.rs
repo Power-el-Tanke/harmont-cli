@@ -2,8 +2,11 @@
 //! returning a [`PluginManifest`] from its mandatory `hm_manifest`
 //! export at load time.
 
+use std::collections::HashSet;
+
 use schemars::JsonSchema as DeriveJsonSchema;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::hook::{HookEventKind, HookPhase};
 
@@ -72,10 +75,106 @@ pub struct LifecycleHookSpec {
     pub timeout_ms: u32,
 }
 
+#[derive(Debug, Error)]
+pub enum ManifestError {
+    #[error("plugin '{name}': api_version mismatch (plugin: {found}, host: {expected})")]
+    ApiVersion {
+        name: String,
+        found: u32,
+        expected: u32,
+    },
+    #[error("plugin '{name}': declared no capabilities")]
+    NoCapabilities { name: String },
+    #[error("plugin '{name}': StepExecutorSpec.runner '{runner}' is empty or contains whitespace")]
+    BadRunnerName { name: String, runner: String },
+    #[error("plugin '{name}': declared the same subcommand verb twice ('{verb}')")]
+    DuplicateSubcommandVerb { name: String, verb: String },
+}
+
+impl PluginManifest {
+    /// Validate this manifest statically (without consulting other
+    /// plugins). Cross-plugin conflicts (e.g. two plugins both claim
+    /// `runner: "docker"`) are caught by the registry.
+    pub fn validate(&self) -> Result<(), ManifestError> {
+        if self.api_version != crate::HM_PLUGIN_API_VERSION {
+            return Err(ManifestError::ApiVersion {
+                name: self.name.clone(),
+                found: self.api_version,
+                expected: crate::HM_PLUGIN_API_VERSION,
+            });
+        }
+        if self.capabilities.is_empty() {
+            return Err(ManifestError::NoCapabilities {
+                name: self.name.clone(),
+            });
+        }
+        let mut seen_verbs: HashSet<&str> = HashSet::new();
+        for cap in &self.capabilities {
+            match cap {
+                Capability::StepExecutor(s) => {
+                    if s.runner.trim().is_empty() || s.runner.chars().any(char::is_whitespace) {
+                        return Err(ManifestError::BadRunnerName {
+                            name: self.name.clone(),
+                            runner: s.runner.clone(),
+                        });
+                    }
+                }
+                Capability::Subcommand(s) => {
+                    if !seen_verbs.insert(s.verb.as_str()) {
+                        return Err(ManifestError::DuplicateSubcommandVerb {
+                            name: self.name.clone(),
+                            verb: s.verb.clone(),
+                        });
+                    }
+                }
+                Capability::LifecycleHook(_) => {}
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    fn valid_manifest() -> PluginManifest {
+        PluginManifest {
+            api_version: crate::HM_PLUGIN_API_VERSION,
+            name: "p".into(),
+            version: semver::Version::new(0, 1, 0),
+            description: "x".into(),
+            capabilities: vec![Capability::StepExecutor(StepExecutorSpec {
+                runner: "a".into(),
+                default: false,
+                step_schema: None,
+            })],
+            config_schema: None,
+        }
+    }
+
+    #[test]
+    fn validate_accepts_valid_manifest() {
+        assert!(valid_manifest().validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_wrong_api_version() {
+        let mut m = valid_manifest();
+        m.api_version = 999;
+        assert!(matches!(m.validate(), Err(ManifestError::ApiVersion { .. })));
+    }
+
+    #[test]
+    fn validate_rejects_empty_capabilities() {
+        let mut m = valid_manifest();
+        m.capabilities.clear();
+        assert!(matches!(
+            m.validate(),
+            Err(ManifestError::NoCapabilities { .. })
+        ));
+    }
 
     #[test]
     fn capability_tagged_serialization() {

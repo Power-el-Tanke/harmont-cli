@@ -31,6 +31,18 @@ pub fn harmont_plugin_state_dir() -> Option<PathBuf> {
     harmont_data_dir().map(|d| d.join("state"))
 }
 
+/// `~/.harmont/plugins/` — user-global plugin directory.
+pub fn harmont_user_plugins_dir() -> Option<PathBuf> {
+    harmont_config_dir().map(|d| d.join("plugins"))
+}
+
+/// `<cwd>/.harmont/plugins/` — project-local plugin directory.
+pub fn harmont_project_plugins_dir() -> Option<PathBuf> {
+    std::env::current_dir()
+        .ok()
+        .map(|p| p.join(".harmont").join("plugins"))
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

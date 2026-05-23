@@ -19,11 +19,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use hm_plugin_protocol::{Capability, PluginManifest};
+use hm_plugin_protocol::{Capability, ManifestError, PluginManifest};
 
 use crate::host::LoadedPlugin;
 use crate::host_api::HostApiImpl;
-use crate::manifest::{ManifestError, validate_standalone};
 use crate::paths;
 use crate::error::RuntimeError;
 
@@ -172,7 +171,7 @@ impl PluginRegistry {
 }
 
 fn validate(m: &PluginManifest) -> Result<()> {
-    validate_standalone(m).map_err(|e| match e {
+    m.validate().map_err(|e| match e {
         ManifestError::ApiVersion {
             name,
             found,
