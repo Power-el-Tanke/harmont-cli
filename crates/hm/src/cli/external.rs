@@ -11,6 +11,11 @@ use hm_plugin_protocol::{ExitInfo, SubcommandInput};
 use crate::error::HmError;
 use crate::plugin::{PluginRegistry, RegistryConfig};
 
+/// Run a plugin-provided external subcommand.
+///
+/// # Errors
+///
+/// Returns an error if plugin lookup or invocation fails.
 pub async fn run(argv: Vec<String>) -> Result<i32> {
     let verb = argv
         .first()

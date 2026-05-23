@@ -8,7 +8,10 @@ pub use dev::{DevCommand, DevDownArgs, DevExecArgs, DevLogsArgs, DevPortOfArgs, 
 pub use plugin::PluginCommand;
 pub use run::RunArgs;
 
+use anyhow::Result;
 use clap::{Parser, Subcommand};
+
+use crate::context::RunContext;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -60,5 +63,20 @@ pub enum Command {
     /// looks it up in the registry and invokes the matching plugin.
     #[command(external_subcommand)]
     External(Vec<String>),
+}
+
+/// Dispatch a parsed CLI command to the appropriate handler. Returns an exit code.
+///
+/// # Errors
+///
+/// Returns an error if the dispatched handler fails.
+pub async fn dispatch(command: Command, ctx: RunContext) -> Result<i32> {
+    match command {
+        Command::Run(args) => crate::commands::run::handle(args, ctx).await,
+        Command::Dev(cmd) => dev::dispatch(cmd, ctx).await,
+        Command::Version => version::run().await.map(|()| 0),
+        Command::Plugin(cmd) => plugin::run(cmd).await.map(|()| 0),
+        Command::External(argv) => external::run(argv).await,
+    }
 }
 

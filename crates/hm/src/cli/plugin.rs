@@ -34,6 +34,11 @@ pub enum PluginCommand {
     },
 }
 
+/// Run an `hm plugin` subcommand.
+///
+/// # Errors
+///
+/// Returns an error if the plugin operation fails.
 pub async fn run(cmd: PluginCommand) -> Result<()> {
     match cmd {
         PluginCommand::List => list().await,

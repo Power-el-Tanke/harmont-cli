@@ -1,4 +1,7 @@
+use anyhow::Result;
 use clap::{Parser, Subcommand};
+
+use crate::context::RunContext;
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum DevCommand {
@@ -81,4 +84,21 @@ pub struct DevExecArgs {
 
     #[arg(long, value_name = "ID")]
     pub session: Option<String>,
+}
+
+/// Dispatch an `hm dev` subcommand to the appropriate handler.
+///
+/// # Errors
+///
+/// Returns an error if the subcommand handler fails.
+pub async fn dispatch(command: DevCommand, ctx: RunContext) -> Result<i32> {
+    use crate::commands::dev;
+    match command {
+        DevCommand::Up(args) => dev::up::handle(args, ctx).await,
+        DevCommand::Down(args) => dev::down::handle(args, ctx).await,
+        DevCommand::Ls => dev::ls::handle(ctx).await,
+        DevCommand::Logs(args) => dev::logs::handle(args, ctx).await,
+        DevCommand::PortOf(args) => dev::port_of::handle(args, ctx).await,
+        DevCommand::Exec(args) => dev::exec::handle(args, ctx).await,
+    }
 }
