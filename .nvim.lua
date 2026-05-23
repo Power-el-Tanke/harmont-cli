@@ -1,4 +1,4 @@
-(function()
+local function hide_plans_from_telescope()
   local ok, telescope = pcall(require, "telescope")
   if not ok then
     return
@@ -13,4 +13,6 @@
       file_ignore_patterns = current,
     },
   })
-end)()
+end
+
+hide_plans_from_telescope()
