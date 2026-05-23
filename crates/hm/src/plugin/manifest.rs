@@ -76,7 +76,7 @@ pub fn validate_standalone(manifest: &PluginManifest) -> Result<(), ManifestErro
                     });
                 }
             }
-            _ => {}
+            Capability::LifecycleHook(_) => {}
         }
     }
     Ok(())

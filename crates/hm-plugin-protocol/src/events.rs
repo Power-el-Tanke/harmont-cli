@@ -1,5 +1,5 @@
 //! Build-time events. Produced by the orchestrator (host) and fanned
-//! out to output formatters, lifecycle hooks, and (via the host
+//! out to the output subscriber, lifecycle hooks, and (via the host
 //! re-broadcast of `hm_emit_step_log`) any subscriber.
 
 use chrono::{DateTime, Utc};
@@ -70,7 +70,7 @@ pub enum BuildEvent {
 }
 
 /// Compact summary of the resolved IR included in `BuildStart`. Lets
-/// output formatters print a header without needing the full pipeline.
+/// the renderer print a header without needing the full pipeline.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
 pub struct PlanSummary {
     pub step_count: usize,

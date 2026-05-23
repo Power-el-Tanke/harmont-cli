@@ -1,8 +1,6 @@
 //! Build-event rendering for human-readable and JSON output modes.
 //!
-//! Replaces the output-formatter plugin approach: the renderer lives
-//! in-process and owns its step-key map directly instead of routing
-//! through the plugin FFI boundary.
+//! The renderer lives in-process and owns its step-key map directly.
 
 use std::collections::HashMap;
 
