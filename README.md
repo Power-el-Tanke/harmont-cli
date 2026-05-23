@@ -215,7 +215,7 @@ Cargo workspace:
 
 - `crates/hm/` — the `hm` binary.
 - `crates/hm-plugin-protocol/`, `crates/hm-plugin-sdk/` — public API for third-party plugins.
-- `crates/hm-plugin-*` — bundled plugins (Docker executor, output formatters, cloud client).
+- `crates/hm-plugin-*` — bundled plugins (Docker executor, cloud client).
 - `examples/` — sample pipeline repos to `hm run` against.
 
 This repo mirrors the `cli/` and `examples/` directories of the private Harmont monorepo. Open issues and PRs here; maintainers land them upstream and a CI sync replays the result back.
@@ -230,7 +230,7 @@ cd my-plugin
 cargo add --git https://github.com/harmont-dev/harmont-cli hm-plugin-sdk
 ```
 
-Implement one of `StepExecutor`, `SubcommandPlugin`, `LifecycleHook`, or `OutputFormatter`, declare a `PluginManifest`, and call `register_plugin!(...)`. Then build:
+Implement one of `StepExecutor`, `SubcommandPlugin`, or `LifecycleHook`, declare a `PluginManifest`, and call `hm_plugin!(...)`. Then build:
 
 ```sh
 cargo build --release
@@ -243,7 +243,7 @@ hm plugin install ./target/release/libmy_plugin.dylib   # macOS
 hm plugin install ./target/release/libmy_plugin.so       # Linux
 ```
 
-Built-in output formatters: `human` (default), `json`. Select with `hm run --format <name>`. Working examples live in `tests/fixtures/`.
+Working examples live in `tests/fixtures/`.
 
 ## See also
 

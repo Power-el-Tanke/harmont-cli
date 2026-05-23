@@ -194,9 +194,8 @@ cd my-plugin
 cargo add --git https://github.com/harmont-dev/harmont-cli hm-plugin-sdk
 ```
 
-Implement one of `StepExecutor`, `SubcommandPlugin`, `LifecycleHook`, or
-`OutputFormatter`, declare a `PluginManifest`, and call
-`register_plugin!(...)`. Build with:
+Implement one of `StepExecutor`, `SubcommandPlugin`, or `LifecycleHook`,
+declare a `PluginManifest`, and call `hm_plugin!(...)`. Build with:
 
 ```bash
 cargo build --release
@@ -211,9 +210,3 @@ hm plugin install ./target/release/libmy_plugin.so       # Linux
 
 See `tests/fixtures/` for minimal working examples.
 
-### Output formatter
-
-Implement `OutputFormatter::on_event` to render each `BuildEvent`.
-Plugins emit bytes via `host::write_stdout` or `host::write_stderr`.
-Built-in formatters: `human` (default), `json`. Select with
-`hm run --format <name>`.
