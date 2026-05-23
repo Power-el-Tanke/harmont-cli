@@ -1,12 +1,11 @@
 //! Build-event subscriber that dispatches every `BuildEvent` into the
-//! selected output-formatter plugin's `hm_output_on_event` capability.
+//! selected output-formatter plugin via typed `on_output_event` /
+//! `finalize_output` methods on `LoadedPlugin`.
 //!
-//! Replaces the plan-2 stop-gap `stderr_sink`. The subscriber acquires
-//! an `Arc<LoadedPlugin>` from the registry per event; the actual
-//! `call_capability` await happens AFTER the registry lock is dropped
-//! so concurrent step-executor invocations do not contend with it.
-//! Output plugins live in their own pool slot (default size 1) — only
-//! this one subscriber task drains the bus, so a pool of 1 suffices.
+//! The subscriber acquires an `Arc<LoadedPlugin>` from the registry per
+//! event; the typed async call happens AFTER the registry lock is
+//! dropped so concurrent step-executor invocations do not contend with
+//! it.
 
 // Pedantic-bucket nags accepted at module scope:
 // - `needless_pass_by_value` on `bus`: the owned `Arc<EventBus>` makes
@@ -56,7 +55,7 @@ pub fn spawn(
             match rx.recv().await {
                 Ok(event) => {
                     // Resolve the plugin under the registry lock, then
-                    // drop the lock before awaiting `call_capability`
+                    // drop the lock before awaiting the typed method
                     // so concurrent step-executor calls keep flowing.
                     let plugin = {
                         let reg = registry.lock().await;
@@ -79,13 +78,13 @@ pub fn spawn(
                     let is_end = matches!(event, BuildEvent::BuildEnd { .. });
                     // Log-and-continue on formatter failures: a broken
                     // output plugin shouldn't fail the build.
-                    let _: Result<()> = plugin.call_capability("hm_output_on_event", &event).await;
+                    let _: Result<()> = plugin.on_output_event(&event).await;
                     if is_end {
                         // Finalise if the plugin exports it. Tolerate
                         // missing/erroring export — most streaming
                         // formatters don't implement it.
                         let _: Result<Vec<u8>> =
-                            plugin.call_capability("hm_output_finalize", &()).await;
+                            plugin.finalize_output().await;
                         return Ok(());
                     }
                 }
