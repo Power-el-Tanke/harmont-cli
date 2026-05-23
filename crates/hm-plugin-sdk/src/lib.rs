@@ -45,8 +45,9 @@
 #![allow(clippy::multiple_crate_versions, clippy::cargo_common_metadata)]
 
 pub mod executor;
+pub mod ffi;
 pub mod hook;
-pub mod host;
+// pub mod host; // Commented out: will be removed in the extism→stabby migration
 pub mod manifest;
 pub mod output;
 pub mod subcommand;
@@ -60,6 +61,5 @@ pub use hook::LifecycleHook;
 pub use output::OutputFormatter;
 pub use subcommand::{SubcommandInput, SubcommandPlugin};
 
-// Re-export the PDK so plugin authors don't need to add it as a
-// separate dep.
-pub use extism_pdk;
+// Re-export commented out: extism-pdk is no longer a dependency.
+// pub use extism_pdk;

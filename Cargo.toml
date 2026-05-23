@@ -38,6 +38,8 @@ tokio       = { version = "1", features = ["full"] }
 tokio-util  = { version = "0.7", features = ["rt"] }
 extism      = "1"
 extism-pdk  = "1"
+stabby      = { version = "=72.1.1", features = ["libloading"] }
+borsh       = { version = "1", features = ["derive"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
