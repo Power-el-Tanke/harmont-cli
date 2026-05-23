@@ -49,6 +49,9 @@ pub struct CapabilityIndex {
 }
 
 impl CapabilityIndex {
+    /// Scan every plugin's declared capabilities and build the lookup
+    /// indexes. Returns an error if two plugins claim the same verb,
+    /// runner name, or default-runner slot.
     fn build(plugins: &[Arc<LoadedPlugin>]) -> Result<Self> {
         let conflict = |verb: String, a: usize, b: usize| -> anyhow::Error {
             RuntimeError::PluginConflict {
@@ -103,16 +106,20 @@ impl CapabilityIndex {
             })
     }
 
+    /// Look up the plugin index that registered `verb` as a subcommand.
     #[must_use]
     pub fn resolve_subcommand(&self, verb: &str) -> Option<usize> {
         self.subcommands.get(verb).copied()
     }
 
+    /// Look up the plugin index for `name`, falling back to the
+    /// default runner if no exact match exists.
     #[must_use]
     pub fn resolve_runner(&self, name: &str) -> Option<usize> {
         self.runners.get(name).copied().or(self.default_runner)
     }
 
+    /// The runner name of the plugin marked `default: true`, if any.
     #[must_use]
     pub fn default_runner_name(&self) -> Option<&str> {
         let idx = self.default_runner?;
@@ -121,10 +128,12 @@ impl CapabilityIndex {
             .find_map(|(name, &i)| (i == idx).then_some(name.as_str()))
     }
 
+    /// All registered subcommand verbs, sorted alphabetically.
     pub fn available_subcommands(&self) -> impl Iterator<Item = &str> {
         self.subcommands.keys().map(String::as_str)
     }
 
+    /// All registered runner names, sorted alphabetically.
     pub fn available_runners(&self) -> impl Iterator<Item = &str> {
         self.runners.keys().map(String::as_str)
     }
@@ -137,6 +146,8 @@ pub struct PluginRegistry {
 }
 
 impl PluginRegistry {
+    /// Discover and load plugins from the filesystem, validate each
+    /// manifest, and build the capability index.
     pub fn load(config: RegistryConfig) -> Result<Self> {
         let mut plugins: Vec<Arc<LoadedPlugin>> = Vec::new();
         let dll_ext = std::env::consts::DLL_EXTENSION;
@@ -177,10 +188,13 @@ impl PluginRegistry {
         })
     }
 
+    /// Iterate over every loaded plugin's manifest.
     pub fn manifests(&self) -> impl Iterator<Item = &PluginManifest> {
         self.plugins.iter().map(|p| &p.manifest)
     }
 
+    /// Clone the `Arc` for the plugin at `idx` (returned by the
+    /// capability index's resolve methods).
     #[must_use]
     pub fn get(&self, idx: usize) -> Option<Arc<LoadedPlugin>> {
         self.plugins.get(idx).cloned()
