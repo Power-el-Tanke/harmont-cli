@@ -6,7 +6,7 @@
 //! [`RawHostApi`](crate::ffi::RawHostApi).
 
 use crate::ffi::{FfiBytes, FfiSlice, RawHostApi, RawHostApiDyn};
-use hm_plugin_protocol::{BuildEvent, KvScope, Level};
+use hm_plugin_protocol::{ArchiveId, BuildEvent, KvScope, Level, StdStream};
 
 /// Type alias for the stabby borrowed trait-object reference that
 /// backs [`PluginContext`]. Equivalent to a stable `&'a dyn
@@ -86,6 +86,9 @@ impl<'a> PluginContext<'a> {
     // -- Events -----------------------------------------------------------
 
     /// Emit a build event to the host.
+    ///
+    /// Uses JSON serialization for now; will switch to borsh once
+    /// `BuildEvent` gains `BorshSerialize` derives (Task 10).
     pub fn emit_event(&self, event: &BuildEvent) {
         let bytes =
             serde_json::to_vec(event).expect("BuildEvent serialization should never fail");
@@ -95,16 +98,24 @@ impl<'a> PluginContext<'a> {
 
     // -- Step log streams -------------------------------------------------
 
+    /// Stream bytes to a step's log stream.
+    pub fn emit_step_log(&self, stream: StdStream, bytes: &[u8]) {
+        let stream_u8 = match stream {
+            StdStream::Stdout => 0,
+            StdStream::Stderr => 1,
+        };
+        let ffi = FfiSlice::from(bytes);
+        self.raw.emit_step_log(stream_u8, ffi);
+    }
+
     /// Stream bytes to the step's stdout log.
     pub fn emit_step_log_stdout(&self, bytes: &[u8]) {
-        let ffi = FfiSlice::from(bytes);
-        self.raw.emit_step_log(0, ffi);
+        self.emit_step_log(StdStream::Stdout, bytes);
     }
 
     /// Stream bytes to the step's stderr log.
     pub fn emit_step_log_stderr(&self, bytes: &[u8]) {
-        let ffi = FfiSlice::from(bytes);
-        self.raw.emit_step_log(1, ffi);
+        self.emit_step_log(StdStream::Stderr, bytes);
     }
 
     // -- Cancellation -----------------------------------------------------
@@ -130,18 +141,21 @@ impl<'a> PluginContext<'a> {
 
     // -- Archive I/O ------------------------------------------------------
 
-    /// Read a chunk from an archive identified by `args_borsh` at the
-    /// given `offset`, returning at most `max` bytes.
-    pub fn archive_read(&self, args_borsh: &[u8], offset: u64, max: u64) -> Vec<u8> {
-        let ffi = FfiSlice::from(args_borsh);
+    /// Read a chunk from an archive at the given `offset`, returning at
+    /// most `max` bytes.
+    pub fn archive_read(&self, id: &ArchiveId, offset: u64, max: u64) -> Vec<u8> {
+        let id_bytes =
+            serde_json::to_vec(id).expect("ArchiveId serialization should never fail");
+        let ffi = FfiSlice::from(id_bytes.as_slice());
         let result: FfiBytes = self.raw.archive_read(ffi, offset, max);
         result.as_slice().to_vec()
     }
 
-    /// Return the total size in bytes of an archive identified by
-    /// `args_borsh`.
-    pub fn archive_total_size(&self, args_borsh: &[u8]) -> u64 {
-        let ffi = FfiSlice::from(args_borsh);
+    /// Return the total size in bytes of an archive.
+    pub fn archive_total_size(&self, id: &ArchiveId) -> u64 {
+        let id_bytes =
+            serde_json::to_vec(id).expect("ArchiveId serialization should never fail");
+        let ffi = FfiSlice::from(id_bytes.as_slice());
         self.raw.archive_total_size(ffi)
     }
 
