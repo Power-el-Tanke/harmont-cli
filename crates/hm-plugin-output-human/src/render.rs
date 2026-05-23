@@ -1,6 +1,4 @@
-//! Pure-function rendering of BuildEvents to stderr bytes. Held
-//! deliberately stateless so render() can be unit-tested without
-//! Extism.
+//! Pure-function rendering of BuildEvents to stderr bytes.
 //!
 //! Step keys are tracked per-plugin instance because the wire
 //! BuildEvents carry step_id (Uuid) only; the plugin builds a

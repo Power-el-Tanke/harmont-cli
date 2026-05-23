@@ -1,10 +1,10 @@
 //! Built-in human-readable output formatter for the hm CLI.
 //!
 //! Subscribes to the orchestrator's BuildEvent stream via the
-//! `hm_output_on_event` capability export; writes prefixed step logs
-//! and brief status lines to stderr.
+//! `on_output_event` capability; writes prefixed step logs and brief
+//! status lines to stderr.
 
-#![allow(unsafe_code, reason = "extism-pdk host_fn imports require unsafe")]
+#![allow(unsafe_code)]
 #![allow(
     clippy::pedantic,
     clippy::nursery,
@@ -12,27 +12,31 @@
     clippy::multiple_crate_versions,
     clippy::cargo_common_metadata,
     clippy::missing_errors_doc,
-    reason = "matches the test-fixtures allow-list; plugin authoring crate"
 )]
 
 mod render;
 
+use core::future::Future;
 use hm_plugin_sdk::*;
 
 #[derive(Default)]
 struct Human;
 
 impl OutputFormatter for Human {
-    fn on_event(&self, event: BuildEvent) -> Result<(), PluginError> {
+    fn on_event(
+        &self,
+        ctx: &PluginContext<'_>,
+        event: BuildEvent,
+    ) -> impl Future<Output = Result<(), PluginError>> + Send + '_ {
         let bytes = render::render(&event);
         if !bytes.is_empty() {
-            host::write_stderr(&bytes);
+            ctx.write_stderr(&bytes);
         }
-        Ok(())
+        async { Ok(()) }
     }
 }
 
-register_plugin!(
+hm_plugin!(
     manifest = PluginManifest {
         api_version: HM_PLUGIN_API_VERSION,
         name: "harmont-output-human".into(),
@@ -42,7 +46,7 @@ register_plugin!(
             name: "human".into(),
             mime: "text/plain".into(),
         })],
-        required_host_fns: vec!["hm_write_stderr".into()],
+        required_host_fns: vec![],
         config_schema: None,
         allowed_hosts: vec![],
     },
