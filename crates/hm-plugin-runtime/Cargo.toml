@@ -10,6 +10,7 @@ description = "Plugin loading, discovery, and host-API runtime for Harmont CLI."
 hm-plugin-protocol = { workspace = true }
 hm-plugin-sdk      = { workspace = true }
 hm-util            = { workspace = true }
+smart-default      = { workspace = true }
 stabby             = { workspace = true }
 libloading         = "0.8"
 tokio              = { workspace = true }

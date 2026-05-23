@@ -18,7 +18,7 @@ use crate::error::RuntimeError;
 use crate::host::LoadedPlugin;
 use crate::host_api::HostApiImpl;
 
-#[derive(Debug)]
+#[derive(Debug, smart_default::SmartDefault)]
 pub struct RegistryConfig {
     /// If `false`, skip discovery and only registers explicitly added
     /// plugins. Used by integration tests.
@@ -27,17 +27,8 @@ pub struct RegistryConfig {
     /// tests to load fixture plugins.
     pub extra_paths: Vec<PathBuf>,
     /// The host API implementation shared by all loaded plugins.
+    #[default(Arc::new(HostApiImpl::new_noop()))]
     pub host_api: Arc<HostApiImpl>,
-}
-
-impl Default for RegistryConfig {
-    fn default() -> Self {
-        Self {
-            auto_discover: false,
-            extra_paths: Vec::new(),
-            host_api: Arc::new(HostApiImpl::new_noop()),
-        }
-    }
 }
 
 #[derive(Debug)]
