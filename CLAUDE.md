@@ -1,6 +1,7 @@
 The `crates/` directory holds a Cargo workspace rooted at the repo root.
 
 - `crates/hm/` — the `hm` binary (today's CLI body).
+- `crates/hm-util/` — shared OS and filesystem utilities.
 - `crates/hm-plugin-protocol/` — wire types (serde structs only).
 - `crates/hm-plugin-sdk/` — authoring SDK for plugin writers; exposes the stabby-based FFI traits.
 - `crates/hm-plugin-macros/` — proc-macro crate powering `register_plugin!`.

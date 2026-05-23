@@ -14,7 +14,7 @@ use std::path::PathBuf;
 /// built-in and third-party plugins are installed here by `install.sh`
 /// and `hm plugin install`.
 pub fn user_plugins_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|p| p.join(".harmont").join("plugins"))
+    hm_util::dirs::harmont_config_dir().map(|d| d.join("plugins"))
 }
 
 /// `<cwd>/.harmont/plugins/`. Project-local plugins live here.

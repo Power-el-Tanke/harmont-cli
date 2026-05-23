@@ -17,7 +17,7 @@
 - Streams cache decisions host-side (`cache.rs`), reads the workspace
   archive once into memory (`archive.rs` + `source.rs`), and drives
   the Docker daemon via the Bollard wrapper (`docker_client.rs`).
-- Owns run-wide cancellation (`cancel.rs`) and shared mutable state
+- Owns run-wide cancellation (`tokio_util::sync::CancellationToken`) and shared mutable state
   (`state.rs`) so step plugins can coordinate without reaching across
   module boundaries.
 

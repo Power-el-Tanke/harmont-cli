@@ -19,7 +19,7 @@ use hm_plugin_sdk::ffi::{FfiBytes, FfiSlice, RawHostApi};
 use hm_plugin_protocol::BuildEvent;
 use tokio::sync::broadcast;
 
-use crate::orchestrator::cancel::CancellationToken;
+use tokio_util::sync::CancellationToken;
 
 /// Host-side state backing all 11 `RawHostApi` methods.
 ///
