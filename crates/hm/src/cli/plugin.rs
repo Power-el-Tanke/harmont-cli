@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Subcommand;
 
-use crate::plugin::{PluginRegistry, RegistryConfig, paths};
+use crate::plugin::{PluginRegistry, RegistryConfig};
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum PluginCommand {
@@ -58,10 +58,10 @@ async fn list() -> Result<()> {
         println!("No plugins installed.");
         println!();
         println!("Plugins live in:");
-        if let Some(p) = paths::user_plugins_dir() {
+        if let Some(p) = hm_util::dirs::harmont_user_plugins_dir() {
             println!("  {}", p.display());
         }
-        if let Some(p) = paths::project_plugins_dir() {
+        if let Some(p) = hm_util::dirs::harmont_project_plugins_dir() {
             println!("  {}", p.display());
         }
         println!();
@@ -99,7 +99,7 @@ async fn install_cmd(source: &str, pin: Option<&str>) -> Result<()> {
 
 #[allow(clippy::unused_async)]
 async fn remove(name: &str) -> Result<()> {
-    let dir = crate::plugin::paths::install_dir().context("no install dir")?;
+    let dir = hm_util::dirs::plugin_install_dir().context("no install dir")?;
     let dll_ext = std::env::consts::DLL_EXTENSION;
     let target = dir.join(format!("{name}.{dll_ext}"));
     if !target.is_file() {

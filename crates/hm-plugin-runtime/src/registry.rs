@@ -17,7 +17,6 @@ use hm_plugin_protocol::{Capability, PluginManifest};
 use crate::error::RuntimeError;
 use crate::host::LoadedPlugin;
 use crate::host_api::HostApiImpl;
-use crate::paths;
 
 #[derive(Debug)]
 pub struct RegistryConfig {
@@ -153,7 +152,7 @@ impl PluginRegistry {
         let dll_ext = std::env::consts::DLL_EXTENSION;
 
         if config.auto_discover {
-            for dir in paths::discovery_dirs() {
+            for dir in hm_util::dirs::plugin_discovery_dirs() {
                 if !dir.is_dir() {
                     continue;
                 }

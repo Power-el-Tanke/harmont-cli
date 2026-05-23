@@ -8,7 +8,6 @@ use sha2::{Digest, Sha256};
 
 use crate::host::LoadedPlugin;
 use crate::host_api::HostApiImpl;
-use crate::paths;
 
 /// Install a plugin from a file path or HTTPS URL.
 ///
@@ -64,7 +63,7 @@ pub async fn install(source: &str, pin: Option<&str>) -> Result<PathBuf> {
     let name = plugin.manifest.name.clone();
     drop(plugin);
 
-    let install_dir = paths::install_dir().context("resolve install dir")?;
+    let install_dir = hm_util::dirs::plugin_install_dir().context("resolve install dir")?;
     std::fs::create_dir_all(&install_dir)
         .with_context(|| format!("create {}", install_dir.display()))?;
     let target = install_dir.join(format!("{name}.{dll_ext}"));

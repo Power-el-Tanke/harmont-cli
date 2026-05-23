@@ -43,6 +43,11 @@ pub fn harmont_project_plugins_dir() -> Option<PathBuf> {
         .map(|p| p.join(".harmont").join("plugins"))
 }
 
+/// Default install target for `hm plugin install`.
+pub fn plugin_install_dir() -> Option<PathBuf> {
+    harmont_user_plugins_dir()
+}
+
 /// All directories the plugin host should scan for installed plugins,
 /// in priority order (user-global first, then project-local).
 pub fn plugin_discovery_dirs() -> impl Iterator<Item = PathBuf> {
@@ -78,5 +83,11 @@ mod tests {
     fn harmont_plugin_state_dir_resolves() {
         let p = harmont_plugin_state_dir().unwrap();
         assert!(p.ends_with("harmont/state"));
+    }
+
+    #[test]
+    fn user_plugins_dir_resolves() {
+        let p = harmont_user_plugins_dir().unwrap();
+        assert!(p.ends_with(".harmont/plugins"));
     }
 }

@@ -4,7 +4,6 @@ pub mod error;
 pub mod host;
 pub mod host_api;
 pub mod install;
-pub mod paths;
 pub mod registry;
 
 pub use host::LoadedPlugin;
