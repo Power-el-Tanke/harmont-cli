@@ -1,12 +1,18 @@
-use hm_plugin_protocol::{ExitInfo, PluginError};
+use core::future::Future;
 
-pub use hm_plugin_protocol::SubcommandInput;
+use crate::context::PluginContext;
+use hm_plugin_protocol::{ExitInfo, PluginError, SubcommandInput};
 
-pub trait SubcommandPlugin {
+/// Implemented by subcommand plugins.
+pub trait SubcommandPlugin: Send + Sync + Default {
     /// Run the subcommand.
     ///
     /// # Errors
     /// Returns a [`PluginError`] describing the failure. The host
     /// renders the error and exits the process with code 1.
-    fn run(&self, input: SubcommandInput) -> Result<ExitInfo, PluginError>;
+    fn run(
+        &self,
+        ctx: &PluginContext<'_>,
+        input: SubcommandInput,
+    ) -> impl Future<Output = Result<ExitInfo, PluginError>> + Send + '_;
 }

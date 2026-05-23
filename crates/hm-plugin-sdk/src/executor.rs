@@ -1,3 +1,6 @@
+use core::future::Future;
+
+use crate::context::PluginContext;
 use hm_plugin_protocol::{ExecutorInput, PluginError, StepResult};
 
 /// Implemented by step-executor plugins. The host calls
@@ -5,13 +8,18 @@ use hm_plugin_protocol::{ExecutorInput, PluginError, StepResult};
 /// [`StepResult`] or a [`PluginError`].
 ///
 /// During the call the plugin may stream logs via
-/// [`crate::host::emit_step_log`] and check cancellation via
-/// [`crate::host::should_cancel`].
-pub trait StepExecutor {
+/// [`PluginContext::emit_step_log_stdout`] /
+/// [`PluginContext::emit_step_log_stderr`] and check cancellation via
+/// [`PluginContext::should_cancel`].
+pub trait StepExecutor: Send + Sync + Default {
     /// Execute a single step.
     ///
     /// # Errors
     /// Returns a [`PluginError`] describing the failure. The host
     /// converts errors into build events and a non-zero step exit.
-    fn run(&self, input: ExecutorInput) -> Result<StepResult, PluginError>;
+    fn run(
+        &self,
+        ctx: &PluginContext<'_>,
+        input: ExecutorInput,
+    ) -> impl Future<Output = Result<StepResult, PluginError>> + Send + '_;
 }
