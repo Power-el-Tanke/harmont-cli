@@ -106,9 +106,10 @@ impl Drop for LoadedPlugin {
         // scope (which happens immediately after, when the struct is
         // dropped). This guarantees the trait object's code is still
         // loaded when its destructor runs.
-        unsafe {
-            ManuallyDrop::drop(&mut self.plugin);
-        }
+        //
+        // NOTE: currently leaking — investigating a SIGSEGV in stabby
+        // Dyn drop across dylib boundary on macOS/arm64.
+        // unsafe { ManuallyDrop::drop(&mut self.plugin); }
     }
 }
 
@@ -371,10 +372,10 @@ fn ffi_err_to_anyhow(
 /// flag.
 #[doc(hidden)]
 #[must_use]
-pub fn dummy_subcommand_input() -> serde_json::Value {
-    serde_json::json!({
-        "verb_path": ["fixture-probe"],
-        "args": {},
-        "env": {}
-    })
+pub fn dummy_subcommand_input() -> hm_plugin_protocol::SubcommandInput {
+    hm_plugin_protocol::SubcommandInput {
+        verb_path: vec!["fixture-probe".into()],
+        args: serde_json::json!({}),
+        env: std::collections::BTreeMap::new(),
+    }
 }

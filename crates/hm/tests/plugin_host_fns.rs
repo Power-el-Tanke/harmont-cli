@@ -17,7 +17,6 @@ pub mod common;
 use common::fixtures;
 use harmont_cli::plugin::host::dummy_subcommand_input;
 use harmont_cli::plugin::{PluginRegistry, RegistryConfig};
-use hm_plugin_protocol::ExitInfo;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -51,14 +50,13 @@ async fn host_fn_probe_passes_all_checks() {
     let reg = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
         extra_paths: vec![path],
-        embedded: vec![],
         ..Default::default()
     })
     .expect("load registry");
     let idx = reg.subcommand_index["fixture-probe"];
     let plugin = reg.get(idx).expect("plugin present");
-    let info: ExitInfo = plugin
-        .call_capability("hm_subcommand_run", &dummy_subcommand_input())
+    let info = plugin
+        .run_subcommand(&dummy_subcommand_input())
         .await
         .expect("invoke");
     let report: Report =

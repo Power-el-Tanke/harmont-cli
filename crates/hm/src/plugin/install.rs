@@ -1,11 +1,13 @@
 //! Implementation of `hm plugin install <source> --pin <sha256>`.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 
 use super::host::LoadedPlugin;
+use super::host_api::HostApiImpl;
 use super::paths;
 
 /// Install a plugin from a file path or HTTPS URL.
@@ -47,16 +49,25 @@ pub async fn install(source: &str, pin: Option<&str>) -> Result<PathBuf> {
         bytes
     };
 
-    // Load the plugin to extract its manifest name (used as the
-    // installed filename). Any plugin that fails validation here is
-    // not installed.
-    let leaked: &'static [u8] = Box::leak(bytes.clone().into_boxed_slice());
-    let plugin =
-        LoadedPlugin::from_bytes(leaked, 1).context("validate plugin before installing")?;
+    let dll_ext = std::env::consts::DLL_EXTENSION;
+
+    // Write to a temp file, load it to validate the manifest, then
+    // move to the install dir with the manifest name.
+    let tmp_dir = tempfile::tempdir().context("create tempdir for validation")?;
+    let tmp_path = tmp_dir.path().join(format!("plugin.{dll_ext}"));
+    std::fs::write(&tmp_path, &bytes)
+        .with_context(|| format!("write temp {}", tmp_path.display()))?;
+
+    let host_api = Arc::new(HostApiImpl::new_noop());
+    let plugin = LoadedPlugin::load(&tmp_path, host_api)
+        .context("validate plugin before installing")?;
+    let name = plugin.manifest.name.clone();
+    drop(plugin);
+
     let install_dir = paths::install_dir().context("resolve install dir")?;
     std::fs::create_dir_all(&install_dir)
         .with_context(|| format!("create {}", install_dir.display()))?;
-    let target = install_dir.join(format!("{}.wasm", plugin.manifest.name));
+    let target = install_dir.join(format!("{name}.{dll_ext}"));
     std::fs::write(&target, &bytes).with_context(|| format!("write {}", target.display()))?;
     Ok(target)
 }

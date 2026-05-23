@@ -37,6 +37,12 @@ impl EventBus {
 
     /// Publish an event. Returns the number of subscribers that
     /// received it. A return of 0 is normal (no subscribers yet).
+    pub fn sender(&self) -> broadcast::Sender<BuildEvent> {
+        self.tx.clone()
+    }
+
+    /// Publish an event. Returns the number of subscribers that
+    /// received it. A return of 0 is normal (no subscribers yet).
     pub fn emit(&self, event: BuildEvent) {
         // We intentionally drop the error: zero-subscriber sends are
         // not interesting and we don't want host_fn impls to fail

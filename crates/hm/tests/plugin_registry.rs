@@ -16,9 +16,8 @@ pub mod common;
 use common::fixtures;
 use harmont_cli::plugin::{PluginRegistry, RegistryConfig};
 use hm_plugin_protocol::{
-    ArchiveId, CacheDecision, CommandStep, ExecutorInput, ExitInfo, StepResult,
+    ArchiveId, CacheDecision, CommandStep, ExecutorInput, SubcommandInput, StepResult,
 };
-use serde_json::json;
 use uuid::Uuid;
 
 #[test]
@@ -30,7 +29,6 @@ fn loads_three_fixtures_and_builds_indices() {
             fixtures::fixture_path("hm-fixture-recording-hook"),
             fixtures::fixture_path("hm-fixture-failing-subcommand"),
         ],
-        embedded: vec![],
         ..Default::default()
     })
     .expect("load");
@@ -44,17 +42,18 @@ async fn dispatches_subcommand_with_nonzero_exit_info() {
     let reg = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
         extra_paths: vec![fixtures::fixture_path("hm-fixture-failing-subcommand")],
-        embedded: vec![],
         ..Default::default()
     })
     .unwrap();
     let idx = reg.subcommand_index["fixture-fail"];
     let plugin = reg.get(idx).unwrap();
-    let info: ExitInfo = plugin
-        .call_capability(
-            "hm_subcommand_run",
-            &json!({"verb_path": ["fixture-fail"], "args": {}, "env": {}}),
-        )
+    let input = SubcommandInput {
+        verb_path: vec!["fixture-fail".into()],
+        args: serde_json::json!({}),
+        env: std::collections::BTreeMap::new(),
+    };
+    let info = plugin
+        .run_subcommand(&input)
         .await
         .unwrap();
     assert_eq!(info.exit_code, 7);
@@ -69,7 +68,6 @@ async fn dispatches_step_executor() {
     let reg = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
         extra_paths: vec![fixtures::fixture_path("hm-fixture-noop-executor")],
-        embedded: vec![],
         ..Default::default()
     })
     .unwrap();
@@ -97,7 +95,7 @@ async fn dispatches_step_executor() {
         parent_snapshot: None,
     };
     let result: StepResult = plugin
-        .call_capability("hm_executor_run", &input)
+        .execute_step(&input)
         .await
         .unwrap();
     assert_eq!(result.exit_code, 0);

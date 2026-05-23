@@ -72,7 +72,11 @@ pub async fn run(
     let bus = EventBus::new();
     let archives = ArchiveStore::new();
     let cancel = CancellationToken::new();
-    let _ctrlc = crate::plugin::signal::install_ctrlc(cancel.clone());
+    let ctrlc_cancel = cancel.clone();
+    let _ctrlc = tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        ctrlc_cancel.cancel();
+    });
     // _ctrlc dropped at end of `run`; runtime tear-down kills the task.
     let docker = DockerClient::connect()
         .map_err(|e| HmError::Docker(format!("daemon unreachable — is Docker running? ({e})")))?;
@@ -98,32 +102,18 @@ pub async fn run(
 
     let parallelism = parallelism.max(1);
 
-    // Load the plugin registry with the embedded docker plugin.
-    // The docker runner's pool gets pre-sized to `parallelism` so
-    // concurrent chains can run truly in parallel rather than
-    // serialising on a single plugin instance.
-    let mut pool_sizes: std::collections::BTreeMap<String, usize> =
-        std::collections::BTreeMap::new();
-    pool_sizes.insert("docker".to_string(), parallelism);
+    // Load the plugin registry. Plugins are discovered from
+    // ~/.harmont/plugins/ and .harmont/plugins/.
+    let host_api = Arc::new(crate::plugin::host_api::HostApiImpl::new(
+        bus.sender(),
+        cancel.clone(),
+        Some(repo_root.clone()),
+    ));
     let registry = Arc::new(Mutex::new(
         PluginRegistry::load(RegistryConfig {
             auto_discover: true,
             extra_paths: vec![],
-            embedded: vec![
-                (
-                    "harmont-docker",
-                    crate::plugin::embedded::DOCKER_PLUGIN_WASM,
-                ),
-                (
-                    "harmont-output-human",
-                    crate::plugin::embedded::OUTPUT_HUMAN_PLUGIN_WASM,
-                ),
-                (
-                    "harmont-output-json",
-                    crate::plugin::embedded::OUTPUT_JSON_PLUGIN_WASM,
-                ),
-            ],
-            pool_sizes,
+            host_api,
         })
         .context("load plugin registry")?,
     ));

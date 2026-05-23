@@ -21,7 +21,6 @@ fn rejects_wrong_api_version() {
     let err = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
         extra_paths: vec![path],
-        embedded: vec![],
         ..Default::default()
     })
     .expect_err("should fail to load");
@@ -45,7 +44,7 @@ fn rejects_duplicate_runner() {
     let err = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
         extra_paths: vec![path.clone(), path],
-        embedded: vec![],
+
         ..Default::default()
     })
     .expect_err("should detect duplicate");
