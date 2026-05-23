@@ -2,18 +2,11 @@
 //! plugin dirs, validates each manifest, and builds a capability index
 //! used by the dispatcher.
 
-// Pedantic-bucket nags accepted at module scope:
-// - `missing_errors_doc`: every fallible fn returns `anyhow::Result`
-//   with rich `with_context` messages.
-// - `needless_pass_by_value`: `RegistryConfig` is intentionally moved
-//   into `load` so callers can't reuse a config they expected to
-//   consume.
-// - `collapsible_if`: the nested `if s.default { … }` reads more clearly
-//   one rule per line.
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::collapsible_if)]
 
+use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -49,11 +42,98 @@ impl Default for RegistryConfig {
 }
 
 #[derive(Debug)]
+pub struct CapabilityIndex {
+    subcommands: BTreeMap<String, usize>,
+    runners: BTreeMap<String, usize>,
+    default_runner: Option<usize>,
+}
+
+impl CapabilityIndex {
+    fn build(plugins: &[Arc<LoadedPlugin>]) -> Result<Self> {
+        let conflict = |verb: String, a: usize, b: usize| -> anyhow::Error {
+            RuntimeError::PluginConflict {
+                verb,
+                plugin_a: plugins[a].manifest.name.clone(),
+                plugin_b: plugins[b].manifest.name.clone(),
+            }
+            .into()
+        };
+
+        plugins
+            .iter()
+            .enumerate()
+            .flat_map(|(i, p)| p.manifest.capabilities.iter().map(move |cap| (i, cap)))
+            .try_fold(
+                (BTreeMap::new(), BTreeMap::new(), None::<usize>),
+                |(mut subs, mut runners, mut default), (i, cap)| match cap {
+                    Capability::Subcommand(s) => match subs.entry(s.verb.clone()) {
+                        Entry::Vacant(e) => {
+                            e.insert(i);
+                            Ok((subs, runners, default))
+                        }
+                        Entry::Occupied(e) => Err(conflict(s.verb.clone(), *e.get(), i)),
+                    },
+                    Capability::StepExecutor(s) => {
+                        match runners.entry(s.runner.clone()) {
+                            Entry::Vacant(e) => {
+                                e.insert(i);
+                            }
+                            Entry::Occupied(e) => {
+                                return Err(conflict(
+                                    format!("runner:{}", s.runner),
+                                    *e.get(),
+                                    i,
+                                ))
+                            }
+                        }
+                        if s.default {
+                            if let Some(other) = default.replace(i) {
+                                return Err(conflict("default-runner".into(), other, i));
+                            }
+                        }
+                        Ok((subs, runners, default))
+                    }
+                    Capability::LifecycleHook(_) => Ok((subs, runners, default)),
+                },
+            )
+            .map(|(subcommands, runners, default_runner)| Self {
+                subcommands,
+                runners,
+                default_runner,
+            })
+    }
+
+    #[must_use]
+    pub fn resolve_subcommand(&self, verb: &str) -> Option<usize> {
+        self.subcommands.get(verb).copied()
+    }
+
+    #[must_use]
+    pub fn resolve_runner(&self, name: &str) -> Option<usize> {
+        self.runners.get(name).copied().or(self.default_runner)
+    }
+
+    #[must_use]
+    pub fn default_runner_name(&self) -> Option<&str> {
+        let idx = self.default_runner?;
+        self.runners
+            .iter()
+            .find_map(|(name, &i)| (i == idx).then_some(name.as_str()))
+    }
+
+    pub fn available_subcommands(&self) -> impl Iterator<Item = &str> {
+        self.subcommands.keys().map(String::as_str)
+    }
+
+    pub fn available_runners(&self) -> impl Iterator<Item = &str> {
+        self.runners.keys().map(String::as_str)
+    }
+}
+
+#[derive(Debug)]
 pub struct PluginRegistry {
     plugins: Vec<Arc<LoadedPlugin>>,
-    pub subcommand_index: BTreeMap<String, usize>,
-    pub runner_index: BTreeMap<String, usize>,
-    pub default_runner: Option<usize>,
+    pub capabilities: CapabilityIndex,
 }
 
 impl PluginRegistry {
@@ -89,81 +169,22 @@ impl PluginRegistry {
             plugins.push(Arc::new(p));
         }
 
-        let mut me = Self {
-            plugins,
-            subcommand_index: BTreeMap::new(),
-            runner_index: BTreeMap::new(),
-            default_runner: None,
-        };
-        me.index_capabilities()?;
-        Ok(me)
-    }
+        let capabilities = CapabilityIndex::build(&plugins)?;
 
-    fn index_capabilities(&mut self) -> Result<()> {
-        for (i, p) in self.plugins.iter().enumerate() {
-            for cap in &p.manifest.capabilities {
-                match cap {
-                    Capability::Subcommand(s) => {
-                        if let Some(other) = self.subcommand_index.insert(s.verb.clone(), i) {
-                            return Err(RuntimeError::PluginConflict {
-                                verb: s.verb.clone(),
-                                plugin_a: self.plugins[other].manifest.name.clone(),
-                                plugin_b: p.manifest.name.clone(),
-                            }
-                            .into());
-                        }
-                    }
-                    Capability::StepExecutor(s) => {
-                        if let Some(other) = self.runner_index.insert(s.runner.clone(), i) {
-                            return Err(RuntimeError::PluginConflict {
-                                verb: format!("runner:{}", s.runner),
-                                plugin_a: self.plugins[other].manifest.name.clone(),
-                                plugin_b: p.manifest.name.clone(),
-                            }
-                            .into());
-                        }
-                        if s.default {
-                            if let Some(other) = self.default_runner.replace(i) {
-                                return Err(RuntimeError::PluginConflict {
-                                    verb: "default-runner".into(),
-                                    plugin_a: self.plugins[other].manifest.name.clone(),
-                                    plugin_b: p.manifest.name.clone(),
-                                }
-                                .into());
-                            }
-                        }
-                    }
-                    Capability::LifecycleHook(_) => {
-                        // Hooks can stack; no conflict possible.
-                    }
-                }
-            }
-        }
-        Ok(())
+        Ok(Self {
+            plugins,
+            capabilities,
+        })
     }
 
     pub fn manifests(&self) -> impl Iterator<Item = &PluginManifest> {
         self.plugins.iter().map(|p| &p.manifest)
     }
 
-    /// Return a cheap clone of the plugin at `idx`. Callers should
-    /// drop any registry-level lock they hold before awaiting on the
-    /// returned plugin — the trait object is `Send + Sync`, so
-    /// concurrent callers can invoke methods directly.
     #[must_use]
     pub fn get(&self, idx: usize) -> Option<Arc<LoadedPlugin>> {
         self.plugins.get(idx).cloned()
     }
 
-    /// Returns the runner name of the plugin marked `default: true` at
-    /// registration time, if any. Used by the scheduler to resolve
-    /// steps that don't declare a `runner` field.
-    #[must_use]
-    pub fn default_runner_name(&self) -> Option<&str> {
-        let idx = self.default_runner?;
-        self.runner_index
-            .iter()
-            .find_map(|(name, &i)| (i == idx).then_some(name.as_str()))
-    }
 }
 

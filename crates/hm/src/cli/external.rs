@@ -27,12 +27,11 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
     .context("load plugin registry")?;
 
     let idx = registry
-        .subcommand_index
-        .get(&verb)
-        .copied()
+        .capabilities
+        .resolve_subcommand(&verb)
         .ok_or_else(|| HmError::UnknownVerb {
             verb: verb.clone(),
-            available: registry.subcommand_index.keys().cloned().collect(),
+            available: registry.capabilities.available_subcommands().map(Into::into).collect(),
         })?;
 
     let plugin = registry

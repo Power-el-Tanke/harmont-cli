@@ -32,8 +32,8 @@ fn loads_three_fixtures_and_builds_indices() {
         ..Default::default()
     })
     .expect("load");
-    assert!(reg.runner_index.contains_key("noop"));
-    assert!(reg.subcommand_index.contains_key("fixture-fail"));
+    assert!(reg.capabilities.resolve_runner("noop").is_some());
+    assert!(reg.capabilities.resolve_subcommand("fixture-fail").is_some());
     assert_eq!(reg.manifests().count(), 3);
 }
 
@@ -45,7 +45,7 @@ async fn dispatches_subcommand_with_nonzero_exit_info() {
         ..Default::default()
     })
     .unwrap();
-    let idx = reg.subcommand_index["fixture-fail"];
+    let idx = reg.capabilities.resolve_subcommand("fixture-fail").unwrap();
     let plugin = reg.get(idx).unwrap();
     let input = SubcommandInput {
         verb_path: vec!["fixture-fail".into()],
@@ -71,7 +71,7 @@ async fn dispatches_step_executor() {
         ..Default::default()
     })
     .unwrap();
-    let idx = reg.runner_index["noop"];
+    let idx = reg.capabilities.resolve_runner("noop").unwrap();
     let plugin = reg.get(idx).unwrap();
     let input = ExecutorInput {
         step: CommandStep {

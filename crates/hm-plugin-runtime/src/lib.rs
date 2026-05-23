@@ -8,4 +8,4 @@ pub mod paths;
 pub mod registry;
 
 pub use host::LoadedPlugin;
-pub use registry::{PluginRegistry, RegistryConfig};
+pub use registry::{CapabilityIndex, PluginRegistry, RegistryConfig};

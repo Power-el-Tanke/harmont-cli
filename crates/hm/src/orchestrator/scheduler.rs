@@ -332,7 +332,8 @@ async fn run_chain(
             name
         } else {
             let reg = registry.lock().await;
-            reg.default_runner_name()
+            reg.capabilities
+                .default_runner_name()
                 .map_or_else(|| "docker".into(), str::to_string)
         };
         let started = Instant::now();
@@ -348,14 +349,12 @@ async fn run_chain(
         let plugin = {
             let reg = registry.lock().await;
             let idx = reg
-                .runner_index
-                .get(&runner)
-                .copied()
-                .or(reg.default_runner)
+                .capabilities
+                .resolve_runner(&runner)
                 .ok_or_else(|| HmError::UnknownRunner {
                     step_key: input.step.key.clone(),
                     runner: runner.clone(),
-                    available: reg.runner_index.keys().cloned().collect(),
+                    available: reg.capabilities.available_runners().map(Into::into).collect(),
                 })?;
             reg.get(idx).context("plugin moved away under us")?
         };

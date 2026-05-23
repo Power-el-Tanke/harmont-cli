@@ -76,9 +76,9 @@ async fn runner_field_dispatches_to_named_plugin() {
     let runner = input.step.runner.clone().unwrap_or_else(|| "docker".into());
     assert_eq!(runner, "freestyle", "runner derivation lost the field");
 
-    let idx = *reg
-        .runner_index
-        .get(&runner)
+    let idx = reg
+        .capabilities
+        .resolve_runner(&runner)
         .unwrap_or_else(|| panic!("runner '{runner}' not in registry"));
     let plugin = reg.get(idx).expect("plugin present at index");
 

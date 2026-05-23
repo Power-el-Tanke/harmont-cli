@@ -53,7 +53,7 @@ async fn host_fn_probe_passes_all_checks() {
         ..Default::default()
     })
     .expect("load registry");
-    let idx = reg.subcommand_index["fixture-probe"];
+    let idx = reg.capabilities.resolve_subcommand("fixture-probe").unwrap();
     let plugin = reg.get(idx).expect("plugin present");
     let info = plugin
         .run_subcommand(&dummy_subcommand_input())
