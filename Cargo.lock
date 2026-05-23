@@ -1686,6 +1686,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hm-plugin-macros"
+version = "0.0.0-dev"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "hm-plugin-output-human"
 version = "0.1.0"
 dependencies = [
@@ -1730,7 +1739,9 @@ name = "hm-plugin-sdk"
 version = "0.0.0-dev"
 dependencies = [
  "borsh",
+ "hm-plugin-macros",
  "hm-plugin-protocol",
+ "semver",
  "serde",
  "serde_json",
  "stabby",

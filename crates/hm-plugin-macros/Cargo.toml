@@ -1,0 +1,18 @@
+[package]
+name = "hm-plugin-macros"
+version = "0.0.0-dev"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Proc-macro crate for hm-plugin-sdk. Provides the `hm_plugin!` macro."
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn        = { version = "2", features = ["full", "parsing", "printing"] }
+quote      = "1"
+proc-macro2 = "1"
+
+[lints]
+workspace = true

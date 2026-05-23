@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/hm",
     "crates/hm-plugin-protocol",
+    "crates/hm-plugin-macros",
     "crates/hm-plugin-sdk",
     "crates/hm-plugin-docker",
     "crates/hm-plugin-output-human",
@@ -23,6 +24,7 @@ repository = "https://github.com/harmont-dev/harmont-cli"
 
 [workspace.dependencies]
 hm-plugin-protocol = { path = "crates/hm-plugin-protocol", version = "0.0.0-dev" }
+hm-plugin-macros   = { path = "crates/hm-plugin-macros",   version = "0.0.0-dev" }
 hm-plugin-sdk      = { path = "crates/hm-plugin-sdk",      version = "0.0.0-dev" }
 serde       = { version = "1", features = ["derive"] }
 serde_json  = "1"
