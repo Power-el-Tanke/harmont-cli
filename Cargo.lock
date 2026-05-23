@@ -1274,32 +1274,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hm-plugin-output-human"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "hm-plugin-protocol",
- "hm-plugin-sdk",
- "semver",
- "serde",
- "serde_json",
- "stabby",
- "uuid",
-]
-
-[[package]]
-name = "hm-plugin-output-json"
-version = "0.1.0"
-dependencies = [
- "hm-plugin-protocol",
- "hm-plugin-sdk",
- "semver",
- "serde",
- "serde_json",
- "stabby",
-]
-
-[[package]]
 name = "hm-plugin-protocol"
 version = "0.0.0-dev"
 dependencies = [

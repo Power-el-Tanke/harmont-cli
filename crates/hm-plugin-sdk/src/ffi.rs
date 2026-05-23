@@ -12,8 +12,6 @@ pub trait RawPlugin: Send + Sync {
     extern "C" fn execute_step<'a>(&'a self, input: FfiSlice<'a>) -> DynFutureUnsync<'a, FfiResult>;
     extern "C" fn on_hook_event<'a>(&'a self, event: FfiSlice<'a>) -> DynFutureUnsync<'a, FfiResult>;
     extern "C" fn run_subcommand<'a>(&'a self, input: FfiSlice<'a>) -> DynFutureUnsync<'a, FfiResult>;
-    extern "C" fn on_output_event<'a>(&'a self, event: FfiSlice<'a>) -> DynFutureUnsync<'a, FfiResult>;
-    extern "C" fn finalize_output<'a>(&'a self) -> DynFutureUnsync<'a, FfiResult>;
 }
 
 #[stabby::stabby]

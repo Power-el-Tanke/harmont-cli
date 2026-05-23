@@ -54,7 +54,6 @@ pub struct PluginRegistry {
     plugins: Vec<Arc<LoadedPlugin>>,
     pub subcommand_index: BTreeMap<String, usize>,
     pub runner_index: BTreeMap<String, usize>,
-    pub output_formatter_index: BTreeMap<String, usize>,
     pub default_runner: Option<usize>,
 }
 
@@ -98,7 +97,6 @@ impl PluginRegistry {
             plugins,
             subcommand_index: BTreeMap::new(),
             runner_index: BTreeMap::new(),
-            output_formatter_index: BTreeMap::new(),
             default_runner: None,
         };
         me.index_capabilities()?;
@@ -137,16 +135,6 @@ impl PluginRegistry {
                                 }
                                 .into());
                             }
-                        }
-                    }
-                    Capability::OutputFormatter(s) => {
-                        if let Some(other) = self.output_formatter_index.insert(s.name.clone(), i) {
-                            return Err(HmError::PluginConflict {
-                                verb: format!("format:{}", s.name),
-                                plugin_a: self.plugins[other].manifest.name.clone(),
-                                plugin_b: p.manifest.name.clone(),
-                            }
-                            .into());
                         }
                     }
                     Capability::LifecycleHook(_) => {

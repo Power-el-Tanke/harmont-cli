@@ -39,7 +39,6 @@ pub enum Capability {
     Subcommand(SubcommandSpec),
     StepExecutor(StepExecutorSpec),
     LifecycleHook(LifecycleHookSpec),
-    OutputFormatter(OutputFormatterSpec),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
@@ -71,14 +70,6 @@ pub struct LifecycleHookSpec {
     pub events: Vec<HookEventKind>,
     pub phase: HookPhase,
     pub timeout_ms: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
-pub struct OutputFormatterSpec {
-    /// Selected via `--format <name>` on the command line.
-    pub name: String,
-    /// Advisory MIME type written into `--format <name> --output <file>` headers.
-    pub mime: String,
 }
 
 #[cfg(test)]

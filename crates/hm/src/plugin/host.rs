@@ -302,43 +302,6 @@ impl LoadedPlugin {
         }
     }
 
-    /// Handle an output event (for output-formatter plugins).
-    pub async fn on_output_event(
-        &self,
-        event: &hm_plugin_protocol::BuildEvent,
-    ) -> Result<()> {
-        let in_bytes = serde_json::to_vec(event).context("serialize BuildEvent")?;
-        // SAFETY: see `plugin_static()` and `staticify_slice()` docs.
-        let ffi_input = unsafe {
-            Self::staticify_slice(hm_plugin_sdk::ffi::FfiSlice::from(in_bytes.as_slice()))
-        };
-        let future = unsafe { self.plugin_static() }.on_output_event(ffi_input);
-        let stabby_result = future.await;
-        let std_result: core::result::Result<
-            hm_plugin_sdk::ffi::FfiBytes,
-            hm_plugin_sdk::ffi::FfiBytes,
-        > = stabby_result.into();
-        match std_result {
-            Ok(_) => Ok(()),
-            Err(err) => Err(ffi_err_to_anyhow(&self.manifest.name, "on_output_event", &err)),
-        }
-    }
-
-    /// Finalize output (for output-formatter plugins). Returns the
-    /// accumulated output bytes.
-    pub async fn finalize_output(&self) -> Result<Vec<u8>> {
-        // SAFETY: see `plugin_static()` doc. We `.await` immediately.
-        let future = unsafe { self.plugin_static() }.finalize_output();
-        let stabby_result = future.await;
-        let std_result: core::result::Result<
-            hm_plugin_sdk::ffi::FfiBytes,
-            hm_plugin_sdk::ffi::FfiBytes,
-        > = stabby_result.into();
-        match std_result {
-            Ok(out) => Ok(out.as_slice().to_vec()),
-            Err(err) => Err(ffi_err_to_anyhow(&self.manifest.name, "finalize_output", &err)),
-        }
-    }
 }
 
 /// Convert an FFI error response (serialized `PluginError`) into an

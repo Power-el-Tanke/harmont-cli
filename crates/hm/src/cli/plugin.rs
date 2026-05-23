@@ -111,9 +111,7 @@ async fn remove(name: &str) -> Result<()> {
 }
 
 fn capability_summary(cap: &hm_plugin_protocol::Capability) -> String {
-    use hm_plugin_protocol::Capability::{
-        LifecycleHook, OutputFormatter, StepExecutor, Subcommand,
-    };
+    use hm_plugin_protocol::Capability::{LifecycleHook, StepExecutor, Subcommand};
     match cap {
         Subcommand(s) => format!("subcmd:{}", s.verb),
         StepExecutor(s) => {
@@ -124,6 +122,5 @@ fn capability_summary(cap: &hm_plugin_protocol::Capability) -> String {
             }
         }
         LifecycleHook(_) => "hook".into(),
-        OutputFormatter(s) => format!("format:{}", s.name),
     }
 }

@@ -32,7 +32,6 @@ enum PluginArg {
     Executor(Path),
     Hook(Path),
     Subcommand(Path),
-    Output(Path),
 }
 
 impl Parse for PluginArg {
@@ -57,15 +56,11 @@ impl Parse for PluginArg {
                 let path: Path = input.parse()?;
                 Ok(Self::Subcommand(path))
             }
-            "output" => {
-                let path: Path = input.parse()?;
-                Ok(Self::Output(path))
-            }
             other => Err(syn::Error::new(
                 key.span(),
                 format!(
                     "unknown keyword `{other}`. \
-                     Expected one of: manifest, executor, hook, subcommand, output"
+                     Expected one of: manifest, executor, hook, subcommand"
                 ),
             )),
         }
@@ -78,7 +73,6 @@ struct PluginArgs {
     executor: Option<Path>,
     hook: Option<Path>,
     subcommand: Option<Path>,
-    output: Option<Path>,
 }
 
 impl Parse for PluginArgs {
@@ -87,7 +81,6 @@ impl Parse for PluginArgs {
         let mut executor: Option<Path> = None;
         let mut hook: Option<Path> = None;
         let mut subcommand: Option<Path> = None;
-        let mut output: Option<Path> = None;
 
         while !input.is_empty() {
             let arg: PluginArg = input.parse()?;
@@ -128,15 +121,6 @@ impl Parse for PluginArgs {
                     }
                     subcommand = Some(path);
                 }
-                PluginArg::Output(path) => {
-                    if output.is_some() {
-                        return Err(syn::Error::new(
-                            input.span(),
-                            "duplicate `output` argument",
-                        ));
-                    }
-                    output = Some(path);
-                }
             }
             // consume optional trailing comma
             let _ = input.parse::<Option<Token![,]>>();
@@ -154,7 +138,6 @@ impl Parse for PluginArgs {
             executor,
             hook,
             subcommand,
-            output,
         })
     }
 }
@@ -174,15 +157,11 @@ fn gen_struct_fields(args: &PluginArgs) -> TokenStream2 {
     let subcommand_field = args.subcommand.as_ref().map(|ty| {
         quote! { subcommand: #ty, }
     });
-    let output_field = args.output.as_ref().map(|ty| {
-        quote! { output: #ty, }
-    });
 
     quote! {
         #executor_field
         #hook_field
         #subcommand_field
-        #output_field
     }
 }
 
@@ -198,15 +177,11 @@ fn gen_struct_init(args: &PluginArgs) -> TokenStream2 {
     let subcommand_init = args.subcommand.as_ref().map(|ty| {
         quote! { subcommand: <#ty as ::core::default::Default>::default(), }
     });
-    let output_init = args.output.as_ref().map(|ty| {
-        quote! { output: <#ty as ::core::default::Default>::default(), }
-    });
 
     quote! {
         #executor_init
         #hook_init
         #subcommand_init
-        #output_init
     }
 }
 
@@ -357,103 +332,6 @@ fn gen_run_subcommand(subcommand: Option<&Path>) -> TokenStream2 {
     )
 }
 
-fn gen_on_output_event(output: Option<&Path>) -> TokenStream2 {
-    output.map_or_else(
-        || gen_not_implemented_stub("on_output_event", "event"),
-        |_ty| {
-            quote! {
-                extern "C" fn on_output_event<'a>(
-                    &'a self,
-                    event: hm_plugin_sdk::ffi::FfiSlice<'a>,
-                ) -> stabby::future::DynFutureUnsync<'a, hm_plugin_sdk::ffi::FfiResult> {
-                    let ctx = &self.ctx;
-                    let output = &self.output;
-                    stabby::boxed::Box::new(async move {
-                        let parsed: hm_plugin_sdk::BuildEvent =
-                            match serde_json::from_slice(event.as_ref()) {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    return stabby::result::Result::Err(
-                                        __ffi_bytes(
-                                            serde_json::to_vec(
-                                                &hm_plugin_sdk::PluginError::new(
-                                                    "deserialize",
-                                                    e.to_string(),
-                                                ),
-                                            )
-                                            .unwrap_or_default(),
-                                        ),
-                                    )
-                                }
-                            };
-                        match hm_plugin_sdk::OutputFormatter::on_event(output, ctx, parsed).await {
-                            Ok(()) => stabby::result::Result::Ok(
-                                __ffi_bytes(
-                                    serde_json::to_vec(&()).unwrap_or_default(),
-                                ),
-                            ),
-                            Err(e) => stabby::result::Result::Err(
-                                __ffi_bytes(
-                                    serde_json::to_vec(&e).unwrap_or_default(),
-                                ),
-                            ),
-                        }
-                    })
-                    .into()
-                }
-            }
-        },
-    )
-}
-
-fn gen_finalize_output(output: Option<&Path>) -> TokenStream2 {
-    output.map_or_else(
-        || {
-            quote! {
-                extern "C" fn finalize_output<'a>(
-                    &'a self,
-                ) -> stabby::future::DynFutureUnsync<'a, hm_plugin_sdk::ffi::FfiResult> {
-                    stabby::boxed::Box::new(async {
-                        stabby::result::Result::Err(
-                            __ffi_bytes(
-                                serde_json::to_vec(&hm_plugin_sdk::PluginError::new(
-                                    "not_implemented",
-                                    "this plugin does not implement this capability",
-                                ))
-                                .unwrap_or_default(),
-                            ),
-                        )
-                    })
-                    .into()
-                }
-            }
-        },
-        |_ty| {
-            quote! {
-                extern "C" fn finalize_output<'a>(
-                    &'a self,
-                ) -> stabby::future::DynFutureUnsync<'a, hm_plugin_sdk::ffi::FfiResult> {
-                    let ctx = &self.ctx;
-                    let output = &self.output;
-                    stabby::boxed::Box::new(async move {
-                        match hm_plugin_sdk::OutputFormatter::finalize(output, ctx).await {
-                            Ok(bytes) => stabby::result::Result::Ok(
-                                __ffi_bytes(bytes),
-                            ),
-                            Err(e) => stabby::result::Result::Err(
-                                __ffi_bytes(
-                                    serde_json::to_vec(&e).unwrap_or_default(),
-                                ),
-                            ),
-                        }
-                    })
-                    .into()
-                }
-            }
-        },
-    )
-}
-
 fn gen_not_implemented_stub(method_name: &str, param_name: &str) -> TokenStream2 {
     let method_ident = syn::Ident::new(method_name, proc_macro2::Span::call_site());
     let param_ident = syn::Ident::new(param_name, proc_macro2::Span::call_site());
@@ -528,8 +406,6 @@ fn expand(args: &PluginArgs) -> TokenStream2 {
     let execute_step = gen_execute_step(args.executor.as_ref());
     let on_hook_event = gen_on_hook_event(args.hook.as_ref());
     let run_subcommand = gen_run_subcommand(args.subcommand.as_ref());
-    let on_output_event = gen_on_output_event(args.output.as_ref());
-    let finalize_output = gen_finalize_output(args.output.as_ref());
 
     quote! {
         // Generated by hm_plugin! — do not edit.
@@ -558,8 +434,6 @@ fn expand(args: &PluginArgs) -> TokenStream2 {
                 #execute_step
                 #on_hook_event
                 #run_subcommand
-                #on_output_event
-                #finalize_output
             }
 
             // SAFETY: __HmPluginImpl holds a PluginContext (which is
@@ -613,7 +487,6 @@ fn expand(args: &PluginArgs) -> TokenStream2 {
 /// | `executor`   | no       | type implementing `StepExecutor` |
 /// | `hook`       | no       | type implementing `LifecycleHook` |
 /// | `subcommand` | no       | type implementing `SubcommandPlugin` |
-/// | `output`     | no       | type implementing `OutputFormatter` |
 #[proc_macro]
 pub fn hm_plugin(input: TokenStream) -> TokenStream {
     let args = syn::parse_macro_input!(input as PluginArgs);

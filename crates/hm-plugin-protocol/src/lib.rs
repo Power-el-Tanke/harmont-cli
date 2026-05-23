@@ -27,8 +27,8 @@ pub use hook::{HookEvent, HookEventKind, HookOutcome, HookPhase};
 pub use host_abi::{ArchiveReadArgs, KvScope, Level};
 pub use ir::{Cache, CommandStep, Pipeline, Step, WaitStep};
 pub use manifest::{
-    Capability, ClapJson, JsonSchema, LifecycleHookSpec, OutputFormatterSpec, PluginManifest,
-    StepExecutorSpec, SubcommandSpec,
+    Capability, ClapJson, JsonSchema, LifecycleHookSpec, PluginManifest, StepExecutorSpec,
+    SubcommandSpec,
 };
 pub use subcommand::SubcommandInput;
 

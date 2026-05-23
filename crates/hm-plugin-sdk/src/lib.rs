@@ -7,7 +7,7 @@
 //! [`ffi::RawHostApi`] wrapped in a [`PluginContext`].
 //!
 //! User-facing capability traits ([`StepExecutor`], [`LifecycleHook`],
-//! [`SubcommandPlugin`], [`OutputFormatter`]) are async and receive a
+//! [`SubcommandPlugin`]) are async and receive a
 //! `&PluginContext` so they can call host functions ergonomically.
 //!
 //! ```ignore
@@ -39,7 +39,6 @@ pub mod context;
 pub mod executor;
 pub mod ffi;
 pub mod hook;
-pub mod output;
 pub mod subcommand;
 
 #[doc(hidden)]
@@ -50,5 +49,4 @@ pub use executor::StepExecutor;
 pub use hm_plugin_protocol::*;
 pub use hook::LifecycleHook;
 pub use macros::hm_plugin;
-pub use output::OutputFormatter;
 pub use subcommand::SubcommandPlugin;

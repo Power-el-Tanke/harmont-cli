@@ -136,30 +136,6 @@ expression: schema
               "minimum": 0.0
             }
           }
-        },
-        {
-          "type": "object",
-          "required": [
-            "kind",
-            "mime",
-            "name"
-          ],
-          "properties": {
-            "kind": {
-              "type": "string",
-              "enum": [
-                "output_formatter"
-              ]
-            },
-            "name": {
-              "description": "Selected via `--format <name>` on the command line.",
-              "type": "string"
-            },
-            "mime": {
-              "description": "Advisory MIME type written into `--format <name> --output <file>` headers.",
-              "type": "string"
-            }
-          }
         }
       ]
     },

@@ -76,21 +76,6 @@ impl SubcommandPlugin for TestSub {
     }
 }
 
-// ---------- Output ----------------------------------------------------------
-
-#[derive(Default)]
-struct TestOut;
-
-impl OutputFormatter for TestOut {
-    fn on_event(
-        &self,
-        _ctx: &PluginContext<'_>,
-        _event: BuildEvent,
-    ) -> impl Future<Output = Result<(), PluginError>> + Send + '_ {
-        async { Ok(()) }
-    }
-}
-
 // ---------- Macro invocations -----------------------------------------------
 
 // Full invocation with all capabilities
@@ -106,7 +91,6 @@ hm_plugin!(
     executor = TestExec,
     hook = TestHook,
     subcommand = TestSub,
-    output = TestOut,
 );
 
 #[test]

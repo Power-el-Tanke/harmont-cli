@@ -6,8 +6,9 @@ members = [
     "crates/hm-plugin-macros",
     "crates/hm-plugin-sdk",
     "crates/hm/plugins/hm-plugin-docker",
-    "crates/hm/plugins/hm-plugin-output-human",
-    "crates/hm/plugins/hm-plugin-output-json",
+    # output-formatter plugins removed from workspace; crates pending deletion.
+    # "crates/hm/plugins/hm-plugin-output-human",
+    # "crates/hm/plugins/hm-plugin-output-json",
     "crates/hm/plugins/hm-plugin-cloud",
     "tests/fixtures/noop-executor",
     "tests/fixtures/recording-hook",
