@@ -1,6 +1,12 @@
 use clap::Parser;
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum OutputFormat {
+    Human,
+    Json,
+}
+
 #[derive(Debug, Clone, Parser)]
 pub struct RunArgs {
     /// Pipeline slug. Required when the repo declares more than one
@@ -35,6 +41,6 @@ pub struct RunArgs {
 
     /// Output format. `human` (default) prints coloured progress to
     /// stderr; `json` writes one event per line to stdout.
-    #[arg(long, value_name = "NAME", default_value = "human", global = false)]
-    pub format: String,
+    #[arg(long, value_name = "NAME", default_value = "human")]
+    pub format: OutputFormat,
 }

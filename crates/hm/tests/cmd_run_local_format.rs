@@ -1,5 +1,5 @@
 //! End-to-end: `hm run --local --format <name>` exercises both
-//! output plugins against a real Docker daemon.
+//! output modes against a real Docker daemon.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -77,5 +77,5 @@ fn unknown_format_fails_fast_with_listing() {
         .current_dir(temp.path())
         .assert()
         .failure()
-        .stderr(contains("unknown --format 'nope'"));
+        .stderr(contains("invalid value 'nope' for '--format <NAME>'"));
 }

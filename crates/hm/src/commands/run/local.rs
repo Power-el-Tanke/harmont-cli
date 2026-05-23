@@ -87,10 +87,9 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
         }
     };
 
-    let format = if args.format == "json" {
-        OutputMode::Json
-    } else {
-        ctx.output
+    let format = match args.format {
+        crate::cli::run::OutputFormat::Human => ctx.output,
+        crate::cli::run::OutputFormat::Json => OutputMode::Json,
     };
 
     if format.is_human() {
