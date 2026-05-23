@@ -3,7 +3,6 @@ use hm_plugin_protocol::HM_PLUGIN_API_VERSION;
 
 use crate::plugin::{PluginRegistry, RegistryConfig};
 
-#[allow(clippy::print_stdout)]
 #[allow(clippy::unused_async)]
 /// Print version information to stdout.
 ///

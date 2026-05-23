@@ -48,7 +48,6 @@ pub async fn run(cmd: PluginCommand) -> Result<()> {
     }
 }
 
-#[allow(clippy::print_stdout)]
 #[allow(clippy::unused_async)]
 async fn list() -> Result<()> {
     let reg = PluginRegistry::load(RegistryConfig {
@@ -77,7 +76,6 @@ async fn list() -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::print_stdout)]
 #[allow(clippy::unused_async)]
 async fn info(name: &str) -> Result<()> {
     let reg = PluginRegistry::load(RegistryConfig {
@@ -93,14 +91,12 @@ async fn info(name: &str) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::print_stdout)]
 async fn install_cmd(source: &str, pin: Option<&str>) -> Result<()> {
     let path = crate::plugin::install::install(source, pin).await?;
     println!("Installed plugin to {}", path.display());
     Ok(())
 }
 
-#[allow(clippy::print_stdout)]
 #[allow(clippy::unused_async)]
 async fn remove(name: &str) -> Result<()> {
     let dir = crate::plugin::paths::install_dir().context("no install dir")?;

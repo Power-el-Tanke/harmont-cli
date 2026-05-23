@@ -1,8 +1,3 @@
-#![allow(
-    clippy::print_stderr,
-    reason = "this is a top-level dispatch site; ExitInfo.message is user-facing output to stderr"
-)]
-
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Result};

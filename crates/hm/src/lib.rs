@@ -3,6 +3,11 @@
     reason = "transitive dependency version conflicts in rand/windows-sys/thiserror chains; not fixable without upstream updates"
 )]
 
+#[allow(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "CLI subcommand handlers are the intended user-facing output sites"
+)]
 pub mod cli;
 pub mod commands;
 pub mod config;
