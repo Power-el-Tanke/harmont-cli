@@ -130,10 +130,11 @@ impl LoadedPlugin {
 
     /// Extend a `FfiSlice` to `'static` lifetime.
     ///
-    /// The plugin's generated code deserializes the input data at the
-    /// very start of the async block (before any yield point). The
-    /// `in_bytes` local outlives the `.await`, so the borrow is sound
-    /// even though Rust can't prove it statically.
+    /// The plugin's generated code (see `hm-plugin-macros` `expand()`)
+    /// deserializes the input via `serde_json::from_slice` at the very
+    /// start of the async block — before any `.await` / yield point.
+    /// The `in_bytes` local outlives the `.await`, so the borrow is
+    /// sound even though Rust can't prove it statically.
     ///
     /// # Safety
     /// The backing data must remain valid until the returned future

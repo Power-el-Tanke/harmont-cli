@@ -138,8 +138,9 @@ impl RawHostApi for HostApiImpl {
             2 => &self.kv_step,
             _ => return,
         };
-        if let Ok(mut guard) = map.lock() {
-            guard.insert(key_str.to_string(), val.to_vec());
+        match map.lock() {
+            Ok(mut guard) => { guard.insert(key_str.to_string(), val.to_vec()); }
+            Err(_) => tracing::warn!(target: "plugin::host_api", "kv_set: mutex poisoned"),
         }
     }
 
@@ -161,6 +162,7 @@ impl RawHostApi for HostApiImpl {
         } else {
             hm_plugin_protocol::StdStream::Stderr
         };
+        // TODO(task-7): replace nil UUID with actual step_id (needs per-step HostApiImpl or field)
         let event = BuildEvent::StepLog {
             step_id: uuid::Uuid::nil(),
             stream: stream_enum,
