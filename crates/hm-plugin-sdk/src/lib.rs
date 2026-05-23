@@ -16,8 +16,8 @@
 //! #[derive(Default)]
 //! struct MyExec;
 //! impl StepExecutor for MyExec {
-//!     fn run(&self, ctx: &PluginContext, input: ExecutorInput)
-//!         -> impl Future<Output = Result<StepResult, PluginError>> + Send + '_
+//!     fn run<'a>(&'a self, ctx: &'a PluginContext<'a>, input: ExecutorInput)
+//!         -> impl Future<Output = Result<StepResult, PluginError>> + Send + 'a
 //!     {
 //!         async move {
 //!             ctx.log(Level::Info, &format!("running {}", input.step.key));

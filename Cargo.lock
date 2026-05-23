@@ -1257,12 +1257,15 @@ dependencies = [
 name = "hm-plugin-docker"
 version = "0.1.0"
 dependencies = [
- "extism-pdk",
+ "bollard",
+ "futures-util",
  "hm-plugin-protocol",
  "hm-plugin-sdk",
  "semver",
  "serde",
  "serde_json",
+ "stabby",
+ "tokio",
 ]
 
 [[package]]
@@ -1279,12 +1282,12 @@ name = "hm-plugin-output-human"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "extism-pdk",
  "hm-plugin-protocol",
  "hm-plugin-sdk",
  "semver",
  "serde",
  "serde_json",
+ "stabby",
  "uuid",
 ]
 

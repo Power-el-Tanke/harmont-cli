@@ -1,6 +1,6 @@
 #![allow(unsafe_code)]
 
-use stabby::future::DynFuture;
+use stabby::future::DynFutureUnsync;
 
 pub type FfiBytes = stabby::vec::Vec<u8>;
 pub type FfiSlice<'a> = stabby::slice::Slice<'a, u8>;
@@ -9,11 +9,11 @@ pub type FfiResult = stabby::result::Result<FfiBytes, FfiBytes>;
 #[stabby::stabby]
 pub trait RawPlugin: Send + Sync {
     extern "C" fn manifest(&self) -> FfiBytes;
-    extern "C" fn execute_step<'a>(&'a self, input: FfiSlice<'a>) -> DynFuture<'a, FfiResult>;
-    extern "C" fn on_hook_event<'a>(&'a self, event: FfiSlice<'a>) -> DynFuture<'a, FfiResult>;
-    extern "C" fn run_subcommand<'a>(&'a self, input: FfiSlice<'a>) -> DynFuture<'a, FfiResult>;
-    extern "C" fn on_output_event<'a>(&'a self, event: FfiSlice<'a>) -> DynFuture<'a, FfiResult>;
-    extern "C" fn finalize_output<'a>(&'a self) -> DynFuture<'a, FfiResult>;
+    extern "C" fn execute_step<'a>(&'a self, input: FfiSlice<'a>) -> DynFutureUnsync<'a, FfiResult>;
+    extern "C" fn on_hook_event<'a>(&'a self, event: FfiSlice<'a>) -> DynFutureUnsync<'a, FfiResult>;
+    extern "C" fn run_subcommand<'a>(&'a self, input: FfiSlice<'a>) -> DynFutureUnsync<'a, FfiResult>;
+    extern "C" fn on_output_event<'a>(&'a self, event: FfiSlice<'a>) -> DynFutureUnsync<'a, FfiResult>;
+    extern "C" fn finalize_output<'a>(&'a self) -> DynFutureUnsync<'a, FfiResult>;
 }
 
 #[stabby::stabby]

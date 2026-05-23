@@ -1,10 +1,10 @@
 //! Built-in Docker step-executor plugin for the hm CLI.
 //!
-//! The host registers this plugin embedded (via `include_bytes!`) and
-//! dispatches every `CommandStep` whose `runner` is `None` or
-//! `"docker"` to it.
+//! Uses bollard to drive the local Docker daemon directly. The plugin
+//! streams exec output through the host's event bus via
+//! `PluginContext::emit_step_log_stdout()` / `emit_step_log_stderr()`.
 
-#![allow(unsafe_code, reason = "extism-pdk host_fn imports require unsafe")]
+#![allow(unsafe_code)]
 #![allow(
     clippy::pedantic,
     clippy::nursery,
@@ -12,36 +12,39 @@
     clippy::multiple_crate_versions,
     clippy::cargo_common_metadata,
     clippy::missing_errors_doc,
-    reason = "matches the test-fixtures allow-list; plugin authoring crate"
 )]
 
+use core::future::Future;
 use hm_plugin_sdk::*;
 
 mod decision;
-mod extism_host;
+mod docker;
 mod image_name;
 
 #[derive(Default)]
 struct DockerExec;
 
 impl StepExecutor for DockerExec {
-    fn run(&self, input: ExecutorInput) -> Result<StepResult, PluginError> {
-        run_step(input)
+    fn run<'a>(
+        &'a self,
+        ctx: &'a PluginContext<'a>,
+        input: ExecutorInput,
+    ) -> impl Future<Output = Result<StepResult, PluginError>> + Send + 'a {
+        run_step(ctx, input)
     }
 }
 
-fn run_step(input: ExecutorInput) -> Result<StepResult, PluginError> {
+async fn run_step(
+    ctx: &PluginContext<'_>,
+    input: ExecutorInput,
+) -> Result<StepResult, PluginError> {
     use crate::decision::plan;
-    use crate::extism_host as host;
     use crate::image_name::resolve_image;
-    use hm_plugin_protocol::{
-        DockerCommitArgs, DockerExecArgs, DockerExtractArgs, DockerStartArgs,
-    };
 
     let plan = plan(&input.cache_lookup);
 
-    // Cache hit shortcut: no container, no exec; we still hand back
-    // the hit tag so chain-downstream steps can boot from it.
+    // Cache hit shortcut: no container, no exec; hand back the hit tag
+    // so downstream steps can boot from it.
     if !plan.run_command {
         return Ok(StepResult {
             exit_code: 0,
@@ -50,6 +53,8 @@ fn run_step(input: ExecutorInput) -> Result<StepResult, PluginError> {
         });
     }
 
+    let client = docker::DockerClient::connect()?;
+
     let image = resolve_image(
         &input.step,
         plan.hit_tag.as_ref(),
@@ -57,62 +62,45 @@ fn run_step(input: ExecutorInput) -> Result<StepResult, PluginError> {
     );
     let container_name = sanitize_container_name(&input.run_id.to_string(), &input.step.key);
 
-    // Ensure the image is locally available — pull if needed.
-    if !host::image_exists(&image) {
-        host::pull(&image)
-            .map_err(|e| PluginError::new("docker_pull_failed", format!("pull '{image}': {e}")))?;
+    // Ensure image is locally available.
+    if !client.image_exists(&image).await? {
+        ctx.log(Level::Info, &format!("pulling {image}"));
+        client.pull_image(&image).await?;
     }
 
-    let cid = host::start_container(DockerStartArgs {
-        image: image.clone(),
-        env: input.env.clone(),
-        workdir: input.workdir.clone(),
-        name_hint: container_name,
-    })
-    .map_err(|e| PluginError::new("docker_start_failed", e.to_string()))?;
+    // Convert BTreeMap env to Vec<String> for bollard ("KEY=VALUE" format).
+    let env_vec: Vec<String> = input.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
 
-    // RAII-equivalent cleanup tracker. We don't have Drop in WASM
-    // host-fn land (panics there aren't recoverable cleanly), so use
-    // an explicit cleanup helper at every early-return.
-    macro_rules! cleanup_and_return {
-        ($result:expr) => {{
-            host::stop_remove(&cid);
-            return $result;
-        }};
-    }
+    let cid = client
+        .start_long_lived(&image, &env_vec, &input.workdir, &container_name)
+        .await?;
 
-    // Extract the user's source archive onto /workspace.
-    if let Err(e) = host::extract_workspace(DockerExtractArgs {
-        container_id: cid.clone(),
-        archive_id: input.workspace_archive_id,
-        workdir: input.workdir.clone(),
-    }) {
-        cleanup_and_return!(Err(PluginError::new(
-            "docker_extract_failed",
-            e.to_string()
-        )));
-    }
+    // Run the step inside the container; always clean up afterward.
+    let result = run_in_container(&client, ctx, &input, &cid, &env_vec, &plan).await;
+    client.stop_remove(&cid).await;
+    result
+}
 
-    // Exec the step's command. Logs stream live into the event bus
-    // via the host's StepLogWriter — the plugin only sees the exit
-    // code.
-    let exit_code = match host::exec(DockerExecArgs {
-        container_id: cid.clone(),
-        cmd: vec!["sh".into(), "-c".into(), input.step.cmd.clone()],
-        env: input.env.clone(),
-        workdir: input.workdir.clone(),
-        stdin_archive_id: None,
-    }) {
-        Ok(rc) => rc,
-        Err(e) => cleanup_and_return!(Err(PluginError::new("docker_exec_failed", e.to_string()))),
-    };
+async fn run_in_container(
+    client: &docker::DockerClient,
+    ctx: &PluginContext<'_>,
+    input: &ExecutorInput,
+    cid: &str,
+    env_vec: &[String],
+    plan: &decision::DecisionPlan,
+) -> Result<StepResult, PluginError> {
+    // Extract workspace archive into container.
+    client
+        .extract_workspace(ctx, cid, &input.workspace_archive_id, &input.workdir)
+        .await?;
 
-    // Always commit on success — under the new orchestrator the
-    // scheduler threads the committed snapshot to the next step in
-    // the chain (and to fork children). If the host already chose a
-    // tag (cache-build path), use it; otherwise mint an ephemeral
-    // tag scoped by step_id so concurrent / replayed runs don't
-    // collide.
+    // Exec the step command.
+    let cmd = vec!["sh".into(), "-c".into(), input.step.cmd.clone()];
+    let exit_code = client
+        .exec_streaming(cid, &cmd, env_vec, &input.workdir, ctx)
+        .await?;
+
+    // Commit on success.
     let committed = if exit_code == 0 {
         let target_tag = plan.commit_to.clone().unwrap_or_else(|| {
             let safe: String = input
@@ -132,20 +120,11 @@ fn run_step(input: ExecutorInput) -> Result<StepResult, PluginError> {
                 input.step_id.simple()
             ))
         });
-        match host::commit(DockerCommitArgs {
-            container_id: cid.clone(),
-            tag: target_tag.0.clone(),
-        }) {
-            Ok(_) => Some(target_tag),
-            Err(e) => {
-                cleanup_and_return!(Err(PluginError::new("docker_commit_failed", e.to_string())))
-            }
-        }
+        client.commit_container(cid, &target_tag.0).await?;
+        Some(target_tag)
     } else {
         None
     };
-
-    host::stop_remove(&cid);
 
     Ok(StepResult {
         exit_code,
@@ -169,7 +148,7 @@ fn sanitize_container_name(run_id: &str, step_key: &str) -> String {
     format!("harmont-{run_short}-{key}")
 }
 
-register_plugin!(
+hm_plugin!(
     manifest = PluginManifest {
         api_version: HM_PLUGIN_API_VERSION,
         name: "harmont-docker".into(),
@@ -180,20 +159,7 @@ register_plugin!(
             default: true,
             step_schema: None,
         })],
-        required_host_fns: vec![
-            "hm_log".into(),
-            "hm_emit_step_log".into(),
-            "hm_should_cancel".into(),
-            "hm_docker_ping".into(),
-            "hm_docker_image_exists".into(),
-            "hm_docker_pull".into(),
-            "hm_docker_start_container".into(),
-            "hm_docker_extract_workspace".into(),
-            "hm_docker_exec".into(),
-            "hm_docker_commit".into(),
-            "hm_docker_remove_image".into(),
-            "hm_docker_stop_remove".into(),
-        ],
+        required_host_fns: vec![],
         config_schema: None,
         allowed_hosts: vec![],
     },

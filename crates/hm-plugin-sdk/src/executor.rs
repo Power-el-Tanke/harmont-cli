@@ -17,9 +17,9 @@ pub trait StepExecutor: Send + Sync + Default {
     /// # Errors
     /// Returns a [`PluginError`] describing the failure. The host
     /// converts errors into build events and a non-zero step exit.
-    fn run(
-        &self,
-        ctx: &PluginContext<'_>,
+    fn run<'a>(
+        &'a self,
+        ctx: &'a PluginContext<'a>,
         input: ExecutorInput,
-    ) -> impl Future<Output = Result<StepResult, PluginError>> + Send + '_;
+    ) -> impl Future<Output = Result<StepResult, PluginError>> + Send + 'a;
 }

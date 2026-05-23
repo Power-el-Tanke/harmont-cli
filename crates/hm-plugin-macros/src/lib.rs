@@ -218,7 +218,7 @@ fn gen_execute_step(executor: Option<&Path>) -> TokenStream2 {
                 extern "C" fn execute_step<'a>(
                     &'a self,
                     input: hm_plugin_sdk::ffi::FfiSlice<'a>,
-                ) -> stabby::future::DynFuture<'a, hm_plugin_sdk::ffi::FfiResult> {
+                ) -> stabby::future::DynFutureUnsync<'a, hm_plugin_sdk::ffi::FfiResult> {
                     let ctx = &self.ctx;
                     let executor = &self.executor;
                     stabby::boxed::Box::new(async move {
@@ -267,7 +267,7 @@ fn gen_on_hook_event(hook: Option<&Path>) -> TokenStream2 {
                 extern "C" fn on_hook_event<'a>(
                     &'a self,
                     event: hm_plugin_sdk::ffi::FfiSlice<'a>,
-                ) -> stabby::future::DynFuture<'a, hm_plugin_sdk::ffi::FfiResult> {
+                ) -> stabby::future::DynFutureUnsync<'a, hm_plugin_sdk::ffi::FfiResult> {
                     let ctx = &self.ctx;
                     let hook = &self.hook;
                     stabby::boxed::Box::new(async move {
@@ -316,7 +316,7 @@ fn gen_run_subcommand(subcommand: Option<&Path>) -> TokenStream2 {
                 extern "C" fn run_subcommand<'a>(
                     &'a self,
                     input: hm_plugin_sdk::ffi::FfiSlice<'a>,
-                ) -> stabby::future::DynFuture<'a, hm_plugin_sdk::ffi::FfiResult> {
+                ) -> stabby::future::DynFutureUnsync<'a, hm_plugin_sdk::ffi::FfiResult> {
                     let ctx = &self.ctx;
                     let subcommand = &self.subcommand;
                     stabby::boxed::Box::new(async move {
@@ -365,7 +365,7 @@ fn gen_on_output_event(output: Option<&Path>) -> TokenStream2 {
                 extern "C" fn on_output_event<'a>(
                     &'a self,
                     event: hm_plugin_sdk::ffi::FfiSlice<'a>,
-                ) -> stabby::future::DynFuture<'a, hm_plugin_sdk::ffi::FfiResult> {
+                ) -> stabby::future::DynFutureUnsync<'a, hm_plugin_sdk::ffi::FfiResult> {
                     let ctx = &self.ctx;
                     let output = &self.output;
                     stabby::boxed::Box::new(async move {
@@ -412,7 +412,7 @@ fn gen_finalize_output(output: Option<&Path>) -> TokenStream2 {
             quote! {
                 extern "C" fn finalize_output<'a>(
                     &'a self,
-                ) -> stabby::future::DynFuture<'a, hm_plugin_sdk::ffi::FfiResult> {
+                ) -> stabby::future::DynFutureUnsync<'a, hm_plugin_sdk::ffi::FfiResult> {
                     stabby::boxed::Box::new(async {
                         stabby::result::Result::Err(
                             __ffi_bytes(
@@ -432,7 +432,7 @@ fn gen_finalize_output(output: Option<&Path>) -> TokenStream2 {
             quote! {
                 extern "C" fn finalize_output<'a>(
                     &'a self,
-                ) -> stabby::future::DynFuture<'a, hm_plugin_sdk::ffi::FfiResult> {
+                ) -> stabby::future::DynFutureUnsync<'a, hm_plugin_sdk::ffi::FfiResult> {
                     let ctx = &self.ctx;
                     let output = &self.output;
                     stabby::boxed::Box::new(async move {
@@ -462,7 +462,7 @@ fn gen_not_implemented_stub(method_name: &str, param_name: &str) -> TokenStream2
         extern "C" fn #method_ident<'a>(
             &'a self,
             #param_ident: hm_plugin_sdk::ffi::FfiSlice<'a>,
-        ) -> stabby::future::DynFuture<'a, hm_plugin_sdk::ffi::FfiResult> {
+        ) -> stabby::future::DynFutureUnsync<'a, hm_plugin_sdk::ffi::FfiResult> {
             let _ = #param_ident;
             stabby::boxed::Box::new(async {
                 stabby::result::Result::Err(

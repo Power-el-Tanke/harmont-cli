@@ -376,9 +376,7 @@ async fn run_chain(
 
         // Dispatch to the runner-named plugin. Look up the Arc under
         // the registry lock, drop the lock BEFORE awaiting so other
-        // chains can dispatch concurrently — the per-plugin pool
-        // serialises (or parallelises, up to its capacity) calls
-        // internally.
+        // chains can dispatch concurrently.
         let plugin = {
             let reg = registry.lock().await;
             let idx = reg
@@ -393,9 +391,7 @@ async fn run_chain(
                 })?;
             reg.get(idx).context("plugin moved away under us")?
         };
-        crate::plugin::host_fns::set_current_step_id(step_id);
-        let result: Result<StepResult> = plugin.call_capability("hm_executor_run", &input).await;
-        crate::plugin::host_fns::clear_current_step_id();
+        let result: Result<StepResult> = plugin.execute_step(&input).await;
 
         let dur_ms = started.elapsed().as_millis() as u64;
         match result {

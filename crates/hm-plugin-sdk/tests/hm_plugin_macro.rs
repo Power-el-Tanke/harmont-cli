@@ -26,11 +26,11 @@ use hm_plugin_sdk::*;
 struct TestExec;
 
 impl StepExecutor for TestExec {
-    fn run(
-        &self,
-        _ctx: &PluginContext<'_>,
+    fn run<'a>(
+        &'a self,
+        _ctx: &'a PluginContext<'a>,
         _input: ExecutorInput,
-    ) -> impl Future<Output = Result<StepResult, PluginError>> + Send + '_ {
+    ) -> impl Future<Output = Result<StepResult, PluginError>> + Send + 'a {
         async {
             Ok(StepResult {
                 exit_code: 0,
