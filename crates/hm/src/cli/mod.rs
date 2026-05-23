@@ -1,6 +1,7 @@
 pub mod dev;
 pub mod plugin;
 pub mod run;
+pub mod version;
 
 pub use dev::{DevCommand, DevDownArgs, DevExecArgs, DevLogsArgs, DevPortOfArgs, DevUpArgs};
 pub use plugin::PluginCommand;
