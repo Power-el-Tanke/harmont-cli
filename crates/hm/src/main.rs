@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use clap::FromArgMatches;
+use clap::{CommandFactory, FromArgMatches};
 use owo_colors::OwoColorize;
 use tracing_subscriber::EnvFilter;
 
@@ -19,8 +19,6 @@ use harmont_cli::error::{self, HmError};
 use harmont_cli::output::status;
 use harmont_cli::plugin::host_api::HostApiImpl;
 use harmont_cli::plugin::{PluginRegistry, RegistryConfig};
-use hm_plugin_protocol::{Capability, SubcommandSpec};
-
 #[tokio::main]
 async fn main() {
     let code = match run().await {
@@ -29,19 +27,6 @@ async fn main() {
     };
 
     std::process::exit(code);
-}
-
-/// Collect all [`SubcommandSpec`]s from the plugin registry's manifests.
-fn collect_plugin_specs(registry: &PluginRegistry) -> Vec<SubcommandSpec> {
-    registry
-        .manifests()
-        .flat_map(|m| {
-            m.capabilities.iter().filter_map(|c| match c {
-                Capability::Subcommand(s) => Some(s.clone()),
-                Capability::StepExecutor(_) | Capability::LifecycleHook(_) => None,
-            })
-        })
-        .collect()
 }
 
 async fn run() -> Result<i32, anyhow::Error> {
@@ -57,12 +42,17 @@ async fn run() -> Result<i32, anyhow::Error> {
 
     let plugin_specs = registry
         .as_ref()
-        .map(collect_plugin_specs)
+        .map(PluginRegistry::subcommand_specs)
         .unwrap_or_default();
 
     // 2. Build the augmented clap::Command (built-ins + plugin verbs)
     //    and parse argv once.
-    let cmd = cli::build_augmented_command(&plugin_specs);
+    let builtins: std::collections::HashSet<String> = Cli::command()
+        .get_subcommands()
+        .map(|c| c.get_name().to_owned())
+        .collect();
+
+    let cmd = Cli::command_with_plugins(&plugin_specs);
     let matches = cmd.get_matches();
 
     // 3. Extract global flags from the matches so we can configure
@@ -89,7 +79,7 @@ async fn run() -> Result<i32, anyhow::Error> {
         .subcommand()
         .ok_or_else(|| anyhow::anyhow!("no subcommand provided"))?;
 
-    if cli::BUILTIN_SUBCOMMANDS.contains(&sub_name) {
+    if builtins.contains(sub_name) {
         // Reconstruct the full Cli struct from the already-parsed
         // ArgMatches so built-in handlers keep their typed derive args.
         let cli_args = Cli::from_arg_matches(&matches)?;

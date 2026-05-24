@@ -61,24 +61,18 @@ pub enum Command {
     Dev(DevCommand),
 }
 
-/// Build a `clap::Command` that contains both the derive-defined
-/// built-in subcommands and any plugin-provided subcommands.
-///
-/// The caller parses with the returned command, then routes based on
-/// whether the matched subcommand is a built-in or plugin verb.
-#[must_use]
-pub fn build_augmented_command(plugin_specs: &[SubcommandSpec]) -> clap::Command {
-    let mut cmd = Cli::command();
-    for spec in plugin_specs {
-        cmd = cmd.subcommand(hm_plugin_runtime::clap_bridge::build_command(spec));
+impl Cli {
+    /// Build a `clap::Command` with plugin subcommands appended to
+    /// the derive-defined built-in set.
+    #[must_use]
+    pub fn command_with_plugins(plugin_specs: &[SubcommandSpec]) -> clap::Command {
+        let mut cmd = Self::command();
+        for spec in plugin_specs {
+            cmd = cmd.subcommand(hm_plugin_runtime::clap_bridge::build_command(spec));
+        }
+        cmd
     }
-    cmd
 }
-
-/// Names of built-in subcommands defined in the [`Command`] derive enum.
-/// Used by the two-phase parser to decide whether to reconstruct `Cli`
-/// via `from_arg_matches` or route to the plugin dispatcher.
-pub const BUILTIN_SUBCOMMANDS: &[&str] = &["run", "version", "plugin", "dev"];
 
 /// Dispatch a parsed CLI command to the appropriate handler. Returns an exit code.
 ///

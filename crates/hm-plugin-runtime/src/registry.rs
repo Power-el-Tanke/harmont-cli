@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use hm_plugin_protocol::{Capability, PluginManifest};
+use hm_plugin_protocol::{Capability, PluginManifest, SubcommandSpec};
 
 use crate::error::RuntimeError;
 use crate::host::LoadedPlugin;
@@ -188,6 +188,19 @@ impl PluginRegistry {
     /// Iterate over every loaded plugin's manifest.
     pub fn manifests(&self) -> impl Iterator<Item = &PluginManifest> {
         self.plugins.iter().map(|p| &p.manifest)
+    }
+
+    /// Collect all `SubcommandSpec`s declared by loaded plugins.
+    #[must_use]
+    pub fn subcommand_specs(&self) -> Vec<SubcommandSpec> {
+        self.manifests()
+            .flat_map(|m| {
+                m.capabilities.iter().filter_map(|c| match c {
+                    Capability::Subcommand(s) => Some(s.clone()),
+                    _ => None,
+                })
+            })
+            .collect()
     }
 
     /// Clone the `Arc` for the plugin at `idx` (returned by the
