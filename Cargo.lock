@@ -1174,11 +1174,11 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 name = "hm-fixture-bad-api-version"
 version = "0.0.0"
 dependencies = [
+ "borsh",
  "hm-plugin-protocol",
  "hm-plugin-sdk",
  "semver",
  "serde",
- "serde_json",
  "stabby",
 ]
 
@@ -1186,11 +1186,11 @@ dependencies = [
 name = "hm-fixture-failing-subcommand"
 version = "0.0.0"
 dependencies = [
+ "borsh",
  "hm-plugin-protocol",
  "hm-plugin-sdk",
  "semver",
  "serde",
- "serde_json",
  "stabby",
 ]
 
@@ -1198,11 +1198,11 @@ dependencies = [
 name = "hm-fixture-freestyle-runner"
 version = "0.0.0"
 dependencies = [
+ "borsh",
  "hm-plugin-protocol",
  "hm-plugin-sdk",
  "semver",
  "serde",
- "serde_json",
  "stabby",
 ]
 
@@ -1210,6 +1210,7 @@ dependencies = [
 name = "hm-fixture-host-fn-probe"
 version = "0.0.0"
 dependencies = [
+ "borsh",
  "hm-plugin-protocol",
  "hm-plugin-sdk",
  "semver",
@@ -1222,6 +1223,7 @@ dependencies = [
 name = "hm-fixture-noop-executor"
 version = "0.0.0"
 dependencies = [
+ "borsh",
  "hm-plugin-protocol",
  "hm-plugin-sdk",
  "semver",
@@ -1234,11 +1236,11 @@ dependencies = [
 name = "hm-fixture-recording-hook"
 version = "0.0.0"
 dependencies = [
+ "borsh",
  "hm-plugin-protocol",
  "hm-plugin-sdk",
  "semver",
  "serde",
- "serde_json",
  "stabby",
 ]
 
@@ -1249,6 +1251,7 @@ dependencies = [
  "anyhow",
  "axum",
  "base64",
+ "borsh",
  "chrono",
  "clap",
  "dialoguer",
@@ -1274,12 +1277,12 @@ name = "hm-plugin-docker"
 version = "0.1.0"
 dependencies = [
  "bollard",
+ "borsh",
  "futures-util",
  "hm-plugin-protocol",
  "hm-plugin-sdk",
  "semver",
  "serde",
- "serde_json",
  "stabby",
  "tokio",
 ]
@@ -1346,7 +1349,6 @@ dependencies = [
  "hm-plugin-protocol",
  "semver",
  "serde",
- "serde_json",
  "stabby",
 ]
 

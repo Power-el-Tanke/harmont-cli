@@ -15,7 +15,6 @@ hm-plugin-macros   = { workspace = true }
 stabby             = { workspace = true }
 borsh              = { workspace = true }
 serde              = { workspace = true }
-serde_json         = { workspace = true }
 clap               = { version = "4", features = ["string"] }
 
 [dev-dependencies]
