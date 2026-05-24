@@ -76,8 +76,7 @@ fn build_test_graph() -> PipelineGraph {
 
 #[test]
 fn pipeline_graph_round_trips_through_json() {
-    use daggy::petgraph::visit::IntoNodeReferences;
-    use daggy::Walker;
+    use daggy::{Walker, petgraph::visit::IntoNodeReferences};
 
     let g = build_test_graph();
     let json = serde_json::to_string_pretty(&g).unwrap();
