@@ -11,11 +11,9 @@ publish = false
 path = "src/lib.rs"
 
 [dependencies]
-hm-plugin-protocol = { workspace = true }
 hm-util            = { workspace = true }
 serde              = { workspace = true }
 serde_json         = { workspace = true }
-semver             = { workspace = true }
 chrono             = { workspace = true }
 uuid               = { workspace = true }
 clap               = { version = "4", features = ["derive"] }

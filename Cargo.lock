@@ -1195,10 +1195,8 @@ dependencies = [
  "chrono",
  "clap",
  "dialoguer",
- "hm-plugin-protocol",
  "hm-util",
  "reqwest",
- "semver",
  "serde",
  "serde_json",
  "sha2",
@@ -1217,12 +1215,9 @@ dependencies = [
  "chrono",
  "derive_more",
  "hm-pipeline-ir",
- "insta",
  "schemars 0.8.22",
- "semver",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
  "uuid",
 ]
 

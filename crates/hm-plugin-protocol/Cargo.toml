@@ -11,14 +11,9 @@ hm-pipeline-ir = { workspace = true }
 serde      = { workspace = true }
 serde_json = { workspace = true }
 schemars   = { workspace = true }
-semver     = { workspace = true }
 uuid       = { workspace = true }
 chrono     = { workspace = true }
-thiserror  = { workspace = true }
 derive_more = { workspace = true }
-
-[dev-dependencies]
-insta = { version = "1", features = ["json"] }
 
 [lints]
 workspace = true

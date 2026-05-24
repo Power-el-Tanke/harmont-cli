@@ -11,7 +11,6 @@
 )]
 
 use hm_plugin_protocol::*;
-use semver::Version;
 use uuid::Uuid;
 
 fn rt<T>(v: &T) -> T
@@ -22,25 +21,6 @@ where
     let back: T = serde_json::from_str(&s).expect("deserialize");
     assert_eq!(v, &back, "round-trip mismatch via JSON: {s}");
     back
-}
-
-#[test]
-fn manifest_round_trip() {
-    let m = PluginManifest {
-        api_version: HM_PLUGIN_API_VERSION,
-        name: "harmont-docker".into(),
-        version: Version::parse("0.1.0").unwrap(),
-        description: "Docker step executor".into(),
-        capabilities: vec![Capability::StepExecutor(StepExecutorSpec {
-            runner: "docker".into(),
-            default: true,
-            step_schema: None,
-        })],
-        required_host_fns: vec!["hm_log".into(), "hm_unix_socket_connect".into()],
-        config_schema: None,
-        allowed_hosts: vec![],
-    };
-    rt(&m);
 }
 
 #[test]
@@ -134,12 +114,4 @@ fn cache_decision_round_trip_all_variants() {
         tag: SnapshotRef("img:tag".into()),
     });
     rt(&CacheDecision::MissNoCommit);
-}
-
-#[test]
-fn hook_outcome_round_trip() {
-    rt(&HookOutcome::Continue);
-    rt(&HookOutcome::Abort {
-        reason: "policy".into(),
-    });
 }
