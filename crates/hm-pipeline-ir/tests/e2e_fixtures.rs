@@ -166,7 +166,7 @@ fn all_fixtures_have_valid_structure() {
             assert!(bi + dep > 0, "{dsl}/{scenario}: no edges");
 
             for e in g.dag().graph().edge_references() {
-                assert_ne!(e.source(), e.target(), "{dsl}/{scenario}: self-loop",);
+                assert_ne!(e.source(), e.target(), "{dsl}/{scenario}: self-loop");
             }
         }
     }
@@ -256,7 +256,7 @@ fn parity_env_keys() {
                 .find(|(_, t)| t.step.label.as_deref() == Some(label))
                 .map(|(_, t)| t.env.keys().cloned().collect())
                 .unwrap();
-            assert_eq!(py_env, ts_env, "parity/{scenario}/{label}: env keys",);
+            assert_eq!(py_env, ts_env, "parity/{scenario}/{label}: env keys");
         }
     }
 }

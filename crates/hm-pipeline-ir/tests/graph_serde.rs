@@ -76,13 +76,14 @@ fn build_test_graph() -> PipelineGraph {
 
 #[test]
 fn pipeline_graph_round_trips_through_json() {
+    use daggy::petgraph::visit::IntoNodeReferences;
+    use daggy::Walker;
+
     let g = build_test_graph();
     let json = serde_json::to_string_pretty(&g).unwrap();
     let back: PipelineGraph = serde_json::from_str(&json).unwrap();
     assert_eq!(back.node_count(), 3);
     assert_eq!(back.default_image(), Some("ubuntu:24.04"));
-    use daggy::Walker;
-    use daggy::petgraph::visit::IntoNodeReferences;
 
     let a_idx = back
         .dag()
