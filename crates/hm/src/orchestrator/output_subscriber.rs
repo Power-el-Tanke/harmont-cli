@@ -9,10 +9,7 @@
 // - `print_stderr`: the Lagged arm intentionally bypasses the event
 //   bus (which is the source of the lag) to surface a user-visible
 //   drop signal, so an `eprintln!` direct to stderr is correct.
-#![allow(
-    clippy::needless_pass_by_value,
-    clippy::print_stderr
-)]
+#![allow(clippy::needless_pass_by_value, clippy::print_stderr)]
 
 use std::sync::Arc;
 

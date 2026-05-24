@@ -20,18 +20,25 @@ use super::naming::{
     clippy::print_stderr,
     reason = "user-facing error messages for a foreground CLI"
 )]
-#[allow(clippy::print_stdout, reason = "`hm dev port-of` prints the port to stdout for $() use")]
+#[allow(
+    clippy::print_stdout,
+    reason = "`hm dev port-of` prints the port to stdout for $() use"
+)]
 pub async fn handle(args: DevPortOfArgs, _ctx: RunContext) -> Result<i32> {
     let docker = DockerClient::connect()?;
     let worktree_root = resolve_worktree_root()?;
     let wt_hash = worktree_hash(&worktree_root);
-    let containers = docker.list_containers_by_label(LABEL_WORKTREE, &wt_hash).await?;
+    let containers = docker
+        .list_containers_by_label(LABEL_WORKTREE, &wt_hash)
+        .await?;
     let mut matches: Vec<(String, String, std::collections::HashMap<u16, u16>)> = Vec::new();
     for c in &containers {
         let labels = c.labels.clone().unwrap_or_default();
         let slug = labels.get(LABEL_SLUG).cloned().unwrap_or_default();
         let session = labels.get(LABEL_SESSION).cloned().unwrap_or_default();
-        if slug != args.slug { continue; }
+        if slug != args.slug {
+            continue;
+        }
         if let Some(s) = &args.session
             && &session != s
         {
@@ -63,7 +70,10 @@ pub async fn handle(args: DevPortOfArgs, _ctx: RunContext) -> Result<i32> {
         }
     }
     if matches.len() > 1 {
-        eprintln!("hm: slug `{}` matches multiple live sessions in this worktree:", args.slug);
+        eprintln!(
+            "hm: slug `{}` matches multiple live sessions in this worktree:",
+            args.slug
+        );
         for (_, sess, ports) in &matches {
             let p = format_ports(ports);
             eprintln!("  {sess}  {p}");
@@ -87,7 +97,8 @@ pub async fn handle(args: DevPortOfArgs, _ctx: RunContext) -> Result<i32> {
 fn format_ports(ports: &std::collections::HashMap<u16, u16>) -> String {
     let mut entries: Vec<(u16, u16)> = ports.iter().map(|(c, h)| (*c, *h)).collect();
     entries.sort_unstable();
-    entries.iter()
+    entries
+        .iter()
         .map(|(c, h)| format!("localhost:{h} → :{c}"))
         .collect::<Vec<_>>()
         .join(", ")

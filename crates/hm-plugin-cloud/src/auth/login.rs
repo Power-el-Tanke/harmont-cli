@@ -41,9 +41,7 @@ async fn login_loopback(
 
     tracing::info!("opening browser to {auth_url}");
     if webbrowser::open(&auth_url).is_err() {
-        eprintln!(
-            "couldn't auto-open the browser. Open this URL manually:\n  {auth_url}"
-        );
+        eprintln!("couldn't auto-open the browser. Open this URL manually:\n  {auth_url}");
     }
 
     // Wait for a single connection with a 180-second timeout.

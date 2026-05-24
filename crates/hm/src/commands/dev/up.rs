@@ -43,14 +43,19 @@ struct BootCtx {
 ///
 /// Returns an error if the registry dump fails, Docker is unreachable,
 /// network creation fails, or any container boot fails.
-#[allow(clippy::print_stderr, reason = "status messages to stderr are intentional for a foreground CLI")]
+#[allow(
+    clippy::print_stderr,
+    reason = "status messages to stderr are intentional for a foreground CLI"
+)]
 pub async fn handle(args: DevUpArgs, _ctx: RunContext) -> Result<i32> {
     let worktree_root = resolve_worktree_root()?;
     let wt_hash = worktree_hash(&worktree_root);
     let session_id = fresh_session_id();
     eprintln!("[hm] session {session_id}. resolving deployments in .harmont/");
 
-    let registry = dump(&worktree_root).await.context("dump deployment registry")?;
+    let registry = dump(&worktree_root)
+        .await
+        .context("dump deployment registry")?;
     let boot_plan = plan(&registry, &args.slugs, args.no_deps)?;
     let docker = DockerClient::connect()?;
     docker.ping().await.context("docker daemon ping")?;
@@ -87,9 +92,7 @@ pub async fn handle(args: DevUpArgs, _ctx: RunContext) -> Result<i32> {
             let slug = slug.clone();
             let log_tx = log_tx.clone();
             let ctx = ctx.clone();
-            joinset.spawn(async move {
-                boot_one(docker, slug, spec, ctx, log_tx).await
-            });
+            joinset.spawn(async move { boot_one(docker, slug, spec, ctx, log_tx).await });
         }
         while let Some(res) = joinset.join_next().await {
             let b = res??;
@@ -112,7 +115,10 @@ pub async fn handle(args: DevUpArgs, _ctx: RunContext) -> Result<i32> {
     Ok(0)
 }
 
-#[allow(clippy::print_stderr, reason = "per-slug ready/pull/build messages go to stderr")]
+#[allow(
+    clippy::print_stderr,
+    reason = "per-slug ready/pull/build messages go to stderr"
+)]
 async fn boot_one(
     docker: DockerClient,
     slug: String,
@@ -121,8 +127,7 @@ async fn boot_one(
     log_tx: mpsc::UnboundedSender<LogLine>,
 ) -> Result<Booted> {
     // Resolve image: raw or build-from-step.
-    let image =
-        resolve_image(&docker, &slug, &spec, &ctx.worktree_hash, ctx.rebuild).await?;
+    let image = resolve_image(&docker, &slug, &spec, &ctx.worktree_hash, ctx.rebuild).await?;
     let resolved = build_spec(
         &slug,
         &spec,
@@ -175,8 +180,7 @@ async fn resolve_image(
         return Ok(tag.clone());
     }
     if let Some(FromSource::StepChain { pipeline_v0 }) = &spec.from {
-        let chain_key =
-            extract_terminal_key(pipeline_v0).unwrap_or_else(|| "nocache".to_string());
+        let chain_key = extract_terminal_key(pipeline_v0).unwrap_or_else(|| "nocache".to_string());
         let tag = format!("hm-build-{worktree_hash}-{slug}:{chain_key}");
         if rebuild || !docker.image_exists(&tag).await? {
             #[allow(clippy::print_stderr, reason = "build progress goes to stderr")]
@@ -219,7 +223,13 @@ async fn stream_logs(
         match item {
             Ok(chunk) => {
                 let bytes = chunk.into_bytes().to_vec();
-                if tx.send(LogLine { slug: slug.clone(), bytes }).is_err() {
+                if tx
+                    .send(LogLine {
+                        slug: slug.clone(),
+                        bytes,
+                    })
+                    .is_err()
+                {
                     break;
                 }
             }
