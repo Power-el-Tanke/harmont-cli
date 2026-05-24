@@ -31,7 +31,10 @@ def ci(
 ) -> tuple[hm.Step, ...]:
     return (
         rust_project.build(),
-        rust_project.run("cargo test --lib", label=":rust: test"),
+        rust_project.installed.sh(
+            ". $HOME/.cargo/env && cd . && cargo test --lib",
+            label=":rust: test",
+        ),
         rust_project.clippy(),
         rust_project.fmt(),
         py_project.lint(),

@@ -10,7 +10,7 @@ const pipelines: PipelineDefinition[] = [
     triggers: [push({ branch: "main" }), pullRequest({ branches: ["main"] })],
     pipeline: pipeline(
       rustProject.build(),
-      rustProject.run("cargo test --lib", { label: ":rust: test" }),
+      rustProject.install().sh(`. $HOME/.cargo/env && cd . && cargo test --lib`, { label: ":rust: test" }),
       rustProject.clippy(),
       rustProject.fmt(),
       pyProject.lint(),
