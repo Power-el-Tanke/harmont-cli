@@ -3,6 +3,7 @@ import {
   push,
   pullRequest,
   aptBase,
+  onChange,
   type PipelineDefinition,
 } from "harmont";
 import { rust, py } from "harmont/toolchains";
@@ -21,7 +22,7 @@ const base = aptBase({ packages: ALL_APT });
 const rustProject = rust({ path: ".", base });
 const pyProject = py.uv({ path: "dsls/harmont-py", base });
 
-const warm = rustProject.warmup();
+const warm = rustProject.warmup({ cache: onChange("Cargo.lock") });
 
 const pipelines: PipelineDefinition[] = [
   {

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import harmont as hm
+from harmont.cache import CacheOnChange
 from harmont.py.uv import UvProject
 from harmont.rust import RustToolchain
 
@@ -44,7 +45,7 @@ def ci(
     rust_project: hm.Target[RustToolchain],
     py_project: hm.Target[UvProject],
 ) -> tuple[hm.Step, ...]:
-    warm = rust_project.warmup()
+    warm = rust_project.warmup(cache=CacheOnChange(paths=("Cargo.lock",)))
     return (
         warm.sh(
             ". $HOME/.cargo/env && cd . && cargo test --workspace --lib --locked --no-fail-fast",
