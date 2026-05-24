@@ -2,19 +2,14 @@
 
 use std::collections::BTreeMap;
 
-use hm_plugin_protocol::PluginError;
-use hm_plugin_sdk::host;
+use anyhow::Result;
 
 use crate::config::Config;
 use crate::creds;
 
-#[allow(
-    dead_code,
-    reason = "wired by `cli::dispatch` in the next cluster (Task 15)"
-)]
-pub(crate) fn run(env: &BTreeMap<String, String>) -> Result<(), PluginError> {
+pub(crate) async fn run(env: &BTreeMap<String, String>) -> Result<()> {
     let cfg = Config::from_env(env);
     creds::clear_token(&cfg.api_base);
-    host::write_stderr(format!("logged out of {}\n", cfg.api_base).as_bytes());
+    eprintln!("logged out of {}", cfg.api_base);
     Ok(())
 }

@@ -1,12 +1,7 @@
-//! Runtime configuration. API base URL and any other knobs the
-//! plugin reads at start-of-call.
+//! Runtime configuration. API base URL and any other knobs.
 
 use std::collections::BTreeMap;
 
-#[allow(
-    dead_code,
-    reason = "consumed by `Config::from_env` once verbs land in a later cluster"
-)]
 pub(crate) const DEFAULT_API_BASE: &str = "https://api.harmont.dev";
 
 pub(crate) struct Config {
@@ -14,7 +9,6 @@ pub(crate) struct Config {
 }
 
 impl Config {
-    #[allow(dead_code, reason = "consumed by verbs in a later cluster")]
     pub(crate) fn from_env(env: &BTreeMap<String, String>) -> Self {
         let api_base = env
             .get("HARMONT_API_URL")

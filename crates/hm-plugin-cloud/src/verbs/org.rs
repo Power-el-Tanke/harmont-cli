@@ -2,8 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use hm_plugin_protocol::PluginError;
-use hm_plugin_sdk::host;
+use anyhow::Result;
 
 use crate::api::types::OrganizationList;
 use crate::cli::OrgCommand;
@@ -12,33 +11,25 @@ use crate::creds;
 use crate::http::Client;
 use crate::state::CloudState;
 
-pub(crate) fn run(env: &BTreeMap<String, String>, cmd: OrgCommand) -> Result<(), PluginError> {
+pub(crate) async fn run(env: &BTreeMap<String, String>, cmd: OrgCommand) -> Result<()> {
     let cfg = Config::from_env(env);
-    let token = creds::load_token(&cfg.api_base, env).ok_or_else(not_logged_in)?;
+    let token = creds::load_token(&cfg.api_base, env)
+        .ok_or_else(|| anyhow::anyhow!("not logged in; run `hm cloud login`"))?;
     let client = Client::new(&cfg, Some(token));
 
     match cmd {
-        OrgCommand::Switch { slug } => switch(&client, &slug),
+        OrgCommand::Switch { slug } => switch(&client, &slug).await,
     }
 }
 
-fn switch(client: &Client, slug: &str) -> Result<(), PluginError> {
-    let orgs: OrganizationList = client.get("/organizations")?;
+async fn switch(client: &Client, slug: &str) -> Result<()> {
+    let orgs: OrganizationList = client.get("/organizations").await?;
     let found = orgs.data.iter().find(|o| o.slug == slug).ok_or_else(|| {
-        PluginError::new(
-            "cloud_org_not_found",
-            format!("no organization with slug '{slug}'"),
-        )
+        anyhow::anyhow!("no organization with slug '{slug}'")
     })?;
     let mut state = CloudState::load();
     state.active_org = Some(found.slug.clone());
     state.save();
-    host::write_stderr(
-        format!("active organization: {} ({})\n", found.name, found.slug).as_bytes(),
-    );
+    eprintln!("active organization: {} ({})", found.name, found.slug);
     Ok(())
-}
-
-fn not_logged_in() -> PluginError {
-    PluginError::new("cloud_not_logged_in", "not logged in; run `hm cloud login`")
 }

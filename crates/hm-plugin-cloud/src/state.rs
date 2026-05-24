@@ -1,10 +1,8 @@
-//! Persistent state (active organization slug) via the host's
-//! `KvScope::Plugin` store.
+//! Persistent state (active organization slug) via file storage.
 
-use hm_plugin_sdk::{KvScope, host};
 use serde::{Deserialize, Serialize};
 
-const STATE_KEY: &str = "state";
+const STATE_FILE: &str = "cloud-state.json";
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct CloudState {
@@ -12,18 +10,25 @@ pub(crate) struct CloudState {
 }
 
 impl CloudState {
-    #[allow(dead_code, reason = "consumed by the org/run verbs in a later cluster")]
     pub(crate) fn load() -> Self {
-        let Some(bytes) = host::kv_get(KvScope::Plugin, STATE_KEY) else {
+        let Some(dir) = hm_util::dirs::harmont_config_dir() else {
+            return Self::default();
+        };
+        let path = dir.join(STATE_FILE);
+        let Ok(bytes) = std::fs::read(&path) else {
             return Self::default();
         };
         serde_json::from_slice(&bytes).unwrap_or_default()
     }
 
-    #[allow(dead_code, reason = "consumed by the org/run verbs in a later cluster")]
     pub(crate) fn save(&self) {
-        if let Ok(bytes) = serde_json::to_vec(self) {
-            host::kv_set(KvScope::Plugin, STATE_KEY, &bytes);
+        let Some(dir) = hm_util::dirs::harmont_config_dir() else {
+            return;
+        };
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join(STATE_FILE);
+        if let Ok(bytes) = serde_json::to_vec_pretty(self) {
+            let _ = std::fs::write(&path, bytes);
         }
     }
 }

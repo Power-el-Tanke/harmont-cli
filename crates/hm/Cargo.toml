@@ -62,6 +62,7 @@ which = "6"
 hm-pipeline-ir     = { workspace = true }
 hm-plugin-protocol = { workspace = true }
 hm-util = { workspace = true }
+hm-plugin-cloud = { path = "../hm-plugin-cloud" }
 daggy          = { workspace = true }
 schemars = { workspace = true }
 semver = { workspace = true }

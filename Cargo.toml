@@ -5,12 +5,14 @@ members = [
     "crates/hm-plugin-protocol",
     "crates/hm-pipeline-ir",
     "crates/hm-util",
+    "crates/hm-plugin-cloud",
 ]
 default-members = [
     "crates/hm",
     "crates/hm-plugin-protocol",
     "crates/hm-pipeline-ir",
     "crates/hm-util",
+    "crates/hm-plugin-cloud",
 ]
 
 [workspace.package]

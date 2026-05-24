@@ -1,37 +1,74 @@
-//! On-disk credential storage via the host's keyring host fns.
+//! File-backed credential storage.
 
 use std::collections::BTreeMap;
+use std::io::Write;
 
-use hm_plugin_sdk::host;
+const CREDS_FILE: &str = "credentials.toml";
 
-const SERVICE: &str = "harmont-cli";
-
-/// Stash `token` for `api_base`. Empty token clears the entry.
-#[allow(dead_code, reason = "consumed by the `login` verb in a later cluster")]
 pub(crate) fn save_token(api_base: &str, token: &str) {
+    let Some(dir) = hm_util::dirs::harmont_config_dir() else {
+        return;
+    };
+    let path = dir.join(CREDS_FILE);
+    let mut table = load_table(&path);
     if token.is_empty() {
-        host::keyring_delete(SERVICE, api_base);
+        table.remove(api_base);
     } else {
-        host::keyring_set(SERVICE, api_base, token);
+        table.insert(api_base.to_owned(), token.to_owned());
     }
+    write_table(&path, &table);
 }
 
-/// Load the token for `api_base`. Prefers `HARMONT_API_TOKEN` from the
-/// caller-provided env over the keyring entry.
-#[allow(
-    dead_code,
-    reason = "consumed by the auth/verb modules in a later cluster"
-)]
 pub(crate) fn load_token(api_base: &str, env: &BTreeMap<String, String>) -> Option<String> {
     if let Some(t) = env.get("HARMONT_API_TOKEN")
         && !t.is_empty()
     {
         return Some(t.clone());
     }
-    host::keyring_get(SERVICE, api_base)
+    let dir = hm_util::dirs::harmont_config_dir()?;
+    let path = dir.join(CREDS_FILE);
+    let table = load_table(&path);
+    table.get(api_base).cloned()
 }
 
-#[allow(dead_code, reason = "consumed by the `logout` verb in a later cluster")]
 pub(crate) fn clear_token(api_base: &str) {
-    host::keyring_delete(SERVICE, api_base);
+    save_token(api_base, "");
+}
+
+fn load_table(path: &std::path::Path) -> BTreeMap<String, String> {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let Ok(val) = content.parse::<toml::Value>() else {
+        return BTreeMap::new();
+    };
+    let Some(table) = val.as_table() else {
+        return BTreeMap::new();
+    };
+    let mut map = BTreeMap::new();
+    for (k, v) in table {
+        if let Some(s) = v.as_str() {
+            map.insert(k.clone(), s.to_owned());
+        }
+    }
+    map
+}
+
+fn write_table(path: &std::path::Path, table: &BTreeMap<String, String>) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut content = String::new();
+    for (k, v) in table {
+        content.push_str(&format!("{k} = {v:?}\n"));
+    }
+    if let Ok(mut f) = std::fs::File::create(path) {
+        let _ = f.write_all(content.as_bytes());
+        // Set 0600 on Unix
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
+        }
+    }
 }

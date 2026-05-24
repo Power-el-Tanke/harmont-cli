@@ -1,10 +1,9 @@
-//! Plugin-internal CLI parsing. The plugin receives the raw argv from
-//! the host (verb_path = ["cloud", ...]) and parses it with clap.
+//! CLI parsing for cloud subcommands.
 
 use std::collections::BTreeMap;
 
+use anyhow::Result;
 use clap::{Parser, Subcommand};
-use hm_plugin_protocol::{ExitInfo, PluginError};
 
 use crate::{auth, verbs};
 
@@ -19,8 +18,8 @@ struct CloudCli {
     command: CloudCommand,
 }
 
-#[derive(Debug, Subcommand)]
-enum CloudCommand {
+#[derive(Debug, Clone, Subcommand)]
+pub enum CloudCommand {
     /// Authenticate this CLI against the Harmont API.
     Login {
         /// Skip the loopback flow and prompt for a paste-in code.
@@ -50,8 +49,8 @@ enum CloudCommand {
     Run(verbs::run::RunArgs),
 }
 
-#[derive(Debug, Subcommand)]
-pub(crate) enum OrgCommand {
+#[derive(Debug, Clone, Subcommand)]
+pub enum OrgCommand {
     /// Set the active organization.
     Switch {
         /// Organization slug.
@@ -59,16 +58,16 @@ pub(crate) enum OrgCommand {
     },
 }
 
-#[derive(Debug, Subcommand)]
-pub(crate) enum PipelineCommand {
+#[derive(Debug, Clone, Subcommand)]
+pub enum PipelineCommand {
     /// List pipelines for the active organization.
     List,
     /// Show pipeline details by slug.
     Show { slug: String },
 }
 
-#[derive(Debug, Subcommand)]
-pub(crate) enum BuildCommand {
+#[derive(Debug, Clone, Subcommand)]
+pub enum BuildCommand {
     /// List builds for a pipeline.
     List {
         #[arg(short, long)]
@@ -94,8 +93,8 @@ pub(crate) enum BuildCommand {
     },
 }
 
-#[derive(Debug, Subcommand)]
-pub(crate) enum JobCommand {
+#[derive(Debug, Clone, Subcommand)]
+pub enum JobCommand {
     /// List jobs in a build.
     List {
         #[arg(short, long)]
@@ -121,8 +120,8 @@ pub(crate) enum JobCommand {
     },
 }
 
-#[derive(Debug, Subcommand)]
-pub(crate) enum BillingCommand {
+#[derive(Debug, Clone, Subcommand)]
+pub enum BillingCommand {
     /// Print the current credit balance.
     Balance,
     /// List billing transactions.
@@ -147,72 +146,55 @@ pub(crate) enum BillingCommand {
     Redeem { code: String },
 }
 
-pub(crate) fn dispatch(
+/// Dispatch from raw argv (used if calling from an external-subcommand
+/// pattern). Returns an exit code.
+pub async fn dispatch(
     argv: Vec<String>,
     env: BTreeMap<String, String>,
-) -> Result<ExitInfo, PluginError> {
-    // clap expects argv[0] to be the binary name; the host passes
-    // the verb path which starts with "cloud". Replace argv[0] with
-    // "hm cloud" so clap discards it as the program name and parses
-    // the remaining tokens (the cloud subcommand + args) correctly.
+) -> Result<i32> {
     let mut full: Vec<String> = vec!["hm cloud".to_string()];
     full.extend(argv.into_iter().skip(1));
     let parsed = match CloudCli::try_parse_from(&full) {
         Ok(p) => p,
         Err(e) => {
-            // clap surfaces `--help` / `--version` as errors with
-            // specific kinds; render them as a successful exit so the
-            // user sees the help text without an error code.
-            //
-            // TODO: route help/version through host::write_stdout so
-            // output framing matches the rest of the plugin. For now
-            // `eprintln!` is fine because clap's renderer is wired to
-            // stderr/stdout via std::io which the host captures.
             use clap::error::ErrorKind;
             let msg = e.to_string();
             return match e.kind() {
                 ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
-                    hm_plugin_sdk::host::write_stdout(msg.as_bytes());
-                    Ok(ExitInfo {
-                        exit_code: 0,
-                        message: None,
-                    })
+                    print!("{msg}");
+                    Ok(0)
                 }
-                _ => Ok(ExitInfo {
-                    exit_code: 2,
-                    message: Some(msg),
-                }),
+                _ => {
+                    eprint!("{msg}");
+                    Ok(2)
+                }
             };
         }
     };
-    let result = match parsed.command {
-        CloudCommand::Login { paste } => auth::login::run(&env, paste),
-        CloudCommand::Logout => auth::logout::run(&env),
-        CloudCommand::Whoami => auth::whoami::run(&env),
-        CloudCommand::Org(cmd) => verbs::org::run(&env, cmd),
-        CloudCommand::Pipeline(cmd) => verbs::pipeline::run(&env, cmd),
-        CloudCommand::Build(cmd) => verbs::build::run(&env, cmd),
-        CloudCommand::Job(cmd) => verbs::job::run(&env, cmd),
-        CloudCommand::Billing(cmd) => verbs::billing::run(&env, cmd),
-        CloudCommand::Run(args) => verbs::run::run(&env, args),
-    };
-    match result {
-        Ok(()) => Ok(ExitInfo {
-            exit_code: 0,
-            message: None,
-        }),
-        Err(e) => Ok(ExitInfo {
-            exit_code: exit_code_for(&e),
-            message: Some(e.message),
-        }),
-    }
+    dispatch_command(parsed.command, env).await
 }
 
-fn exit_code_for(e: &PluginError) -> i32 {
-    match e.code.as_str() {
-        "cloud_auth" | "cloud_not_logged_in" => 3,
-        "cloud_http" | "cloud_http_request" => 4,
-        "cloud_cli_parse" => 2,
-        _ => 1,
+/// Dispatch from a pre-parsed `CloudCommand`. Returns an exit code.
+pub async fn dispatch_command(
+    command: CloudCommand,
+    env: BTreeMap<String, String>,
+) -> Result<i32> {
+    let result = match command {
+        CloudCommand::Login { paste } => auth::login::run(&env, paste).await,
+        CloudCommand::Logout => auth::logout::run(&env).await,
+        CloudCommand::Whoami => auth::whoami::run(&env).await,
+        CloudCommand::Org(cmd) => verbs::org::run(&env, cmd).await,
+        CloudCommand::Pipeline(cmd) => verbs::pipeline::run(&env, cmd).await,
+        CloudCommand::Build(cmd) => verbs::build::run(&env, cmd).await,
+        CloudCommand::Job(cmd) => verbs::job::run(&env, cmd).await,
+        CloudCommand::Billing(cmd) => verbs::billing::run(&env, cmd).await,
+        CloudCommand::Run(args) => verbs::run::run(&env, args).await,
+    };
+    match result {
+        Ok(()) => Ok(0),
+        Err(e) => {
+            eprintln!("{e:#}");
+            Ok(1)
+        }
     }
 }

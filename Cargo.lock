@@ -1102,6 +1102,7 @@ dependencies = [
  "futures-util",
  "hex",
  "hm-pipeline-ir",
+ "hm-plugin-cloud",
  "hm-plugin-protocol",
  "hm-util",
  "ignore",
@@ -1183,6 +1184,30 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "hm-plugin-cloud"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "chrono",
+ "clap",
+ "dialoguer",
+ "hm-plugin-protocol",
+ "hm-util",
+ "reqwest",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "toml",
+ "tracing",
+ "url",
+ "uuid",
+ "webbrowser",
 ]
 
 [[package]]

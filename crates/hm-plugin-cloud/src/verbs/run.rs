@@ -2,14 +2,13 @@
 //! and watch the resulting build.
 //!
 //! For plan 4 the caller supplies a pre-rendered plan JSON via
-//! `--plan-file` (or `.harmont/plan.json` by convention). Source-archive
+//! `--plan-file` (or `plan.json` by convention). Source-archive
 //! upload — required by the live API — lands in plan 5.
 
 use std::collections::BTreeMap;
 
+use anyhow::Result;
 use clap::Parser;
-use hm_plugin_protocol::PluginError;
-use hm_plugin_sdk::host;
 
 use crate::api::types::{Build, CreateBuildRequest};
 use crate::config::Config;
@@ -17,8 +16,8 @@ use crate::creds;
 use crate::http::Client;
 use crate::state::CloudState;
 
-#[derive(Debug, Parser)]
-pub(crate) struct RunArgs {
+#[derive(Debug, Clone, Parser)]
+pub struct RunArgs {
     /// Pipeline slug. Required.
     pub pipeline: String,
     /// Branch to record on the build.
@@ -28,7 +27,7 @@ pub(crate) struct RunArgs {
     #[arg(short, long)]
     pub message: Option<String>,
     /// Path to a pre-rendered pipeline JSON file.
-    /// If unset, the plugin reads `.harmont/plan.json`.
+    /// If unset, reads `plan.json`.
     #[arg(long)]
     pub plan_file: Option<String>,
     /// Don't watch; print the build URL and exit.
@@ -36,31 +35,21 @@ pub(crate) struct RunArgs {
     pub no_watch: bool,
 }
 
-pub(crate) fn run(env: &BTreeMap<String, String>, args: RunArgs) -> Result<(), PluginError> {
+pub(crate) async fn run(env: &BTreeMap<String, String>, args: RunArgs) -> Result<()> {
     let cfg = Config::from_env(env);
-    let token = creds::load_token(&cfg.api_base, env).ok_or_else(|| {
-        PluginError::new("cloud_not_logged_in", "not logged in; run `hm cloud login`")
-    })?;
+    let token = creds::load_token(&cfg.api_base, env)
+        .ok_or_else(|| anyhow::anyhow!("not logged in; run `hm cloud login`"))?;
     let client = Client::new(&cfg, Some(token));
     let org = CloudState::load().active_org.ok_or_else(|| {
-        PluginError::new(
-            "cloud_no_active_org",
-            "no active organization; run `hm cloud org switch <slug>`",
-        )
+        anyhow::anyhow!("no active organization; run `hm cloud org switch <slug>`")
     })?;
 
-    // Read the pipeline plan. plan-4 has no in-plugin renderer; the
-    // host's existing rendering pipeline (or the user) is responsible
-    // for materialising the JSON.
+    // Read the pipeline plan.
     let plan_path = args.plan_file.as_deref().unwrap_or("plan.json");
-    let bytes = host::fs_read_config(plan_path).ok_or_else(|| {
-        PluginError::new(
-            "cloud_plan_missing",
-            format!("could not read plan file '{plan_path}'; render the plan first"),
-        )
-    })?;
+    let bytes = std::fs::read(plan_path)
+        .map_err(|e| anyhow::anyhow!("could not read plan file '{plan_path}': {e}"))?;
     let plan_json: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(|e| PluginError::new("cloud_plan_invalid_json", e.to_string()))?;
+        .map_err(|e| anyhow::anyhow!("invalid JSON in plan file '{plan_path}': {e}"))?;
 
     let req = CreateBuildRequest {
         pipeline_slug: args.pipeline.clone(),
@@ -73,10 +62,12 @@ pub(crate) fn run(env: &BTreeMap<String, String>, args: RunArgs) -> Result<(), P
             .collect(),
         plan_json,
     };
-    let build: Build = client.post(
-        &format!("/organizations/{org}/pipelines/{}/builds", args.pipeline),
-        &req,
-    )?;
+    let build: Build = client
+        .post(
+            &format!("/organizations/{org}/pipelines/{}/builds", args.pipeline),
+            &req,
+        )
+        .await?;
     let url = format!(
         "{}/{}/{}/builds/{}",
         cfg.api_base.trim_end_matches("/api"),
@@ -84,11 +75,11 @@ pub(crate) fn run(env: &BTreeMap<String, String>, args: RunArgs) -> Result<(), P
         args.pipeline,
         build.number
     );
-    host::write_stderr(format!("submitted build #{}: {url}\n", build.number).as_bytes());
+    eprintln!("submitted build #{}: {url}", build.number);
     if args.no_watch {
         return Ok(());
     }
-    // Watch loop: same shape as verbs::build::watch.
+    // Watch loop: reuse build::run.
     crate::verbs::build::run(
         env,
         crate::cli::BuildCommand::Watch {
@@ -96,4 +87,5 @@ pub(crate) fn run(env: &BTreeMap<String, String>, args: RunArgs) -> Result<(), P
             number: build.number,
         },
     )
+    .await
 }
