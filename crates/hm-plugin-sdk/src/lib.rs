@@ -39,6 +39,7 @@ pub mod context;
 pub mod executor;
 pub mod ffi;
 pub mod hook;
+pub mod spec_from_clap;
 pub mod subcommand;
 
 #[doc(hidden)]
