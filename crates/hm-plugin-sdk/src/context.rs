@@ -86,12 +86,9 @@ impl<'a> PluginContext<'a> {
     // -- Events -----------------------------------------------------------
 
     /// Emit a build event to the host.
-    ///
-    /// Uses JSON serialization for now; will switch to borsh once
-    /// `BuildEvent` gains `BorshSerialize` derives (Task 10).
     pub fn emit_event(&self, event: &BuildEvent) {
         let bytes =
-            serde_json::to_vec(event).expect("BuildEvent serialization should never fail");
+            borsh::to_vec(event).expect("BuildEvent serialization should never fail");
         let ffi = FfiSlice::from(bytes.as_slice());
         self.raw.emit_event(ffi);
     }
@@ -145,7 +142,7 @@ impl<'a> PluginContext<'a> {
     /// most `max` bytes.
     pub fn archive_read(&self, id: &ArchiveId, offset: u64, max: u64) -> Vec<u8> {
         let id_bytes =
-            serde_json::to_vec(id).expect("ArchiveId serialization should never fail");
+            borsh::to_vec(id).expect("ArchiveId serialization should never fail");
         let ffi = FfiSlice::from(id_bytes.as_slice());
         let result: FfiBytes = self.raw.archive_read(ffi, offset, max);
         result.as_slice().to_vec()
@@ -154,7 +151,7 @@ impl<'a> PluginContext<'a> {
     /// Return the total size in bytes of an archive.
     pub fn archive_total_size(&self, id: &ArchiveId) -> u64 {
         let id_bytes =
-            serde_json::to_vec(id).expect("ArchiveId serialization should never fail");
+            borsh::to_vec(id).expect("ArchiveId serialization should never fail");
         let ffi = FfiSlice::from(id_bytes.as_slice());
         self.raw.archive_total_size(ffi)
     }

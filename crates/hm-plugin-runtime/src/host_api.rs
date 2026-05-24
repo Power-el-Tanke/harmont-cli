@@ -144,8 +144,8 @@ impl RawHostApi for HostApiImpl {
         }
     }
 
-    extern "C" fn emit_event(&self, event_json: FfiSlice<'_>) {
-        let Ok(event) = serde_json::from_slice::<BuildEvent>(event_json.as_ref()) else {
+    extern "C" fn emit_event(&self, event_bytes: FfiSlice<'_>) {
+        let Ok(event) = borsh::from_slice::<BuildEvent>(event_bytes.as_ref()) else {
             tracing::warn!(target: "plugin::host_api", "failed to deserialize BuildEvent from plugin");
             return;
         };
