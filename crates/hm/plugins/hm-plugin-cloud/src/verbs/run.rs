@@ -1,13 +1,8 @@
-//! `hm cloud run [TASK]` — submit the local pipeline plan to the cloud
+//! `hm cloud run` — submit the local pipeline plan to the cloud
 //! and watch the resulting build.
-//!
-//! For plan 4 the caller supplies a pre-rendered plan JSON via
-//! `--plan-file` (or `.harmont/plan.json` by convention). Source-archive
-//! upload — required by the live API — lands in plan 5.
 
 use std::collections::BTreeMap;
 
-use clap::Parser;
 use hm_plugin_protocol::PluginError;
 use hm_plugin_sdk::PluginContext;
 
@@ -17,30 +12,20 @@ use crate::creds;
 use crate::http::Client;
 use crate::state::CloudState;
 
-#[derive(Debug, Parser)]
-pub(crate) struct RunArgs {
-    /// Pipeline slug. Required.
-    pub pipeline: String,
-    /// Branch to record on the build.
-    #[arg(short, long)]
-    pub branch: Option<String>,
-    /// Build message.
-    #[arg(short, long)]
-    pub message: Option<String>,
-    /// Path to a pre-rendered pipeline JSON file.
-    /// If unset, the plugin reads `.harmont/plan.json`.
-    #[arg(long)]
-    pub plan_file: Option<String>,
-    /// Don't watch; print the build URL and exit.
-    #[arg(long)]
-    pub no_watch: bool,
-}
-
 pub(crate) async fn run(
     ctx: &PluginContext<'_>,
     env: &BTreeMap<String, String>,
-    args: RunArgs,
+    args: &serde_json::Value,
 ) -> Result<(), PluginError> {
+    let pipeline = require_str(args, "pipeline")?;
+    let branch = args.get("branch").and_then(serde_json::Value::as_str);
+    let message = args.get("message").and_then(serde_json::Value::as_str);
+    let plan_file = args.get("plan_file").and_then(serde_json::Value::as_str);
+    let no_watch = args
+        .get("no_watch")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
     let cfg = Config::from_env(env);
     let token = creds::load_token(&cfg.api_base, env).ok_or_else(|| {
         PluginError::new("cloud_not_logged_in", "not logged in; run `hm cloud login`")
@@ -53,10 +38,7 @@ pub(crate) async fn run(
         )
     })?;
 
-    // Read the pipeline plan. plan-4 has no in-plugin renderer; the
-    // host's existing rendering pipeline (or the user) is responsible
-    // for materialising the JSON.
-    let plan_path = args.plan_file.as_deref().unwrap_or("plan.json");
+    let plan_path = plan_file.unwrap_or("plan.json");
     let bytes = ctx.fs_read_config(plan_path).ok_or_else(|| {
         PluginError::new(
             "cloud_plan_missing",
@@ -67,9 +49,9 @@ pub(crate) async fn run(
         .map_err(|e| PluginError::new("cloud_plan_invalid_json", e.to_string()))?;
 
     let req = CreateBuildRequest {
-        pipeline_slug: args.pipeline.clone(),
-        branch: args.branch.clone(),
-        message: args.message.clone(),
+        pipeline_slug: pipeline.clone(),
+        branch: branch.map(String::from),
+        message: message.map(String::from),
         env: env
             .iter()
             .filter(|(k, _)| k.starts_with("HM_RUN_ENV_"))
@@ -79,7 +61,7 @@ pub(crate) async fn run(
     };
     let build: Build = client
         .post(
-            &format!("/organizations/{org}/pipelines/{}/builds", args.pipeline),
+            &format!("/organizations/{org}/pipelines/{pipeline}/builds"),
             &req,
         )
         .await?;
@@ -87,21 +69,19 @@ pub(crate) async fn run(
         "{}/{}/{}/builds/{}",
         cfg.api_base.trim_end_matches("/api"),
         org,
-        args.pipeline,
+        pipeline,
         build.number
     );
     ctx.write_stderr(format!("submitted build #{}: {url}\n", build.number).as_bytes());
-    if args.no_watch {
+    if no_watch {
         return Ok(());
     }
-    // Watch loop: same shape as verbs::build::watch.
-    crate::verbs::build::run(
-        ctx,
-        env,
-        crate::cli::BuildCommand::Watch {
-            pipeline: args.pipeline.clone(),
-            number: build.number,
-        },
-    )
-    .await
+    super::build::watch_build(ctx, env, &pipeline, build.number).await
+}
+
+fn require_str(args: &serde_json::Value, key: &str) -> Result<String, PluginError> {
+    args[key]
+        .as_str()
+        .map(String::from)
+        .ok_or_else(|| PluginError::new("cloud_cli_parse", format!("missing required argument: {key}")))
 }

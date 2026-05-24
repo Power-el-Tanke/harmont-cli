@@ -9,7 +9,6 @@ use crate::api::types::{
     Balance, RedeemRequest, RedeemResponse, TopupRequest, TopupResponse, TransactionList,
     UsageWindow,
 };
-use crate::cli::BillingCommand;
 use crate::config::Config;
 use crate::creds;
 use crate::http::Client;
@@ -18,24 +17,44 @@ use crate::state::CloudState;
 pub(crate) async fn run(
     ctx: &PluginContext<'_>,
     env: &BTreeMap<String, String>,
-    cmd: BillingCommand,
+    verb: &str,
+    args: &serde_json::Value,
 ) -> Result<(), PluginError> {
     let cfg = Config::from_env(env);
     let token = creds::load_token(&cfg.api_base, env).ok_or_else(not_logged_in)?;
     let client = Client::new(&cfg, Some(token));
     let org = active_org(ctx)?;
 
-    match cmd {
-        BillingCommand::Balance => balance(ctx, &client, &org).await,
-        BillingCommand::Transactions { limit } => transactions(ctx, &client, &org, limit).await,
-        BillingCommand::Usage { from, to } => {
-            usage(ctx, &client, &org, from.as_deref(), to.as_deref()).await
+    match verb {
+        "balance" => balance(ctx, &client, &org).await,
+        "transactions" => {
+            let limit = args
+                .get("limit")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(100) as u32;
+            transactions(ctx, &client, &org, limit).await
         }
-        BillingCommand::Topup {
-            amount_usd,
-            no_browser,
-        } => topup(ctx, &client, &org, amount_usd, no_browser).await,
-        BillingCommand::Redeem { code } => redeem(ctx, &client, &org, &code).await,
+        "usage" => {
+            let from = args.get("from").and_then(serde_json::Value::as_str);
+            let to = args.get("to").and_then(serde_json::Value::as_str);
+            usage(ctx, &client, &org, from, to).await
+        }
+        "topup" => {
+            let amount_usd = require_i64(args, "amount_usd")? as u32;
+            let no_browser = args
+                .get("no_browser")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            topup(ctx, &client, &org, amount_usd, no_browser).await
+        }
+        "redeem" => {
+            let code = require_str(args, "code")?;
+            redeem(ctx, &client, &org, &code).await
+        }
+        _ => Err(PluginError::new(
+            "cloud_unknown_verb",
+            format!("unknown billing verb: {verb}"),
+        )),
     }
 }
 
@@ -154,6 +173,19 @@ async fn redeem(
     let dollars = r.credited_cents as f64 / 100.0;
     ctx.write_stderr(format!("credited ${dollars:.2}\n").as_bytes());
     Ok(())
+}
+
+fn require_str(args: &serde_json::Value, key: &str) -> Result<String, PluginError> {
+    args[key]
+        .as_str()
+        .map(String::from)
+        .ok_or_else(|| PluginError::new("cloud_cli_parse", format!("missing required argument: {key}")))
+}
+
+fn require_i64(args: &serde_json::Value, key: &str) -> Result<i64, PluginError> {
+    args[key]
+        .as_i64()
+        .ok_or_else(|| PluginError::new("cloud_cli_parse", format!("missing required argument: {key}")))
 }
 
 fn not_logged_in() -> PluginError {

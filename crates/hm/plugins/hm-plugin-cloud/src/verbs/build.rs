@@ -6,7 +6,6 @@ use hm_plugin_protocol::PluginError;
 use hm_plugin_sdk::PluginContext;
 
 use crate::api::types::{Build, BuildList};
-use crate::cli::BuildCommand;
 use crate::config::Config;
 use crate::creds;
 use crate::http::Client;
@@ -15,23 +14,52 @@ use crate::state::CloudState;
 pub(crate) async fn run(
     ctx: &PluginContext<'_>,
     env: &BTreeMap<String, String>,
-    cmd: BuildCommand,
+    verb: &str,
+    args: &serde_json::Value,
 ) -> Result<(), PluginError> {
     let cfg = Config::from_env(env);
     let token = creds::load_token(&cfg.api_base, env).ok_or_else(not_logged_in)?;
     let client = Client::new(&cfg, Some(token));
     let org = active_org(ctx)?;
 
-    match cmd {
-        BuildCommand::List { pipeline } => list(ctx, &client, &org, &pipeline).await,
-        BuildCommand::Show { pipeline, number } => show(ctx, &client, &org, &pipeline, number).await,
-        BuildCommand::Cancel { pipeline, number } => {
+    match verb {
+        "list" => {
+            let pipeline = require_str(args, "pipeline")?;
+            list(ctx, &client, &org, &pipeline).await
+        }
+        "show" => {
+            let pipeline = require_str(args, "pipeline")?;
+            let number = require_i64(args, "number")?;
+            show(ctx, &client, &org, &pipeline, number).await
+        }
+        "cancel" => {
+            let pipeline = require_str(args, "pipeline")?;
+            let number = require_i64(args, "number")?;
             cancel(ctx, &client, &org, &pipeline, number).await
         }
-        BuildCommand::Watch { pipeline, number } => {
+        "watch" => {
+            let pipeline = require_str(args, "pipeline")?;
+            let number = require_i64(args, "number")?;
             watch(ctx, &client, &org, &pipeline, number).await
         }
+        _ => Err(PluginError::new(
+            "cloud_unknown_verb",
+            format!("unknown build verb: {verb}"),
+        )),
     }
+}
+
+pub(crate) async fn watch_build(
+    ctx: &PluginContext<'_>,
+    env: &BTreeMap<String, String>,
+    pipeline: &str,
+    number: i64,
+) -> Result<(), PluginError> {
+    let cfg = Config::from_env(env);
+    let token = creds::load_token(&cfg.api_base, env).ok_or_else(not_logged_in)?;
+    let client = Client::new(&cfg, Some(token));
+    let org = active_org(ctx)?;
+    watch(ctx, &client, &org, pipeline, number).await
 }
 
 async fn list(
@@ -97,8 +125,6 @@ async fn watch(
     pipe: &str,
     number: i64,
 ) -> Result<(), PluginError> {
-    // Poll the build's state every 2 seconds; print state transitions
-    // to stderr. Exit when terminal (passed/failed/canceled).
     let mut last_state = String::new();
     loop {
         if ctx.should_cancel() {
@@ -128,6 +154,19 @@ async fn watch(
         }
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
+}
+
+fn require_str(args: &serde_json::Value, key: &str) -> Result<String, PluginError> {
+    args[key]
+        .as_str()
+        .map(String::from)
+        .ok_or_else(|| PluginError::new("cloud_cli_parse", format!("missing required argument: {key}")))
+}
+
+fn require_i64(args: &serde_json::Value, key: &str) -> Result<i64, PluginError> {
+    args[key]
+        .as_i64()
+        .ok_or_else(|| PluginError::new("cloud_cli_parse", format!("missing required argument: {key}")))
 }
 
 fn not_logged_in() -> PluginError {

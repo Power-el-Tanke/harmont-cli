@@ -6,7 +6,6 @@ use hm_plugin_protocol::PluginError;
 use hm_plugin_sdk::PluginContext;
 
 use crate::api::types::{Pipeline, PipelineList};
-use crate::cli::PipelineCommand;
 use crate::config::Config;
 use crate::creds;
 use crate::http::Client;
@@ -15,16 +14,26 @@ use crate::state::CloudState;
 pub(crate) async fn run(
     ctx: &PluginContext<'_>,
     env: &BTreeMap<String, String>,
-    cmd: PipelineCommand,
+    verb: &str,
+    args: &serde_json::Value,
 ) -> Result<(), PluginError> {
     let cfg = Config::from_env(env);
     let token = creds::load_token(&cfg.api_base, env).ok_or_else(not_logged_in)?;
     let client = Client::new(&cfg, Some(token));
     let org = active_org(ctx)?;
 
-    match cmd {
-        PipelineCommand::List => list(ctx, &client, &org).await,
-        PipelineCommand::Show { slug } => show(ctx, &client, &org, &slug).await,
+    match verb {
+        "list" => list(ctx, &client, &org).await,
+        "show" => {
+            let slug = args["slug"].as_str().ok_or_else(|| {
+                PluginError::new("cloud_cli_parse", "missing required argument: slug")
+            })?;
+            show(ctx, &client, &org, slug).await
+        }
+        _ => Err(PluginError::new(
+            "cloud_unknown_verb",
+            format!("unknown pipeline verb: {verb}"),
+        )),
     }
 }
 
