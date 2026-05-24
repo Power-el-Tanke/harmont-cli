@@ -34,7 +34,7 @@ describe("aptBase", () => {
         "python3-venv",
       ],
     });
-    const r = rust({ base });
+    const r = rust.toolchain({ base });
     const p = uv({ path: "dsls/harmont-py", base });
     const ir = pipeline(r.build(), p.test(), { defaultImage: "ubuntu:24.04" });
     const cmds = ir.graph.nodes.map(
