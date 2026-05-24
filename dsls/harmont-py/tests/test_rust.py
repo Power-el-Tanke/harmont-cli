@@ -35,7 +35,11 @@ class TestRustToolchain:
     def test_actions_share_install_step(self):
         tc = hm.rust.toolchain(path="cli")
         p = hm.pipeline(
-            tc.build(), tc.test(), tc.clippy(), tc.fmt(), tc.doc(),
+            tc.build(),
+            tc.test(),
+            tc.clippy(),
+            tc.fmt(),
+            tc.doc(),
             default_image="ubuntu:24.04",
         )
         cmds = _cmds(p)
