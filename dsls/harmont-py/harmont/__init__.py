@@ -59,7 +59,8 @@ from .pipeline import pipeline_to_json
 from .python import python
 from .ruby import ruby
 from .rust import RustProject, rust
-from .triggers import pull_request, pull_request as pr, push, schedule
+from .triggers import pull_request, push, schedule
+from .triggers import pull_request as pr
 from .types import Pipeline
 from .zig import zig
 

@@ -94,7 +94,7 @@ class RustProject:
     def test(self, *, flags: tuple[str, ...] = (), **kw: Any) -> Step:
         extra = (" " + " ".join(flags)) if flags else ""
         return self.warmup.sh(
-            self.toolchain._wrap(f"cargo test --workspace --locked{extra}"),
+            self.toolchain._wrap(f"cargo test --workspace --locked{extra}"),  # noqa: SLF001
             label=kw.pop("label", ":rust: test"),
             **kw,
         )
@@ -102,7 +102,7 @@ class RustProject:
     def clippy(self, *, flags: tuple[str, ...] = (), **kw: Any) -> Step:
         extra = (" " + " ".join(flags)) if flags else ""
         return self.warmup.sh(
-            self.toolchain._wrap(
+            self.toolchain._wrap(  # noqa: SLF001
                 f"cargo clippy --workspace --tests --locked{extra} -- -D warnings"
             ),
             label=kw.pop("label", ":rust: clippy"),
@@ -111,7 +111,7 @@ class RustProject:
 
     def fmt(self, *, flags: tuple[str, ...] = (), **kw: Any) -> Step:
         extra = (" " + " ".join(flags)) if flags else ""
-        return self.toolchain._emit(
+        return self.toolchain._emit(  # noqa: SLF001
             f"cargo fmt --check{extra}", ":rust: fmt", **kw
         )
 
@@ -163,7 +163,7 @@ def _make_rust_project(
     lock_path = f"{path}/Cargo.lock" if path != "." else "Cargo.lock"
     warmup_cache = cache if cache is not None else CacheOnChange(paths=(lock_path,))
 
-    warm = tc._emit(
+    warm = tc._emit(  # noqa: SLF001
         "cargo build --workspace --tests --locked",
         ":rust: warmup",
         cache=warmup_cache,
