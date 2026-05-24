@@ -198,12 +198,12 @@ fn gen_execute_step(executor: Option<&Path>) -> TokenStream2 {
                     let executor = &self.executor;
                     stabby::boxed::Box::new(async move {
                         let parsed: hm_plugin_sdk::ExecutorInput =
-                            match serde_json::from_slice(input.as_ref()) {
+                            match borsh::from_slice(input.as_ref()) {
                                 Ok(v) => v,
                                 Err(e) => {
                                     return stabby::result::Result::Err(
                                         __ffi_bytes(
-                                            serde_json::to_vec(
+                                            borsh::to_vec(
                                                 &hm_plugin_sdk::PluginError::new(
                                                     "deserialize",
                                                     e.to_string(),
@@ -217,12 +217,12 @@ fn gen_execute_step(executor: Option<&Path>) -> TokenStream2 {
                         match hm_plugin_sdk::StepExecutor::run(executor, ctx, parsed).await {
                             Ok(r) => stabby::result::Result::Ok(
                                 __ffi_bytes(
-                                    serde_json::to_vec(&r).unwrap_or_default(),
+                                    borsh::to_vec(&r).unwrap_or_default(),
                                 ),
                             ),
                             Err(e) => stabby::result::Result::Err(
                                 __ffi_bytes(
-                                    serde_json::to_vec(&e).unwrap_or_default(),
+                                    borsh::to_vec(&e).unwrap_or_default(),
                                 ),
                             ),
                         }
@@ -247,12 +247,12 @@ fn gen_on_hook_event(hook: Option<&Path>) -> TokenStream2 {
                     let hook = &self.hook;
                     stabby::boxed::Box::new(async move {
                         let parsed: hm_plugin_sdk::HookEvent =
-                            match serde_json::from_slice(event.as_ref()) {
+                            match borsh::from_slice(event.as_ref()) {
                                 Ok(v) => v,
                                 Err(e) => {
                                     return stabby::result::Result::Err(
                                         __ffi_bytes(
-                                            serde_json::to_vec(
+                                            borsh::to_vec(
                                                 &hm_plugin_sdk::PluginError::new(
                                                     "deserialize",
                                                     e.to_string(),
@@ -266,12 +266,12 @@ fn gen_on_hook_event(hook: Option<&Path>) -> TokenStream2 {
                         match hm_plugin_sdk::LifecycleHook::on_event(hook, ctx, parsed).await {
                             Ok(r) => stabby::result::Result::Ok(
                                 __ffi_bytes(
-                                    serde_json::to_vec(&r).unwrap_or_default(),
+                                    borsh::to_vec(&r).unwrap_or_default(),
                                 ),
                             ),
                             Err(e) => stabby::result::Result::Err(
                                 __ffi_bytes(
-                                    serde_json::to_vec(&e).unwrap_or_default(),
+                                    borsh::to_vec(&e).unwrap_or_default(),
                                 ),
                             ),
                         }
@@ -296,12 +296,12 @@ fn gen_run_subcommand(subcommand: Option<&Path>) -> TokenStream2 {
                     let subcommand = &self.subcommand;
                     stabby::boxed::Box::new(async move {
                         let parsed: hm_plugin_sdk::SubcommandInput =
-                            match serde_json::from_slice(input.as_ref()) {
+                            match borsh::from_slice(input.as_ref()) {
                                 Ok(v) => v,
                                 Err(e) => {
                                     return stabby::result::Result::Err(
                                         __ffi_bytes(
-                                            serde_json::to_vec(
+                                            borsh::to_vec(
                                                 &hm_plugin_sdk::PluginError::new(
                                                     "deserialize",
                                                     e.to_string(),
@@ -315,12 +315,12 @@ fn gen_run_subcommand(subcommand: Option<&Path>) -> TokenStream2 {
                         match hm_plugin_sdk::SubcommandPlugin::run(subcommand, ctx, parsed).await {
                             Ok(r) => stabby::result::Result::Ok(
                                 __ffi_bytes(
-                                    serde_json::to_vec(&r).unwrap_or_default(),
+                                    borsh::to_vec(&r).unwrap_or_default(),
                                 ),
                             ),
                             Err(e) => stabby::result::Result::Err(
                                 __ffi_bytes(
-                                    serde_json::to_vec(&e).unwrap_or_default(),
+                                    borsh::to_vec(&e).unwrap_or_default(),
                                 ),
                             ),
                         }
@@ -345,7 +345,7 @@ fn gen_not_implemented_stub(method_name: &str, param_name: &str) -> TokenStream2
             stabby::boxed::Box::new(async {
                 stabby::result::Result::Err(
                     __ffi_bytes(
-                        serde_json::to_vec(&hm_plugin_sdk::PluginError::new(
+                        borsh::to_vec(&hm_plugin_sdk::PluginError::new(
                             "not_implemented",
                             "this plugin does not implement this capability",
                         ))
@@ -450,7 +450,7 @@ fn expand(args: &PluginArgs) -> TokenStream2 {
                 let context = hm_plugin_sdk::PluginContext::new(ctx);
                 let manifest_bytes: hm_plugin_sdk::ffi::FfiBytes =
                     __ffi_bytes(
-                        serde_json::to_vec(&{ #manifest_expr })
+                        borsh::to_vec(&{ #manifest_expr })
                             .expect("manifest serialization should never fail"),
                     );
                 let plugin = __HmPluginImpl {
