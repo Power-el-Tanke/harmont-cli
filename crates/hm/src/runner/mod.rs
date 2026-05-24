@@ -89,6 +89,7 @@ pub trait OutputRenderer: Send + fmt::Debug {
 ///
 /// Constructed once at startup and shared immutably for the duration
 /// of the run.
+#[derive(Default)]
 pub struct RunnerRegistry {
     runners: HashMap<String, Arc<dyn StepRunner>>,
     default: Option<String>,
