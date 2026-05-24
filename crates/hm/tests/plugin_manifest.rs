@@ -15,14 +15,15 @@ use common::fixtures;
 use harmont_cli::plugin::error::RuntimeError;
 use harmont_cli::plugin::{PluginRegistry, RegistryConfig};
 
-#[test]
-fn rejects_wrong_api_version() {
+#[tokio::test(flavor = "multi_thread")]
+async fn rejects_wrong_api_version() {
     let path = fixtures::fixture_path("hm-fixture-bad-api-version");
     let err = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
         extra_paths: vec![path],
         ..Default::default()
     })
+    .await
     .expect_err("should fail to load");
     let rt_err: &RuntimeError = err.downcast_ref().expect("RuntimeError");
     match rt_err {
@@ -38,8 +39,8 @@ fn rejects_wrong_api_version() {
     }
 }
 
-#[test]
-fn rejects_duplicate_runner() {
+#[tokio::test(flavor = "multi_thread")]
+async fn rejects_duplicate_runner() {
     let path = fixtures::fixture_path("hm-fixture-noop-executor");
     let err = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
@@ -47,6 +48,7 @@ fn rejects_duplicate_runner() {
 
         ..Default::default()
     })
+    .await
     .expect_err("should detect duplicate");
     let rt_err: &RuntimeError = err.downcast_ref().expect("RuntimeError");
     assert!(matches!(rt_err, RuntimeError::PluginConflict { verb, .. } if verb == "runner:noop"));

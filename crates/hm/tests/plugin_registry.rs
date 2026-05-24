@@ -20,8 +20,8 @@ use hm_plugin_protocol::{
 };
 use uuid::Uuid;
 
-#[test]
-fn loads_three_fixtures_and_builds_indices() {
+#[tokio::test(flavor = "multi_thread")]
+async fn loads_three_fixtures_and_builds_indices() {
     let reg = PluginRegistry::load(RegistryConfig {
         auto_discover: false,
         extra_paths: vec![
@@ -31,6 +31,7 @@ fn loads_three_fixtures_and_builds_indices() {
         ],
         ..Default::default()
     })
+    .await
     .expect("load");
     assert!(reg.capabilities.resolve_runner("noop").is_some());
     assert!(reg.capabilities.resolve_subcommand("fixture-fail").is_some());
@@ -44,6 +45,7 @@ async fn dispatches_subcommand_with_nonzero_exit_info() {
         extra_paths: vec![fixtures::fixture_path("hm-fixture-failing-subcommand")],
         ..Default::default()
     })
+    .await
     .unwrap();
     let idx = reg.capabilities.resolve_subcommand("fixture-fail").unwrap();
     let plugin = reg.get(idx).unwrap();
@@ -70,6 +72,7 @@ async fn dispatches_step_executor() {
         extra_paths: vec![fixtures::fixture_path("hm-fixture-noop-executor")],
         ..Default::default()
     })
+    .await
     .unwrap();
     let idx = reg.capabilities.resolve_runner("noop").unwrap();
     let plugin = reg.get(idx).unwrap();

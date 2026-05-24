@@ -3,7 +3,6 @@ use hm_plugin_protocol::HM_PLUGIN_API_VERSION;
 
 use crate::plugin::{PluginRegistry, RegistryConfig};
 
-#[allow(clippy::unused_async)]
 /// Print version information to stdout.
 ///
 /// # Errors
@@ -13,7 +12,8 @@ pub async fn run() -> Result<()> {
     let reg = PluginRegistry::load(RegistryConfig {
         auto_discover: true,
         ..Default::default()
-    })?;
+    })
+    .await?;
     println!("hm {}", env!("CARGO_PKG_VERSION"));
     println!("plugin api version: {HM_PLUGIN_API_VERSION}");
     let count = reg.manifests().count();

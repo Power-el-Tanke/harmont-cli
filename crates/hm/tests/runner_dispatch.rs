@@ -50,6 +50,7 @@ async fn runner_field_dispatches_to_named_plugin() {
         extra_paths: vec![fixtures::fixture_path("hm-fixture-freestyle-runner")],
         host_api: Arc::clone(&host_api),
     })
+    .await
     .expect("load registry");
 
     let pipeline: Pipeline = serde_json::from_slice(PIPELINE_JSON).expect("parse pipeline");

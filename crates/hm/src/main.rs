@@ -52,6 +52,7 @@ async fn run() -> Result<i32, anyhow::Error> {
         extra_paths: vec![],
         host_api: Arc::new(HostApiImpl::new_noop()),
     })
+    .await
     .ok();
 
     let plugin_specs = registry

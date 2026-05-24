@@ -116,6 +116,7 @@ pub async fn run(
             extra_paths: vec![],
             host_api,
         })
+        .await
         .context("load plugin registry")?,
     ));
 

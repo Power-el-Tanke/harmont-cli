@@ -138,9 +138,9 @@ pub struct PluginRegistry {
 impl PluginRegistry {
     /// Discover and load plugins from the filesystem, validate each
     /// manifest, and build the capability index.
-    pub fn load(config: RegistryConfig) -> Result<Self> {
-        let mut plugins: Vec<Arc<LoadedPlugin>> = Vec::new();
+    pub async fn load(config: RegistryConfig) -> Result<Self> {
         let dll_ext = std::env::consts::DLL_EXTENSION;
+        let mut paths: Vec<PathBuf> = Vec::new();
 
         if config.auto_discover {
             for dir in hm_util::dirs::plugin_discovery_dirs() {
@@ -152,22 +152,29 @@ impl PluginRegistry {
                 for ent in entries {
                     let Ok(ent) = ent else { continue };
                     let path = ent.path();
-                    if path.extension().and_then(|s| s.to_str()) != Some(dll_ext) {
-                        continue;
+                    if path.extension().and_then(|s| s.to_str()) == Some(dll_ext) {
+                        paths.push(path);
                     }
-                    let p = LoadedPlugin::load(&path, config.host_api.clone())
-                        .with_context(|| format!("load {}", path.display()))?;
-                    p.manifest.validate().map_err(RuntimeError::from)?;
-                    plugins.push(Arc::new(p));
                 }
             }
         }
 
-        for path in &config.extra_paths {
-            let p = LoadedPlugin::load(path, config.host_api.clone())
-                .with_context(|| format!("load {}", path.display()))?;
-            p.manifest.validate().map_err(RuntimeError::from)?;
-            plugins.push(Arc::new(p));
+        paths.extend(config.extra_paths.iter().cloned());
+
+        let mut set: tokio::task::JoinSet<Result<Arc<LoadedPlugin>>> = tokio::task::JoinSet::new();
+        for path in paths {
+            let host_api = config.host_api.clone();
+            set.spawn_blocking(move || {
+                let p = LoadedPlugin::load(&path, host_api)
+                    .with_context(|| format!("load {}", path.display()))?;
+                p.manifest.validate().map_err(RuntimeError::from)?;
+                Ok(Arc::new(p))
+            });
+        }
+
+        let mut plugins: Vec<Arc<LoadedPlugin>> = Vec::new();
+        while let Some(result) = set.join_next().await {
+            plugins.push(result.context("plugin load task panicked")??);
         }
 
         let capabilities = CapabilityIndex::build(&plugins)?;

@@ -52,6 +52,7 @@ async fn host_fn_probe_passes_all_checks() {
         extra_paths: vec![path],
         ..Default::default()
     })
+    .await
     .expect("load registry");
     let idx = reg.capabilities.resolve_subcommand("fixture-probe").unwrap();
     let plugin = reg.get(idx).expect("plugin present");
