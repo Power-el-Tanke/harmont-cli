@@ -26,3 +26,4 @@ export {
   HaskellPackage,
   type HaskellOptions,
 } from "./haskell.js";
+export * as py from "./py/index.js";
