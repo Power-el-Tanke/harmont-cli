@@ -164,12 +164,12 @@ class TestRustToolchain:
 
 
 class TestRustProject:
-    def test_project_has_all_steps(self):
+    def test_project_has_all_methods(self):
         proj = hm.rust.project(path="cli")
         assert proj.warmup.cmd is not None
-        assert proj.test.cmd is not None
-        assert proj.clippy.cmd is not None
-        assert proj.fmt.cmd is not None
+        assert proj.test().cmd is not None
+        assert proj.clippy().cmd is not None
+        assert proj.fmt().cmd is not None
 
     def test_warmup_implicit_cache_on_change(self):
         proj = hm.rust.project(path="cli")
@@ -186,39 +186,39 @@ class TestRustProject:
 
     def test_test_command(self):
         proj = hm.rust.project(path="cli")
-        assert "cargo test --workspace --locked" in proj.test.cmd
+        assert "cargo test --workspace --locked" in proj.test().cmd
 
     def test_test_flags(self):
-        proj = hm.rust.project(path=".", test_flags=("--lib", "--no-fail-fast"))
-        assert "cargo test --workspace --locked --lib --no-fail-fast" in proj.test.cmd
+        proj = hm.rust.project(path=".")
+        assert "cargo test --workspace --locked --lib --no-fail-fast" in proj.test(flags=("--lib", "--no-fail-fast")).cmd
 
     def test_clippy_command(self):
         proj = hm.rust.project(path="cli")
-        assert "cargo clippy --workspace --tests --locked -- -D warnings" in proj.clippy.cmd
+        assert "cargo clippy --workspace --tests --locked -- -D warnings" in proj.clippy().cmd
 
     def test_clippy_flags(self):
-        proj = hm.rust.project(path=".", clippy_flags=("--fix",))
-        assert "cargo clippy --workspace --tests --locked --fix -- -D warnings" in proj.clippy.cmd
+        proj = hm.rust.project(path=".")
+        assert "cargo clippy --workspace --tests --locked --fix -- -D warnings" in proj.clippy(flags=("--fix",)).cmd
 
     def test_fmt_command(self):
         proj = hm.rust.project(path="cli")
-        assert "cargo fmt --check" in proj.fmt.cmd
+        assert "cargo fmt --check" in proj.fmt().cmd
 
     def test_fmt_flags(self):
-        proj = hm.rust.project(path=".", fmt_flags=("--all",))
-        assert "cargo fmt --check --all" in proj.fmt.cmd
+        proj = hm.rust.project(path=".")
+        assert "cargo fmt --check --all" in proj.fmt(flags=("--all",)).cmd
 
     def test_test_chains_off_warmup(self):
         proj = hm.rust.project(path=".")
-        assert proj.test.parent is proj.warmup
+        assert proj.test().parent is proj.warmup
 
     def test_clippy_chains_off_warmup(self):
         proj = hm.rust.project(path=".")
-        assert proj.clippy.parent is proj.warmup
+        assert proj.clippy().parent is proj.warmup
 
     def test_fmt_chains_off_install(self):
         proj = hm.rust.project(path=".")
-        assert proj.fmt.parent is proj.toolchain.installed
+        assert proj.fmt().parent is proj.toolchain.installed
 
     def test_toolchain_escape_hatch(self):
         proj = hm.rust.project(path="cli")
@@ -228,7 +228,7 @@ class TestRustProject:
     def test_with_base_skips_apt(self):
         base = hm.scratch().sh("custom base", label="base")
         proj = hm.rust.project(path="cli", base=base)
-        p = hm.pipeline(proj.test, proj.clippy, proj.fmt, default_image="ubuntu:24.04")
+        p = hm.pipeline(proj.test(), proj.clippy(), proj.fmt(), default_image="ubuntu:24.04")
         cmds = _cmds(p)
         assert not any("apt-get install" in c for c in cmds)
         assert any("custom base" in c for c in cmds)
@@ -236,13 +236,13 @@ class TestRustProject:
     def test_labels(self):
         proj = hm.rust.project(path=".")
         assert proj.warmup.label == ":rust: warmup"
-        assert proj.test.label == ":rust: test"
-        assert proj.clippy.label == ":rust: clippy"
-        assert proj.fmt.label == ":rust: fmt"
+        assert proj.test().label == ":rust: test"
+        assert proj.clippy().label == ":rust: clippy"
+        assert proj.fmt().label == ":rust: fmt"
 
     def test_pipeline_ir(self):
         proj = hm.rust.project(path="cli")
-        p = hm.pipeline(proj.test, proj.clippy, proj.fmt, default_image="ubuntu:24.04")
+        p = hm.pipeline(proj.test(), proj.clippy(), proj.fmt(), default_image="ubuntu:24.04")
         cmds = _cmds(p)
         assert any("cargo build --workspace --tests --locked" in c for c in cmds)
         assert any("cargo test --workspace --locked" in c for c in cmds)
@@ -253,6 +253,6 @@ class TestRustProject:
 
     def test_version_forwarded(self):
         proj = hm.rust.project(path=".", version="1.81.0")
-        p = hm.pipeline(proj.test)
+        p = hm.pipeline(proj.test())
         rustup = _step_by_substring(p, "sh.rustup.rs")
         assert "--default-toolchain 1.81.0" in rustup["cmd"]

@@ -19,7 +19,7 @@ const base = aptBase({
   ],
 });
 
-const rustProject = rust.project({ path: ".", base, testFlags: ["--lib"] });
+const rustProject = rust.project({ path: ".", base });
 const pyProject = py.uv({ path: "dsls/harmont-py", base });
 
 const pipelines: PipelineDefinition[] = [
@@ -27,9 +27,9 @@ const pipelines: PipelineDefinition[] = [
     slug: "ci",
     triggers: [push({ branch: "main" }), pullRequest({ branches: ["main"] })],
     pipeline: pipeline(
-      rustProject.test,
-      rustProject.clippy,
-      rustProject.fmt,
+      rustProject.test({ flags: ["--lib"] }),
+      rustProject.clippy(),
+      rustProject.fmt(),
       pyProject.lint(),
       pyProject.fmt(),
       pyProject.typecheck({ paths: "harmont" }),

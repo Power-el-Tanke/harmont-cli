@@ -26,7 +26,7 @@ def _one(obj: object) -> tuple[Step, ...]:
     if isinstance(obj, Step):
         return (obj,)
     if isinstance(obj, RustProject):
-        return (obj.test, obj.clippy, obj.fmt)
+        return (obj.test(), obj.clippy(), obj.fmt())
     if isinstance(obj, HaskellPackage):
         return (obj.build(),)
     if isinstance(obj, RustToolchain):

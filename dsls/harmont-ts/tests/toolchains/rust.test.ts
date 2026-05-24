@@ -151,16 +151,16 @@ describe("rust.toolchain", () => {
 });
 
 describe("rust.project", () => {
-  it("has all steps", () => {
+  it("has all methods", () => {
     const proj = rust.project({ path: "cli" });
     expect(proj.warmup._cmd).toContain(
       "cargo build --workspace --tests --locked",
     );
-    expect(proj.test._cmd).toContain("cargo test --workspace --locked");
-    expect(proj.clippy._cmd).toContain(
+    expect(proj.test()._cmd).toContain("cargo test --workspace --locked");
+    expect(proj.clippy()._cmd).toContain(
       "cargo clippy --workspace --tests --locked",
     );
-    expect(proj.fmt._cmd).toContain("cargo fmt --check");
+    expect(proj.fmt()._cmd).toContain("cargo fmt --check");
   });
 
   it("warmup has implicit CacheOnChange on Cargo.lock", () => {
@@ -191,54 +191,53 @@ describe("rust.project", () => {
   });
 
   it("test flags are appended", () => {
-    const proj = rust.project({
-      path: ".",
-      testFlags: ["--lib", "--no-fail-fast"],
-    });
-    expect(proj.test._cmd).toContain(
+    const proj = rust.project({ path: "." });
+    expect(proj.test({ flags: ["--lib", "--no-fail-fast"] })._cmd).toContain(
       "cargo test --workspace --locked --lib --no-fail-fast",
     );
   });
 
   it("clippy flags are inserted before --", () => {
-    const proj = rust.project({ path: ".", clippyFlags: ["--fix"] });
-    expect(proj.clippy._cmd).toContain(
+    const proj = rust.project({ path: "." });
+    expect(proj.clippy({ flags: ["--fix"] })._cmd).toContain(
       "cargo clippy --workspace --tests --locked --fix -- -D warnings",
     );
   });
 
   it("fmt flags are appended", () => {
-    const proj = rust.project({ path: ".", fmtFlags: ["--all"] });
-    expect(proj.fmt._cmd).toContain("cargo fmt --check --all");
+    const proj = rust.project({ path: "." });
+    expect(proj.fmt({ flags: ["--all"] })._cmd).toContain(
+      "cargo fmt --check --all",
+    );
   });
 
   it("test chains off warmup", () => {
     const proj = rust.project();
-    expect(proj.test._parent).toBe(proj.warmup);
+    expect(proj.test()._parent).toBe(proj.warmup);
   });
 
   it("clippy chains off warmup", () => {
     const proj = rust.project();
-    expect(proj.clippy._parent).toBe(proj.warmup);
+    expect(proj.clippy()._parent).toBe(proj.warmup);
   });
 
   it("fmt chains off install (not warmup)", () => {
     const proj = rust.project();
-    expect(proj.fmt._parent).toBe(proj.toolchain.install());
+    expect(proj.fmt()._parent).toBe(proj.toolchain.install());
   });
 
   it("labels are correct", () => {
     const proj = rust.project();
     expect(proj.warmup._label).toBe(":rust: warmup");
-    expect(proj.test._label).toBe(":rust: test");
-    expect(proj.clippy._label).toBe(":rust: clippy");
-    expect(proj.fmt._label).toBe(":rust: fmt");
+    expect(proj.test()._label).toBe(":rust: test");
+    expect(proj.clippy()._label).toBe(":rust: clippy");
+    expect(proj.fmt()._label).toBe(":rust: fmt");
   });
 
   it("with base skips apt", () => {
     const base = sh("custom base");
     const proj = rust.project({ path: "cli", base });
-    const ir = pipeline(proj.test, proj.clippy, proj.fmt, {
+    const ir = pipeline(proj.test(), proj.clippy(), proj.fmt(), {
       defaultImage: "ubuntu:24.04",
     });
     const c = cmds(ir);
@@ -250,7 +249,7 @@ describe("rust.project", () => {
 
   it("produces valid pipeline IR", () => {
     const proj = rust.project({ path: "cli" });
-    const ir = pipeline(proj.test, proj.clippy, proj.fmt, {
+    const ir = pipeline(proj.test(), proj.clippy(), proj.fmt(), {
       defaultImage: "ubuntu:24.04",
     });
     expect(ir.version).toBe("0");
@@ -267,7 +266,7 @@ describe("rust.project", () => {
 
   it("version forwarded", () => {
     const proj = rust.project({ path: ".", version: "1.81.0" });
-    const ir = pipeline(proj.test);
+    const ir = pipeline(proj.test());
     const rustup = stepBySubstring(ir, "sh.rustup.rs");
     expect(rustup.cmd).toContain("--default-toolchain 1.81.0");
   });

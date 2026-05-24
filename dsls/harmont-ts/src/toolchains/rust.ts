@@ -21,9 +21,6 @@ export interface RustToolchainOptions {
 
 export interface RustProjectOptions extends RustToolchainOptions {
   readonly cache?: CachePolicy;
-  readonly testFlags?: readonly string[];
-  readonly clippyFlags?: readonly string[];
-  readonly fmtFlags?: readonly string[];
 }
 
 type ActionOptions = Omit<StepOptions, "cwd">;
@@ -86,22 +83,35 @@ export class RustToolchain {
 export class RustProject {
   readonly toolchain: RustToolchain;
   readonly warmup: Step;
-  readonly test: Step;
-  readonly clippy: Step;
-  readonly fmt: Step;
 
-  constructor(
-    toolchain: RustToolchain,
-    warmup: Step,
-    test: Step,
-    clippy: Step,
-    fmt: Step,
-  ) {
+  constructor(toolchain: RustToolchain, warmup: Step) {
     this.toolchain = toolchain;
     this.warmup = warmup;
-    this.test = test;
-    this.clippy = clippy;
-    this.fmt = fmt;
+  }
+
+  test(opts?: { flags?: readonly string[] } & ActionOptions): Step {
+    const extra = opts?.flags?.length ? " " + opts.flags.join(" ") : "";
+    return this.warmup.sh(
+      `. $HOME/.cargo/env && cd ${this.toolchain.path} && cargo test --workspace --locked${extra}`,
+      { label: ":rust: test", ...opts },
+    );
+  }
+
+  clippy(opts?: { flags?: readonly string[] } & ActionOptions): Step {
+    const extra = opts?.flags?.length ? " " + opts.flags.join(" ") : "";
+    return this.warmup.sh(
+      `. $HOME/.cargo/env && cd ${this.toolchain.path} && cargo clippy --workspace --tests --locked${extra} -- -D warnings`,
+      { label: ":rust: clippy", ...opts },
+    );
+  }
+
+  fmt(opts?: { flags?: readonly string[] } & ActionOptions): Step {
+    const extra = opts?.flags?.length ? " " + opts.flags.join(" ") : "";
+    return this.toolchain._cargo(
+      `cargo fmt --check${extra}`,
+      ":rust: fmt",
+      opts,
+    );
   }
 }
 
@@ -149,28 +159,7 @@ function makeProject(opts?: RustProjectOptions): RustProject {
     { cache: warmupCache },
   );
 
-  const testExtra = opts?.testFlags?.length
-    ? " " + opts.testFlags.join(" ")
-    : "";
-  const testStep = warm.sh(
-    `. $HOME/.cargo/env && cd ${path} && cargo test --workspace --locked${testExtra}`,
-    { label: ":rust: test" },
-  );
-
-  const clippyExtra = opts?.clippyFlags?.length
-    ? " " + opts.clippyFlags.join(" ")
-    : "";
-  const clippyStep = warm.sh(
-    `. $HOME/.cargo/env && cd ${path} && cargo clippy --workspace --tests --locked${clippyExtra} -- -D warnings`,
-    { label: ":rust: clippy" },
-  );
-
-  const fmtExtra = opts?.fmtFlags?.length
-    ? " " + opts.fmtFlags.join(" ")
-    : "";
-  const fmtStep = tc._cargo(`cargo fmt --check${fmtExtra}`, ":rust: fmt");
-
-  return new RustProject(tc, warm, testStep, clippyStep, fmtStep);
+  return new RustProject(tc, warm);
 }
 
 export const rust = {

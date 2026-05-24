@@ -90,9 +90,30 @@ class RustProject:
 
     toolchain: RustToolchain
     warmup: Step
-    test: Step
-    clippy: Step
-    fmt: Step
+
+    def test(self, *, flags: tuple[str, ...] = (), **kw: Any) -> Step:
+        extra = (" " + " ".join(flags)) if flags else ""
+        return self.warmup.sh(
+            self.toolchain._wrap(f"cargo test --workspace --locked{extra}"),
+            label=kw.pop("label", ":rust: test"),
+            **kw,
+        )
+
+    def clippy(self, *, flags: tuple[str, ...] = (), **kw: Any) -> Step:
+        extra = (" " + " ".join(flags)) if flags else ""
+        return self.warmup.sh(
+            self.toolchain._wrap(
+                f"cargo clippy --workspace --tests --locked{extra} -- -D warnings"
+            ),
+            label=kw.pop("label", ":rust: clippy"),
+            **kw,
+        )
+
+    def fmt(self, *, flags: tuple[str, ...] = (), **kw: Any) -> Step:
+        extra = (" " + " ".join(flags)) if flags else ""
+        return self.toolchain._emit(
+            f"cargo fmt --check{extra}", ":rust: fmt", **kw
+        )
 
 
 def _make_rust(
@@ -130,9 +151,6 @@ def _make_rust_project(
     components: tuple[str, ...] = ("clippy", "rustfmt"),
     base: Step | None = None,
     cache: CachePolicy | None = None,
-    test_flags: tuple[str, ...] = (),
-    clippy_flags: tuple[str, ...] = (),
-    fmt_flags: tuple[str, ...] = (),
 ) -> RustProject:
     tc = _make_rust(
         path=path,
@@ -151,30 +169,7 @@ def _make_rust_project(
         cache=warmup_cache,
     )
 
-    test_extra = (" " + " ".join(test_flags)) if test_flags else ""
-    test_step = warm.sh(
-        tc._wrap(f"cargo test --workspace --locked{test_extra}"),
-        label=":rust: test",
-    )
-
-    clippy_extra = (" " + " ".join(clippy_flags)) if clippy_flags else ""
-    clippy_step = warm.sh(
-        tc._wrap(
-            f"cargo clippy --workspace --tests --locked{clippy_extra} -- -D warnings"
-        ),
-        label=":rust: clippy",
-    )
-
-    fmt_extra = (" " + " ".join(fmt_flags)) if fmt_flags else ""
-    fmt_step = tc._emit(f"cargo fmt --check{fmt_extra}", ":rust: fmt")
-
-    return RustProject(
-        toolchain=tc,
-        warmup=warm,
-        test=test_step,
-        clippy=clippy_step,
-        fmt=fmt_step,
-    )
+    return RustProject(toolchain=tc, warmup=warm)
 
 
 class _RustEntry:
@@ -206,9 +201,6 @@ class _RustEntry:
         components: tuple[str, ...] = ("clippy", "rustfmt"),
         base: Step | None = None,
         cache: CachePolicy | None = None,
-        test_flags: tuple[str, ...] = (),
-        clippy_flags: tuple[str, ...] = (),
-        fmt_flags: tuple[str, ...] = (),
     ) -> RustProject:
         return _make_rust_project(
             path=path,
@@ -217,9 +209,6 @@ class _RustEntry:
             components=components,
             base=base,
             cache=cache,
-            test_flags=test_flags,
-            clippy_flags=clippy_flags,
-            fmt_flags=fmt_flags,
         )
 
 

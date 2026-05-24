@@ -59,7 +59,7 @@ from .pipeline import pipeline_to_json
 from .python import python
 from .ruby import ruby
 from .rust import RustProject, rust
-from .triggers import pull_request, push, schedule
+from .triggers import pull_request, pull_request as pr, push, schedule
 from .types import Pipeline
 from .zig import zig
 
@@ -128,6 +128,11 @@ def sh(
     )
 
 
+def group(steps: list[Step] | tuple[Step, ...]) -> tuple[Step, ...]:
+    """Combine steps into a group for use as a target return value."""
+    return tuple(steps)
+
+
 __all__ = [
     "BaseImage",
     "CacheCompose",
@@ -154,6 +159,7 @@ __all__ = [
     "forever",
     "go",
     "gradle",
+    "group",
     "haskell",
     "npm",
     "ocaml",
@@ -161,6 +167,7 @@ __all__ = [
     "perl",
     "pipeline",
     "pipeline_to_json",
+    "pr",
     "pull_request",
     "push",
     "py",
