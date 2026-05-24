@@ -47,7 +47,7 @@ def ci(
     warm = rust_project.warmup()
     return (
         warm.sh(
-            ". $HOME/.cargo/env && cd . && cargo test --workspace --locked --no-fail-fast",
+            ". $HOME/.cargo/env && cd . && cargo test --workspace --lib --locked --no-fail-fast",
             label=":rust: test",
         ),
         warm.sh(
