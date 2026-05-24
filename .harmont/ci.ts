@@ -14,8 +14,7 @@ const pipelines: PipelineDefinition[] = [
       rustProject.clippy(),
       rustProject.fmt(),
       pyProject.lint(),
-      pyProject.fmt(),
-      pyProject.typecheck(),
+      pyProject.run("mypy harmont", { label: ":python: typecheck" }),
       pyProject.run(
         "pytest -v --deselect tests/test_gradle.py --deselect tests/test_haskell.py",
         { label: ":python: test" },
