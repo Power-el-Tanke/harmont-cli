@@ -35,6 +35,7 @@ def ci(
         rust_project.clippy(),
         rust_project.fmt(),
         py_project.lint(),
+        py_project.fmt(),
         py_project.typecheck(paths="harmont"),
         py_project.run(
             "pytest -v"
