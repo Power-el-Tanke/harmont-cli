@@ -9,7 +9,8 @@ pub use plugin::PluginCommand;
 pub use run::RunArgs;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use hm_plugin_protocol::SubcommandSpec;
 
 use crate::context::RunContext;
 
@@ -58,12 +59,26 @@ pub enum Command {
     /// `@hm.deploy`-decorated functions and brings them up via Docker.
     #[command(subcommand)]
     Dev(DevCommand),
-
-    /// Plugin-provided subcommand. Captured raw; the dispatcher
-    /// looks it up in the registry and invokes the matching plugin.
-    #[command(external_subcommand)]
-    External(Vec<String>),
 }
+
+/// Build a `clap::Command` that contains both the derive-defined
+/// built-in subcommands and any plugin-provided subcommands.
+///
+/// The caller parses with the returned command, then routes based on
+/// whether the matched subcommand is a built-in or plugin verb.
+#[must_use]
+pub fn build_augmented_command(plugin_specs: &[SubcommandSpec]) -> clap::Command {
+    let mut cmd = Cli::command();
+    for spec in plugin_specs {
+        cmd = cmd.subcommand(hm_plugin_runtime::clap_bridge::build_command(spec));
+    }
+    cmd
+}
+
+/// Names of built-in subcommands defined in the [`Command`] derive enum.
+/// Used by the two-phase parser to decide whether to reconstruct `Cli`
+/// via `from_arg_matches` or route to the plugin dispatcher.
+pub const BUILTIN_SUBCOMMANDS: &[&str] = &["run", "version", "plugin", "dev"];
 
 /// Dispatch a parsed CLI command to the appropriate handler. Returns an exit code.
 ///
@@ -76,7 +91,6 @@ pub async fn dispatch(command: Command, ctx: RunContext) -> Result<i32> {
         Command::Dev(cmd) => dev::dispatch(cmd, ctx).await,
         Command::Version => version::run().await.map(|()| 0),
         Command::Plugin(cmd) => plugin::run(cmd).await.map(|()| 0),
-        Command::External(argv) => external::run(argv).await,
     }
 }
 

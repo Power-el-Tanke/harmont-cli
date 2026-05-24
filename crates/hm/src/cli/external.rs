@@ -1,37 +1,36 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use hm_plugin_protocol::{ExitInfo, SubcommandInput};
 
 use crate::error::HmError;
-use crate::plugin::host_api::HostApiImpl;
-use crate::plugin::{PluginRegistry, RegistryConfig};
+use crate::plugin::PluginRegistry;
 
-/// Run a plugin-provided external subcommand.
+/// Run a plugin-provided subcommand with host-parsed arguments.
+///
+/// The caller (the two-phase parser in `main`) has already matched the
+/// verb against the augmented `clap::Command` and extracted typed args
+/// via [`hm_plugin_runtime::clap_bridge::extract_args`].
 ///
 /// # Errors
 ///
 /// Returns an error if plugin lookup or invocation fails.
-pub async fn run(argv: Vec<String>) -> Result<i32> {
-    let verb = argv
-        .first()
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("dispatcher called with empty argv (clap bug)"))?;
-
-    let registry = PluginRegistry::load(RegistryConfig {
-        auto_discover: true,
-        extra_paths: vec![],
-        host_api: Arc::new(HostApiImpl::new_noop()),
-    })
-    .context("load plugin registry")?;
-
+pub async fn run_parsed(
+    verb: &str,
+    verb_path: Vec<String>,
+    args: serde_json::Value,
+    registry: &PluginRegistry,
+) -> Result<i32> {
     let idx = registry
         .capabilities
-        .resolve_subcommand(&verb)
+        .resolve_subcommand(verb)
         .ok_or_else(|| HmError::UnknownVerb {
-            verb: verb.clone(),
-            available: registry.capabilities.available_subcommands().map(Into::into).collect(),
+            verb: verb.to_owned(),
+            available: registry
+                .capabilities
+                .available_subcommands()
+                .map(Into::into)
+                .collect(),
         })?;
 
     let plugin = registry
@@ -43,8 +42,8 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
         .collect();
 
     let input = SubcommandInput {
-        verb_path: argv.clone(),
-        args: serde_json::Value::Null, // plugin parses raw argv itself
+        verb_path,
+        args,
         env,
     };
 
