@@ -174,3 +174,51 @@ def test_rust_bare_form_accepts_path_kwarg():
 def test_rust_bare_form_forwards_action_kwargs():
     s = hm.rust.build(path="cli", label=":rust: custom")
     assert s.label == ":rust: custom"
+
+
+def test_rust_warmup_returns_step():
+    rust = hm.rust(path="cli")
+    w = rust.warmup()
+    assert w.cmd is not None
+    assert "cargo build" in w.cmd
+    assert "--workspace" in w.cmd
+    assert "--tests" in w.cmd
+    assert "--locked" in w.cmd
+
+
+def test_rust_warmup_chains_from_installed():
+    rust = hm.rust(path="cli")
+    w = rust.warmup()
+    assert w.parent is rust.installed
+
+
+def test_rust_warmup_default_label():
+    rust = hm.rust(path=".")
+    assert rust.warmup().label == ":rust: warmup"
+
+
+def test_rust_warmup_label_override():
+    rust = hm.rust(path=".")
+    assert rust.warmup(label=":rust: pre-build").label == ":rust: pre-build"
+
+
+def test_rust_warmup_in_pipeline():
+    """warmup step appears in pipeline IR."""
+    rust = hm.rust(path="cli")
+    w = rust.warmup()
+    t = w.sh(
+        ". $HOME/.cargo/env && cd cli && cargo test --workspace --locked", label=":rust: test"
+    )
+    p = hm.pipeline(t, rust.fmt(), default_image="ubuntu:24.04")
+    cmds = _cmds(p)
+    assert any("cargo build --workspace --tests --locked" in c for c in cmds)
+    assert any("cargo test --workspace --locked" in c for c in cmds)
+    assert any("cargo fmt" in c for c in cmds)
+    assert len([c for c in cmds if "sh.rustup.rs" in c]) == 1
+    assert len([c for c in cmds if "apt-get install" in c]) == 1
+
+
+def test_rust_bare_form_warmup():
+    p = hm.pipeline(hm.rust.warmup())
+    cmds = _cmds(p)
+    assert any("cargo build --workspace --tests --locked" in c for c in cmds)

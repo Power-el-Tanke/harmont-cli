@@ -73,6 +73,13 @@ class RustToolchain:
     def fmt(self, **kw: Any) -> Step:
         return self._emit("cargo fmt --check", ":rust: fmt", **kw)
 
+    def warmup(self, **kw: Any) -> Step:
+        return self._emit(
+            "cargo build --workspace --tests --locked",
+            ":rust: warmup",
+            **kw,
+        )
+
     def doc(self, **kw: Any) -> Step:
         return self._emit("cargo doc --no-deps", ":rust: doc", **kw)
 
@@ -139,6 +146,10 @@ class _RustEntry:
     def fmt(self, **kw: Any) -> Step:
         action_kw = {k: kw.pop(k) for k in list(kw) if k in _ACTION_KWARGS}
         return self(**kw).fmt(**action_kw)
+
+    def warmup(self, **kw: Any) -> Step:
+        action_kw = {k: kw.pop(k) for k in list(kw) if k in _ACTION_KWARGS}
+        return self(**kw).warmup(**action_kw)
 
     def doc(self, **kw: Any) -> Step:
         action_kw = {k: kw.pop(k) for k in list(kw) if k in _ACTION_KWARGS}
