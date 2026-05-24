@@ -2,29 +2,26 @@
 from __future__ import annotations
 
 import harmont as hm
-from harmont.cache import CacheOnChange
 from harmont.py.uv import UvProject
-from harmont.rust import RustToolchain
-
-ALL_APT = (
-    "curl",
-    "ca-certificates",
-    "build-essential",
-    "pkg-config",
-    "libssl-dev",
-    "python3",
-    "python3-venv",
-)
+from harmont.rust import RustProject
 
 
 @hm.target()
 def shared_base() -> hm.Step:
-    return hm.apt_base(packages=ALL_APT)
+    return hm.apt_base(packages=(
+        "curl",
+        "ca-certificates",
+        "build-essential",
+        "pkg-config",
+        "libssl-dev",
+        "python3",
+        "python3-venv",
+    ))
 
 
 @hm.target()
-def rust_project(shared_base: hm.Target[hm.Step]) -> RustToolchain:
-    return hm.rust(path=".", base=shared_base)
+def rust_project(shared_base: hm.Target[hm.Step]) -> RustProject:
+    return hm.rust.project(path=".", base=shared_base, test_flags=("--lib",))
 
 
 @hm.target()
@@ -42,20 +39,13 @@ def py_project(shared_base: hm.Target[hm.Step]) -> UvProject:
     ],
 )
 def ci(
-    rust_project: hm.Target[RustToolchain],
+    rust_project: hm.Target[RustProject],
     py_project: hm.Target[UvProject],
 ) -> tuple[hm.Step, ...]:
-    warm = rust_project.warmup(cache=CacheOnChange(paths=("Cargo.lock",)))
     return (
-        warm.sh(
-            ". $HOME/.cargo/env && cd . && cargo test --workspace --lib --locked --no-fail-fast",
-            label=":rust: test",
-        ),
-        warm.sh(
-            ". $HOME/.cargo/env && cd . && cargo clippy --workspace --tests --locked -- -D warnings",
-            label=":rust: clippy",
-        ),
-        rust_project.fmt(),
+        rust_project.test,
+        rust_project.clippy,
+        rust_project.fmt,
         py_project.lint(),
         py_project.fmt(),
         py_project.typecheck(paths="harmont"),
