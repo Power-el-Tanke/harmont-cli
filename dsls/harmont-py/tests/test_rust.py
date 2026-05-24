@@ -190,7 +190,8 @@ class TestRustProject:
 
     def test_test_flags(self):
         proj = hm.rust.project(path=".")
-        assert "cargo test --workspace --locked --lib --no-fail-fast" in proj.test(flags=("--lib", "--no-fail-fast")).cmd
+        step = proj.test(flags=("--lib", "--no-fail-fast"))
+        assert "cargo test --workspace --locked --lib --no-fail-fast" in step.cmd
 
     def test_clippy_command(self):
         proj = hm.rust.project(path="cli")
@@ -198,7 +199,8 @@ class TestRustProject:
 
     def test_clippy_flags(self):
         proj = hm.rust.project(path=".")
-        assert "cargo clippy --workspace --tests --locked --fix -- -D warnings" in proj.clippy(flags=("--fix",)).cmd
+        step = proj.clippy(flags=("--fix",))
+        assert "cargo clippy --workspace --tests --locked --fix -- -D warnings" in step.cmd
 
     def test_fmt_command(self):
         proj = hm.rust.project(path="cli")
