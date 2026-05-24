@@ -2,26 +2,33 @@
 //! out to the output subscriber, lifecycle hooks, and (via the host
 //! re-broadcast of `hm_emit_step_log`) any subscriber.
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema as DeriveJsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::borsh_helpers;
+
 use crate::executor::SnapshotRef;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StdStream {
     Stdout,
     Stderr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BuildEvent {
     BuildStart {
         run_id: Uuid,
         plan: PlanSummary,
+        #[borsh(
+            serialize_with = "borsh_helpers::serialize_datetime",
+            deserialize_with = "borsh_helpers::deserialize_datetime"
+        )]
         started_at: DateTime<Utc>,
     },
     StepQueued {
@@ -38,6 +45,10 @@ pub enum BuildEvent {
         step_id: Uuid,
         stream: StdStream,
         line: String,
+        #[borsh(
+            serialize_with = "borsh_helpers::serialize_datetime",
+            deserialize_with = "borsh_helpers::deserialize_datetime"
+        )]
         ts: DateTime<Utc>,
     },
     StepCacheHit {
@@ -61,6 +72,10 @@ pub enum BuildEvent {
         failed_step_key: String,
         exit_code: i32,
         message: String,
+        #[borsh(
+            serialize_with = "borsh_helpers::serialize_datetime",
+            deserialize_with = "borsh_helpers::deserialize_datetime"
+        )]
         ts: DateTime<Utc>,
     },
     BuildEnd {
@@ -71,7 +86,7 @@ pub enum BuildEvent {
 
 /// Compact summary of the resolved IR included in `BuildStart`. Lets
 /// the renderer print a header without needing the full pipeline.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 pub struct PlanSummary {
     pub step_count: usize,
     pub chain_count: usize,

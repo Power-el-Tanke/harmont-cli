@@ -4,20 +4,23 @@
 
 use std::collections::HashSet;
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use schemars::JsonSchema as DeriveJsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::borsh_helpers;
 use crate::hook::{HookEventKind, HookPhase};
 
-/// JSON Schema fragment (serde-passthrough). Used to validate
-/// plugin-specific config blobs and `runner_args`.
-pub type JsonSchema = serde_json::Value;
+/// JSON Schema fragment. Used to validate plugin-specific config blobs
+/// and `runner_args`. Backed by [`crate::Value`] so it can cross the
+/// borsh FFI boundary while remaining JSON-compatible via serde.
+pub type JsonSchema = crate::Value;
 
 /// A single argument that a subcommand accepts. The host uses these
 /// to build a `clap::Command` on the plugin's behalf, so the plugin
 /// never has to link clap itself.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ArgSpec {
     Positional {
@@ -28,6 +31,10 @@ pub enum ArgSpec {
     },
     Option {
         long: String,
+        #[borsh(
+            serialize_with = "borsh_helpers::serialize_option_char",
+            deserialize_with = "borsh_helpers::deserialize_option_char"
+        )]
         short: Option<char>,
         help: Option<String>,
         required: bool,
@@ -36,13 +43,17 @@ pub enum ArgSpec {
     },
     Flag {
         long: String,
+        #[borsh(
+            serialize_with = "borsh_helpers::serialize_option_char",
+            deserialize_with = "borsh_helpers::deserialize_option_char"
+        )]
         short: Option<char>,
         help: Option<String>,
     },
 }
 
 /// The value type for a positional or option argument.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ValueType {
     String,
@@ -51,7 +62,7 @@ pub enum ValueType {
 }
 
 /// Returned by a plugin's manifest export at load time.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 pub struct PluginManifest {
     /// Must equal [`crate::HM_PLUGIN_API_VERSION`] or the host rejects
     /// the plugin at load time.
@@ -59,6 +70,10 @@ pub struct PluginManifest {
     /// Stable plugin identifier, e.g. `harmont-docker`. Used as the
     /// key in the registry and in error messages.
     pub name: String,
+    #[borsh(
+        serialize_with = "borsh_helpers::serialize_semver",
+        deserialize_with = "borsh_helpers::deserialize_semver"
+    )]
     pub version: semver::Version,
     pub description: String,
     pub capabilities: Vec<Capability>,
@@ -67,7 +82,7 @@ pub struct PluginManifest {
     pub config_schema: Option<JsonSchema>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Capability {
     Subcommand(SubcommandSpec),
@@ -75,7 +90,7 @@ pub enum Capability {
     LifecycleHook(LifecycleHookSpec),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 pub struct SubcommandSpec {
     /// Top-level verb under `hm`. Two plugins may not claim the
     /// same `verb`.
@@ -88,7 +103,7 @@ pub struct SubcommandSpec {
     pub subcommands: Vec<Self>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 pub struct StepExecutorSpec {
     /// Matched against `CommandStep.runner` at dispatch time.
     pub runner: String,
@@ -100,7 +115,7 @@ pub struct StepExecutorSpec {
     pub step_schema: Option<JsonSchema>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 pub struct LifecycleHookSpec {
     pub events: Vec<HookEventKind>,
     pub phase: HookPhase,

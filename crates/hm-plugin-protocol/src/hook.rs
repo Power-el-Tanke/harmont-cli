@@ -1,5 +1,6 @@
 //! Lifecycle hook wire types.
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use schemars::JsonSchema as DeriveJsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -7,14 +8,14 @@ use crate::events::BuildEvent;
 
 /// Hook entry-point input. The host wraps a `BuildEvent` and tells
 /// the plugin which phase this call is.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HookEvent {
     pub event: BuildEvent,
     pub phase: HookPhase,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HookPhase {
     /// May return [`HookOutcome::Abort`] to fail the build.
@@ -23,7 +24,7 @@ pub enum HookPhase {
     After,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HookOutcome {
     /// Continue the build.
@@ -37,7 +38,7 @@ pub enum HookOutcome {
 ///
 /// The manifest declares *what* events the plugin wants, not the per-event
 /// payload. Kept in this file so plugin authors only import one module.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HookEventKind {
     BuildStart,

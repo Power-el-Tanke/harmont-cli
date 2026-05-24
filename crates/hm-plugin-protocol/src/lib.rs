@@ -11,6 +11,7 @@
 // the noisy cargo-group lints don't drown out real issues.
 #![allow(clippy::multiple_crate_versions, clippy::cargo_common_metadata)]
 
+pub(crate) mod borsh_helpers;
 pub mod error;
 pub mod events;
 pub mod executor;
@@ -19,6 +20,9 @@ pub mod host_abi;
 pub mod ir;
 pub mod manifest;
 pub mod subcommand;
+pub mod value;
+
+pub use value::Value;
 
 pub use error::{ExitInfo, PluginError};
 pub use events::{BuildEvent, PlanSummary, StdStream};

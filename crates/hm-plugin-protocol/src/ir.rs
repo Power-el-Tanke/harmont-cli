@@ -8,10 +8,13 @@
 
 use std::collections::BTreeMap;
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use schemars::JsonSchema as DeriveJsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+use crate::Value;
+
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 pub struct Pipeline {
     /// Must equal `"0"` — bumping this is reserved for breaking
     /// schema changes, none of which are scheduled. The v0 schema
@@ -24,14 +27,14 @@ pub struct Pipeline {
     pub steps: Vec<Step>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Step {
     Command(Box<CommandStep>),
     Wait(WaitStep),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 pub struct CommandStep {
     pub key: String,
     #[serde(default)]
@@ -57,16 +60,16 @@ pub struct CommandStep {
     /// Plugin-specific extra fields. Validated by the executor
     /// plugin's `StepExecutorSpec::step_schema` if it set one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runner_args: Option<serde_json::Value>,
+    pub runner_args: Option<Value>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 pub struct WaitStep {
     #[serde(default)]
     pub continue_on_failure: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 pub struct Cache {
     pub policy: String,
     #[serde(default)]
@@ -93,7 +96,10 @@ mod tests {
             panic!("expected command")
         };
         assert_eq!(b.runner.as_deref(), Some("freestyle"));
-        assert_eq!(b.runner_args.as_ref().unwrap()["region"], "us");
+        assert_eq!(
+            b.runner_args.as_ref().and_then(|v| v.get("region")).and_then(crate::Value::as_str),
+            Some("us")
+        );
     }
 
     #[test]

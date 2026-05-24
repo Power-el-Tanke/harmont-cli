@@ -51,7 +51,7 @@ async fn dispatches_subcommand_with_nonzero_exit_info() {
     let plugin = reg.get(idx).unwrap();
     let input = SubcommandInput {
         verb_path: vec!["fixture-fail".into()],
-        args: serde_json::json!({}),
+        args: serde_json::json!({}).into(),
         env: std::collections::BTreeMap::new(),
     };
     let info = plugin

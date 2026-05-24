@@ -1,11 +1,12 @@
 //! Error and exit-info types returned by plugin capability exports.
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use schemars::JsonSchema as DeriveJsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Returned by a subcommand plugin from `hm_subcommand_run`. The host
 /// translates `exit_code` into the process exit code.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 pub struct ExitInfo {
     pub exit_code: i32,
     /// Optional message written to stderr by the host before exit.
@@ -17,7 +18,7 @@ pub struct ExitInfo {
 /// Error returned from any capability export. The host renders these
 /// with the `code` field; downstream tooling matches on it.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema, thiserror::Error,
+    Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema, thiserror::Error,
 )]
 #[error("{message}")]
 pub struct PluginError {

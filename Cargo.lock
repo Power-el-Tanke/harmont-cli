@@ -1297,6 +1297,7 @@ dependencies = [
 name = "hm-plugin-protocol"
 version = "0.0.0-dev"
 dependencies = [
+ "borsh",
  "chrono",
  "derive_more",
  "insta",
@@ -1339,6 +1340,7 @@ name = "hm-plugin-sdk"
 version = "0.0.0-dev"
 dependencies = [
  "borsh",
+ "clap",
  "hm-plugin-macros",
  "hm-plugin-protocol",
  "semver",
@@ -3546,6 +3548,8 @@ version = "1.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddd74a9687298c6858e9b88ec8935ec45d22e8fd5e6394fa1bd4e99a87789c76"
 dependencies = [
+ "borsh",
+ "borsh-derive",
  "getrandom 0.4.2",
  "js-sys",
  "serde_core",

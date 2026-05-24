@@ -43,7 +43,7 @@ pub async fn run_parsed(
 
     let input = SubcommandInput {
         verb_path,
-        args,
+        args: args.into(),
         env,
     };
 

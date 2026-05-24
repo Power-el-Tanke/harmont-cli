@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use schemars::JsonSchema as DeriveJsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -11,7 +12,7 @@ use crate::ir::CommandStep;
 /// Opaque archive handle. The plugin streams bytes via
 /// `hm_archive_read(id, offset, max)`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, DeriveJsonSchema,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema,
     derive_more::From, derive_more::Deref, derive_more::Display,
 )]
 #[serde(transparent)]
@@ -21,13 +22,13 @@ pub struct ArchiveId(pub Uuid);
 /// tag; other plugins are free to encode their own format. The host
 /// never inspects the contents.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, DeriveJsonSchema,
+    Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema,
     derive_more::From, derive_more::Deref, derive_more::Display,
 )]
 #[serde(transparent)]
 pub struct SnapshotRef(pub String);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 pub struct ArtifactRef {
     pub key: String,
     pub mime: String,
@@ -36,7 +37,7 @@ pub struct ArtifactRef {
 
 /// Host-decided cache outcome. The executor honours this; it does
 /// not re-decide.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CacheDecision {
     /// Boot from `tag`; skip running `cmd`.
@@ -48,7 +49,7 @@ pub enum CacheDecision {
     MissNoCommit,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutorInput {
     pub step: CommandStep,
@@ -70,7 +71,7 @@ pub struct ExecutorInput {
     pub parent_snapshot: Option<SnapshotRef>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 pub struct StepResult {
     pub exit_code: i32,
     /// `Some(tag)` when the executor wrote a snapshot for this step

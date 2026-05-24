@@ -1,6 +1,5 @@
 ---
 source: crates/hm-plugin-protocol/tests/schema_snapshots.rs
-assertion_line: 20
 expression: schema
 ---
 {
@@ -40,7 +39,15 @@ expression: schema
       }
     },
     "config_schema": {
-      "description": "Optional JSON Schema describing plugin-specific configuration that lives in the project's `.harmont/plugins.toml`."
+      "description": "Optional JSON Schema describing plugin-specific configuration that lives in the project's `.harmont/plugins.toml`.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Value"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "definitions": {
@@ -107,7 +114,15 @@ expression: schema
               "type": "boolean"
             },
             "step_schema": {
-              "description": "Optional JSON Schema for `CommandStep.runner_args`. The host validates `runner_args` against this schema before dispatch."
+              "description": "Optional JSON Schema for `CommandStep.runner_args`. The host validates `runner_args` against this schema before dispatch.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Value"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           }
         },
@@ -298,6 +313,40 @@ expression: schema
           }
         }
       }
+    },
+    "Value": {
+      "description": "A dynamic value that can cross the plugin FFI boundary.\n\n`#[serde(untagged)]` ensures JSON round-trips are identical to `serde_json::Value` — raw JSON maps to the matching variant.",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "number",
+          "format": "double"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      ]
     },
     "HookEventKind": {
       "description": "Subset of [`crate::hook::HookEvent`] discriminants used at manifest time.\n\nThe manifest declares *what* events the plugin wants, not the per-event payload. Kept in this file so plugin authors only import one module.",

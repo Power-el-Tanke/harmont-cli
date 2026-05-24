@@ -338,7 +338,7 @@ fn ffi_err_to_anyhow(
 pub fn dummy_subcommand_input() -> hm_plugin_protocol::SubcommandInput {
     hm_plugin_protocol::SubcommandInput {
         verb_path: vec!["fixture-probe".into()],
-        args: serde_json::json!({}),
+        args: serde_json::json!({}).into(),
         env: std::collections::BTreeMap::new(),
     }
 }

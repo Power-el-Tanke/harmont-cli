@@ -2,12 +2,13 @@
 //! Plugins import these to talk to the hm host fns; the host imports
 //! them to expose those fns.
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use schemars::JsonSchema as DeriveJsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::executor::ArchiveId;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Level {
     Trace,
@@ -17,7 +18,7 @@ pub enum Level {
     Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum KvScope {
     /// Per-plugin, persistent across builds. Stored in
@@ -30,7 +31,7 @@ pub enum KvScope {
 }
 
 /// Host-fn argument struct for the corresponding `hm_archive_read` host function.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct ArchiveReadArgs {
     pub id: ArchiveId,
     pub offset: u64,

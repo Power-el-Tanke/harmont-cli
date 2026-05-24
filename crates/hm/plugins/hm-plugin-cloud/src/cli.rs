@@ -11,20 +11,22 @@ pub(crate) async fn dispatch(
     ctx: &PluginContext<'_>,
     input: SubcommandInput,
 ) -> Result<ExitInfo, PluginError> {
+    // Convert once: downstream verb functions still accept &serde_json::Value.
+    let args_json: serde_json::Value = input.args.into();
     let tail: Vec<&str> = input.verb_path.iter().skip(1).map(String::as_str).collect();
     let result = match tail.as_slice() {
         ["login"] => {
-            let paste = input.args.get("paste").and_then(serde_json::Value::as_bool).unwrap_or(false);
+            let paste = args_json.get("paste").and_then(serde_json::Value::as_bool).unwrap_or(false);
             auth::login::run(ctx, &input.env, paste).await
         }
         ["logout"] => auth::logout::run(ctx, &input.env).await,
         ["whoami"] => auth::whoami::run(ctx, &input.env).await,
-        ["org", verb] => verbs::org::run(ctx, &input.env, verb, &input.args).await,
-        ["pipeline", verb] => verbs::pipeline::run(ctx, &input.env, verb, &input.args).await,
-        ["build", verb] => verbs::build::run(ctx, &input.env, verb, &input.args).await,
-        ["job", verb] => verbs::job::run(ctx, &input.env, verb, &input.args).await,
-        ["billing", verb] => verbs::billing::run(ctx, &input.env, verb, &input.args).await,
-        ["run"] => verbs::run::run(ctx, &input.env, &input.args).await,
+        ["org", verb] => verbs::org::run(ctx, &input.env, verb, &args_json).await,
+        ["pipeline", verb] => verbs::pipeline::run(ctx, &input.env, verb, &args_json).await,
+        ["build", verb] => verbs::build::run(ctx, &input.env, verb, &args_json).await,
+        ["job", verb] => verbs::job::run(ctx, &input.env, verb, &args_json).await,
+        ["billing", verb] => verbs::billing::run(ctx, &input.env, verb, &args_json).await,
+        ["run"] => verbs::run::run(ctx, &input.env, &args_json).await,
         other => {
             return Ok(ExitInfo {
                 exit_code: 2,
