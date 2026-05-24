@@ -19,7 +19,6 @@ pub mod host_abi;
 pub mod ir;
 pub mod manifest;
 pub mod subcommand;
-pub mod value;
 
 pub use error::{ExitInfo, PluginError};
 pub use events::{BuildEvent, PlanSummary, StdStream};
@@ -32,7 +31,6 @@ pub use manifest::{
     StepExecutorSpec, SubcommandSpec, ValueType,
 };
 pub use subcommand::SubcommandInput;
-pub use value::FfiValue;
 
 /// Wire-format version. Plugins whose manifest reports a different
 /// version are rejected at load time. Bump when adding *any* new

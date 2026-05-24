@@ -1304,7 +1304,6 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "stabby",
  "thiserror 2.0.18",
  "uuid",
 ]
@@ -1340,7 +1339,6 @@ name = "hm-plugin-sdk"
 version = "0.0.0-dev"
 dependencies = [
  "borsh",
- "clap",
  "hm-plugin-macros",
  "hm-plugin-protocol",
  "semver",
