@@ -92,3 +92,48 @@ pub struct PlanSummary {
     pub chain_count: usize,
     pub default_runner: String,
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn build_event_borsh_round_trip() {
+        let events = vec![
+            BuildEvent::BuildStart {
+                run_id: Uuid::nil(),
+                plan: PlanSummary {
+                    step_count: 3,
+                    chain_count: 1,
+                    default_runner: "docker".into(),
+                },
+                started_at: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            },
+            BuildEvent::StepLog {
+                step_id: Uuid::nil(),
+                stream: StdStream::Stderr,
+                line: "hello".into(),
+                ts: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 1).unwrap(),
+            },
+            BuildEvent::ChainFailed {
+                chain_idx: 0,
+                failed_step_id: Uuid::nil(),
+                failed_step_key: "build".into(),
+                exit_code: 1,
+                message: "fail".into(),
+                ts: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 2).unwrap(),
+            },
+            BuildEvent::BuildEnd {
+                exit_code: 0,
+                duration_ms: 1234,
+            },
+        ];
+        for event in &events {
+            let bytes = borsh::to_vec(event).unwrap();
+            let decoded = BuildEvent::try_from_slice(&bytes).unwrap();
+            assert_eq!(*event, decoded);
+        }
+    }
+}

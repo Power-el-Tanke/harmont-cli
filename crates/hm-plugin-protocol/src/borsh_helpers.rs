@@ -25,37 +25,6 @@ pub(crate) fn deserialize_datetime<R: Read>(reader: &mut R) -> io::Result<DateTi
 }
 
 // ---------------------------------------------------------------------------
-// Option<DateTime<Utc>>
-// ---------------------------------------------------------------------------
-
-#[allow(dead_code)]
-pub(crate) fn serialize_option_datetime<W: Write>(
-    opt: &Option<DateTime<Utc>>,
-    writer: &mut W,
-) -> io::Result<()> {
-    match opt {
-        None => 0u8.serialize(writer),
-        Some(dt) => {
-            1u8.serialize(writer)?;
-            serialize_datetime(dt, writer)
-        }
-    }
-}
-
-#[allow(dead_code)]
-pub(crate) fn deserialize_option_datetime<R: Read>(reader: &mut R) -> io::Result<Option<DateTime<Utc>>> {
-    let tag = u8::deserialize_reader(reader)?;
-    match tag {
-        0 => Ok(None),
-        1 => deserialize_datetime(reader).map(Some),
-        _ => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "invalid Option tag",
-        )),
-    }
-}
-
-// ---------------------------------------------------------------------------
 // char  <->  u32  (Unicode scalar value)
 // ---------------------------------------------------------------------------
 

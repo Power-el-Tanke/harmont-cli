@@ -49,3 +49,56 @@ pub enum HookEventKind {
     StepEnd,
     BuildEnd,
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+    use uuid::Uuid;
+
+    #[test]
+    fn hook_event_borsh_round_trip() {
+        let hook = HookEvent {
+            event: crate::events::BuildEvent::BuildEnd {
+                exit_code: 0,
+                duration_ms: 500,
+            },
+            phase: HookPhase::After,
+        };
+        let bytes = borsh::to_vec(&hook).unwrap();
+        let decoded = HookEvent::try_from_slice(&bytes).unwrap();
+        assert_eq!(hook, decoded);
+    }
+
+    #[test]
+    fn hook_event_with_datetime_borsh_round_trip() {
+        let hook = HookEvent {
+            event: crate::events::BuildEvent::BuildStart {
+                run_id: Uuid::nil(),
+                plan: crate::events::PlanSummary {
+                    step_count: 1,
+                    chain_count: 1,
+                    default_runner: "docker".into(),
+                },
+                started_at: Utc.with_ymd_and_hms(2026, 5, 23, 12, 0, 0).unwrap(),
+            },
+            phase: HookPhase::Before,
+        };
+        let bytes = borsh::to_vec(&hook).unwrap();
+        let decoded = HookEvent::try_from_slice(&bytes).unwrap();
+        assert_eq!(hook, decoded);
+    }
+
+    #[test]
+    fn hook_outcome_borsh_round_trip() {
+        for outcome in [
+            HookOutcome::Continue,
+            HookOutcome::Abort { reason: "bad".into() },
+        ] {
+            let bytes = borsh::to_vec(&outcome).unwrap();
+            let decoded = HookOutcome::try_from_slice(&bytes).unwrap();
+            assert_eq!(outcome, decoded);
+        }
+    }
+}

@@ -69,7 +69,7 @@ impl Value {
 
     /// Returns a reference to the contained array, if any.
     #[must_use]
-    pub fn as_array(&self) -> Option<&Vec<Value>> {
+    pub fn as_array(&self) -> Option<&[Value]> {
         match self {
             Self::Array(a) => Some(a),
             _ => None,

@@ -21,3 +21,30 @@ pub struct SubcommandInput {
     /// `HARMONT_*` env vars + any vars the plugin declared interest in.
     pub env: BTreeMap<String, String>,
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn subcommand_input_borsh_round_trip() {
+        let input = SubcommandInput {
+            verb_path: vec!["cloud".into(), "login".into()],
+            args: Value::Object({
+                let mut m = BTreeMap::new();
+                m.insert("org".into(), Value::Str("mesa".into()));
+                m.insert("force".into(), Value::Bool(true));
+                m
+            }),
+            env: {
+                let mut e = BTreeMap::new();
+                e.insert("HARMONT_TOKEN".into(), "abc123".into());
+                e
+            },
+        };
+        let bytes = borsh::to_vec(&input).unwrap();
+        let decoded = SubcommandInput::try_from_slice(&bytes).unwrap();
+        assert_eq!(input, decoded);
+    }
+}

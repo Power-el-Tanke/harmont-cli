@@ -247,4 +247,48 @@ mod tests {
         let back: ArgSpec = serde_json::from_str(&json).unwrap();
         assert_eq!(spec, back);
     }
+
+    #[test]
+    fn manifest_borsh_round_trip() {
+        let m = PluginManifest {
+            api_version: crate::HM_PLUGIN_API_VERSION,
+            name: "test-plugin".into(),
+            version: semver::Version::new(1, 2, 3),
+            description: "A test".into(),
+            capabilities: vec![
+                Capability::StepExecutor(StepExecutorSpec {
+                    runner: "docker".into(),
+                    default: true,
+                    step_schema: None,
+                }),
+                Capability::Subcommand(SubcommandSpec {
+                    verb: "deploy".into(),
+                    about: "Deploy stuff".into(),
+                    args: vec![
+                        ArgSpec::Positional {
+                            name: "target".into(),
+                            help: Some("Deploy target".into()),
+                            required: true,
+                            value_type: ValueType::String,
+                        },
+                        ArgSpec::Flag {
+                            long: "verbose".into(),
+                            short: Some('v'),
+                            help: None,
+                        },
+                    ],
+                    subcommands: vec![],
+                }),
+                Capability::LifecycleHook(LifecycleHookSpec {
+                    events: vec![HookEventKind::BuildStart, HookEventKind::BuildEnd],
+                    phase: HookPhase::Before,
+                    timeout_ms: 5000,
+                }),
+            ],
+            config_schema: Some(crate::Value::Object(Default::default())),
+        };
+        let bytes = borsh::to_vec(&m).unwrap();
+        let decoded = PluginManifest::try_from_slice(&bytes).unwrap();
+        assert_eq!(m, decoded);
+    }
 }

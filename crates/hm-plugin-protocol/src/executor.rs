@@ -79,3 +79,67 @@ pub struct StepResult {
     pub committed_snapshot: Option<SnapshotRef>,
     pub artifacts: Vec<ArtifactRef>,
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::ir::Cache;
+
+    #[test]
+    fn executor_input_borsh_round_trip() {
+        let input = ExecutorInput {
+            step: CommandStep {
+                key: "build".into(),
+                label: Some("Build app".into()),
+                cmd: "cargo build".into(),
+                builds_in: None,
+                image: Some("rust:latest".into()),
+                env: Some({
+                    let mut m = BTreeMap::new();
+                    m.insert("RUST_LOG".into(), "debug".into());
+                    m
+                }),
+                timeout_seconds: Some(300),
+                cache: Some(Cache {
+                    policy: "content".into(),
+                    key: Some("build-cache".into()),
+                }),
+                runner: Some("docker".into()),
+                runner_args: Some(crate::Value::Object({
+                    let mut m = BTreeMap::new();
+                    m.insert("privileged".into(), crate::Value::Bool(false));
+                    m
+                })),
+            },
+            workspace_archive_id: ArchiveId(Uuid::nil()),
+            env: BTreeMap::new(),
+            workdir: "/app".into(),
+            run_id: Uuid::nil(),
+            step_id: Uuid::nil(),
+            cache_lookup: CacheDecision::MissBuildAs {
+                tag: SnapshotRef("snap:abc".into()),
+            },
+            parent_snapshot: Some(SnapshotRef("snap:parent".into())),
+        };
+        let bytes = borsh::to_vec(&input).unwrap();
+        let decoded = ExecutorInput::try_from_slice(&bytes).unwrap();
+        assert_eq!(input, decoded);
+    }
+
+    #[test]
+    fn step_result_borsh_round_trip() {
+        let result = StepResult {
+            exit_code: 0,
+            committed_snapshot: Some(SnapshotRef("snap:123".into())),
+            artifacts: vec![ArtifactRef {
+                key: "binary".into(),
+                mime: "application/octet-stream".into(),
+                size_bytes: 1024,
+            }],
+        };
+        let bytes = borsh::to_vec(&result).unwrap();
+        let decoded = StepResult::try_from_slice(&bytes).unwrap();
+        assert_eq!(result, decoded);
+    }
+}
