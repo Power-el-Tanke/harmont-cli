@@ -36,7 +36,10 @@ class TestUvObjectForm:
     def test_shared_install(self):
         proj = hm.py.uv(path="svc")
         p = hm.pipeline(
-            proj.test(), proj.lint(), proj.fmt(), proj.typecheck(),
+            proj.test(),
+            proj.lint(),
+            proj.fmt(),
+            proj.typecheck(),
             default_image="ubuntu:24.04",
         )
         cmds = _cmds(p)
@@ -79,6 +82,21 @@ class TestUvActions:
     def test_label_override(self):
         proj = hm.py.uv(path=".")
         assert proj.test(label=":python: smoke").label == ":python: smoke"
+
+    def test_typecheck_paths_string(self):
+        proj = hm.py.uv(path="myapp")
+        s = proj.typecheck(paths="src")
+        assert "uv run mypy src" in s.cmd
+
+    def test_typecheck_paths_list(self):
+        proj = hm.py.uv(path="myapp")
+        s = proj.typecheck(paths=["src", "tests"])
+        assert "uv run mypy src tests" in s.cmd
+
+    def test_typecheck_paths_default(self):
+        proj = hm.py.uv(path="myapp")
+        s = proj.typecheck()
+        assert "uv run mypy ." in s.cmd
 
     def test_cache_forwarded(self):
         proj = hm.py.uv(path=".")

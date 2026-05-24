@@ -47,6 +47,18 @@ describe("py.uv actions", () => {
     expect(p.typecheck()._cmd).toContain("uv run mypy .");
   });
 
+  it("typecheck with paths string", () => {
+    const p = py.uv({ path: "myapp" });
+    expect(p.typecheck({ paths: "src" })._cmd).toContain("uv run mypy src");
+  });
+
+  it("typecheck with paths array", () => {
+    const p = py.uv({ path: "myapp" });
+    expect(p.typecheck({ paths: ["src", "tests"] })._cmd).toContain(
+      "uv run mypy src tests",
+    );
+  });
+
   it("build runs uv build", () => {
     const p = py.uv();
     expect(p.build()._cmd).toContain("uv build");

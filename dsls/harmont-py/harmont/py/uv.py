@@ -32,6 +32,14 @@ _ACTION_KWARGS = frozenset(("cache", "env", "timeout_seconds", "label", "key"))
 _VERSION_RE = re.compile(r"^([0-9]+\.[0-9]+\.[0-9]+|latest)$")
 
 
+def _resolve_paths(paths: str | list[str] | None) -> str:
+    if paths is None:
+        return "."
+    if isinstance(paths, str):
+        return paths
+    return " ".join(paths)
+
+
 def _uv_install_cmd(version: str) -> str:
     pin = "" if version == "latest" else f"UV_VERSION={version} "
     return (
@@ -52,45 +60,60 @@ class UvProject:
 
     def test(self, **kw: Any) -> Step:
         return self._emit(
-            f"cd {self.path} && uv run pytest", ":python: test", **kw,
+            f"cd {self.path} && uv run pytest",
+            ":python: test",
+            **kw,
         )
 
     def lint(self, **kw: Any) -> Step:
         return self._emit(
-            f"cd {self.path} && uv run ruff check .", ":python: lint", **kw,
+            f"cd {self.path} && uv run ruff check .",
+            ":python: lint",
+            **kw,
         )
 
     def fmt(self, **kw: Any) -> Step:
         return self._emit(
             f"cd {self.path} && uv run ruff format --check .",
-            ":python: fmt", **kw,
+            ":python: fmt",
+            **kw,
         )
 
-    def typecheck(self, **kw: Any) -> Step:
+    def typecheck(self, *, paths: str | list[str] | None = None, **kw: Any) -> Step:
+        target = _resolve_paths(paths)
         return self._emit(
-            f"cd {self.path} && uv run mypy .", ":python: typecheck", **kw,
+            f"cd {self.path} && uv run mypy {target}",
+            ":python: typecheck",
+            **kw,
         )
 
     def run(self, cmd: str, **kw: Any) -> Step:
         first_word = cmd.split()[0] if cmd.split() else "run"
         return self._emit(
             f"cd {self.path} && uv run {cmd}",
-            f":python: {first_word}", **kw,
+            f":python: {first_word}",
+            **kw,
         )
 
     def build(self, **kw: Any) -> Step:
         return self._emit(
-            f"cd {self.path} && uv build", ":python: build", **kw,
+            f"cd {self.path} && uv build",
+            ":python: build",
+            **kw,
         )
 
     def lock_check(self, **kw: Any) -> Step:
         return self._emit(
-            f"cd {self.path} && uv lock --check", ":python: lock-check", **kw,
+            f"cd {self.path} && uv lock --check",
+            ":python: lock-check",
+            **kw,
         )
 
     def publish(self, **kw: Any) -> Step:
         return self._emit(
-            f"cd {self.path} && uv publish", ":python: publish", **kw,
+            f"cd {self.path} && uv publish",
+            ":python: publish",
+            **kw,
         )
 
 
@@ -147,9 +170,9 @@ class _UvEntry:
         action_kw = {k: kw.pop(k) for k in list(kw) if k in _ACTION_KWARGS}
         return self(**kw).fmt(**action_kw)
 
-    def typecheck(self, **kw: Any) -> Step:
+    def typecheck(self, *, paths: str | list[str] | None = None, **kw: Any) -> Step:
         action_kw = {k: kw.pop(k) for k in list(kw) if k in _ACTION_KWARGS}
-        return self(**kw).typecheck(**action_kw)
+        return self(**kw).typecheck(paths=paths, **action_kw)
 
     def run(self, cmd: str, **kw: Any) -> Step:
         action_kw = {k: kw.pop(k) for k in list(kw) if k in _ACTION_KWARGS}

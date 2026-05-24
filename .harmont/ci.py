@@ -35,7 +35,7 @@ def ci(
         rust_project.clippy(),
         rust_project.fmt(),
         py_project.lint(),
-        py_project.run("mypy harmont", label=":python: typecheck"),
+        py_project.typecheck(paths="harmont"),
         py_project.run(
             "pytest -v"
             " --deselect tests/test_gradle.py"
