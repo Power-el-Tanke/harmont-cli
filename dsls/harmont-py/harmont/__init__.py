@@ -58,7 +58,7 @@ from .pipeline import pipeline as _pipeline_factory
 from .pipeline import pipeline_to_json
 from .python import python
 from .ruby import ruby
-from .rust import rust
+from .rust import RustProject, rust
 from .triggers import pull_request, push, schedule
 from .types import Pipeline
 from .zig import zig
@@ -139,6 +139,7 @@ __all__ = [
     "Dep",
     "Deployment",
     "Pipeline",
+    "RustProject",
     "Step",
     "Target",
     "apt_base",
