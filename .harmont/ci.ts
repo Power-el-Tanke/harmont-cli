@@ -14,7 +14,6 @@ const ALL_APT = [
   "pkg-config",
   "libssl-dev",
   "python3",
-  "python3-pip",
   "python3-venv",
 ] as const;
 
@@ -30,7 +29,7 @@ const pipelines: PipelineDefinition[] = [
     triggers: [push({ branch: "main" }), pullRequest({ branches: ["main"] })],
     pipeline: pipeline(
       warm.sh(
-        `python3 -m pip install --break-system-packages dsls/harmont-py && . $HOME/.cargo/env && cd . && cargo test --workspace --locked --no-fail-fast`,
+        `. $HOME/.cargo/env && cd . && cargo test --workspace --lib --locked --no-fail-fast`,
         { label: ":rust: test" },
       ),
       warm.sh(
