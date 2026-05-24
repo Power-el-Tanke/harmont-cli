@@ -1,8 +1,9 @@
 """Rust toolchain abstraction (HAR-15).
 
-Public surface lives on the module-level singleton :data:`rust`. Call it
-to construct a :class:`RustToolchain`, or use the bare-form action
-methods (``rust.build()``, ``rust.test()``, etc.) for a one-shot leaf.
+Public surface lives on the module-level singleton :data:`rust`:
+
+    hm.rust.toolchain(...)  -> RustToolchain  (install-only)
+    hm.rust.project(...)    -> RustProject    (full CI DAG)
 """
 
 from __future__ import annotations
@@ -12,10 +13,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from ._toolchain import make_install_chain
-from .cache import CacheForever
+from .cache import CacheForever, CacheOnChange
 
 if TYPE_CHECKING:
     from ._step import Step
+    from .cache import CachePolicy
 
 APT_PACKAGES = (
     "curl",
@@ -24,8 +26,6 @@ APT_PACKAGES = (
     "pkg-config",
     "libssl-dev",
 )
-
-_ACTION_KWARGS = frozenset(("cache", "env", "timeout_seconds", "label", "key"))
 
 _VERSION_RE = re.compile(r"^[a-z0-9.-]+$")
 
@@ -84,6 +84,17 @@ class RustToolchain:
         return self._emit("cargo doc --no-deps", ":rust: doc", **kw)
 
 
+@dataclass(frozen=True)
+class RustProject:
+    """High-level Rust CI DAG — constructed via ``hm.rust.project()``."""
+
+    toolchain: RustToolchain
+    warmup: Step
+    test: Step
+    clippy: Step
+    fmt: Step
+
+
 def _make_rust(
     *,
     path: str = ".",
@@ -111,11 +122,66 @@ def _make_rust(
     return RustToolchain(path=path, installed=installed)
 
 
-class _RustEntry:
-    """Callable singleton — supports both object form and bare form."""
+def _make_rust_project(
+    *,
+    path: str = ".",
+    version: str = "stable",
+    image: str | None = None,
+    components: tuple[str, ...] = ("clippy", "rustfmt"),
+    base: Step | None = None,
+    cache: CachePolicy | None = None,
+    test_flags: tuple[str, ...] = (),
+    clippy_flags: tuple[str, ...] = (),
+    fmt_flags: tuple[str, ...] = (),
+) -> RustProject:
+    tc = _make_rust(
+        path=path,
+        version=version,
+        image=image,
+        components=components,
+        base=base,
+    )
 
-    def __call__(
-        self,
+    lock_path = f"{path}/Cargo.lock" if path != "." else "Cargo.lock"
+    warmup_cache = cache if cache is not None else CacheOnChange(paths=(lock_path,))
+
+    warm = tc._emit(
+        "cargo build --workspace --tests --locked",
+        ":rust: warmup",
+        cache=warmup_cache,
+    )
+
+    test_extra = (" " + " ".join(test_flags)) if test_flags else ""
+    test_step = warm.sh(
+        tc._wrap(f"cargo test --workspace --locked{test_extra}"),
+        label=":rust: test",
+    )
+
+    clippy_extra = (" " + " ".join(clippy_flags)) if clippy_flags else ""
+    clippy_step = warm.sh(
+        tc._wrap(
+            f"cargo clippy --workspace --tests --locked{clippy_extra} -- -D warnings"
+        ),
+        label=":rust: clippy",
+    )
+
+    fmt_extra = (" " + " ".join(fmt_flags)) if fmt_flags else ""
+    fmt_step = tc._emit(f"cargo fmt --check{fmt_extra}", ":rust: fmt")
+
+    return RustProject(
+        toolchain=tc,
+        warmup=warm,
+        test=test_step,
+        clippy=clippy_step,
+        fmt=fmt_step,
+    )
+
+
+class _RustEntry:
+    """Namespace for ``hm.rust.toolchain()`` and ``hm.rust.project()``."""
+
+    @staticmethod
+    def toolchain(
         *,
         path: str = ".",
         version: str = "stable",
@@ -131,29 +197,30 @@ class _RustEntry:
             base=base,
         )
 
-    def build(self, *, release: bool = False, **kw: Any) -> Step:
-        action_kw = {k: kw.pop(k) for k in list(kw) if k in _ACTION_KWARGS}
-        return self(**kw).build(release=release, **action_kw)
-
-    def test(self, *, release: bool = False, **kw: Any) -> Step:
-        action_kw = {k: kw.pop(k) for k in list(kw) if k in _ACTION_KWARGS}
-        return self(**kw).test(release=release, **action_kw)
-
-    def clippy(self, **kw: Any) -> Step:
-        action_kw = {k: kw.pop(k) for k in list(kw) if k in _ACTION_KWARGS}
-        return self(**kw).clippy(**action_kw)
-
-    def fmt(self, **kw: Any) -> Step:
-        action_kw = {k: kw.pop(k) for k in list(kw) if k in _ACTION_KWARGS}
-        return self(**kw).fmt(**action_kw)
-
-    def warmup(self, **kw: Any) -> Step:
-        action_kw = {k: kw.pop(k) for k in list(kw) if k in _ACTION_KWARGS}
-        return self(**kw).warmup(**action_kw)
-
-    def doc(self, **kw: Any) -> Step:
-        action_kw = {k: kw.pop(k) for k in list(kw) if k in _ACTION_KWARGS}
-        return self(**kw).doc(**action_kw)
+    @staticmethod
+    def project(
+        *,
+        path: str = ".",
+        version: str = "stable",
+        image: str | None = None,
+        components: tuple[str, ...] = ("clippy", "rustfmt"),
+        base: Step | None = None,
+        cache: CachePolicy | None = None,
+        test_flags: tuple[str, ...] = (),
+        clippy_flags: tuple[str, ...] = (),
+        fmt_flags: tuple[str, ...] = (),
+    ) -> RustProject:
+        return _make_rust_project(
+            path=path,
+            version=version,
+            image=image,
+            components=components,
+            base=base,
+            cache=cache,
+            test_flags=test_flags,
+            clippy_flags=clippy_flags,
+            fmt_flags=fmt_flags,
+        )
 
 
 rust = _RustEntry()
