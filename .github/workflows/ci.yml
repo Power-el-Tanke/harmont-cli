@@ -112,10 +112,31 @@ jobs:
           sudo /usr/bin/python3 -m pip install --break-system-packages dsls/harmont-py
           /usr/bin/python3 -c "import harmont; print('harmont', harmont.__file__)"
 
+      - name: Restore harmont Docker cache
+        id: docker-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/harmont-docker-cache.tar
+          key: harmont-docker-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            harmont-docker-
+
+      - name: Load cached Docker images
+        if: steps.docker-cache.outputs.cache-hit == 'true'
+        run: docker load -i /tmp/harmont-docker-cache.tar || true
+
       - name: hm run ci
         env:
           HM_NONINTERACTIVE: '1'
         run: ./target/debug/hm run ci
+
+      - name: Save harmont Docker images
+        if: always()
+        run: |
+          images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep '^harmont-local/' || true)
+          if [ -n "$images" ]; then
+            docker save $images -o /tmp/harmont-docker-cache.tar
+          fi
 
   integration:
     name: docker-gated integration test
