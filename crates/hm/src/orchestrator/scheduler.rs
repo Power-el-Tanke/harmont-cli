@@ -3,7 +3,7 @@
 //! Walks the pipeline DAG in topological order, spawning a shared
 //! future per step. Each future awaits its predecessors, acquires a
 //! parallelism permit, and dispatches the step to its registered
-//! executor plugin (Docker by default).
+//! runner (Docker by default).
 
 // Pedantic-bucket nags accepted at module scope:
 // - `cast_possible_truncation`: every `as u64` here is a millisecond
@@ -19,12 +19,7 @@
     clippy::cast_possible_truncation,
     clippy::expect_used,
     clippy::too_many_lines,
-    clippy::missing_panics_doc,
-    // `significant_drop_tightening`: the registry MutexGuard in the
-    // --format validation block is held only across constant-time
-    // hash-map lookups; the lint would have us scatter `drop(reg)`
-    // calls that add no clarity.
-    clippy::significant_drop_tightening
+    clippy::missing_panics_doc
 )]
 
 use std::collections::HashMap;
@@ -40,7 +35,6 @@ use anyhow::{Context, Result};
 use hm_plugin_protocol::{
     ArchiveId, BuildEvent, ExecutorInput, PlanSummary, SnapshotRef, StepResult,
 };
-use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use hm_pipeline_ir::{EdgeKind, PipelineGraph, Transition};
@@ -48,13 +42,12 @@ use hm_pipeline_ir::{EdgeKind, PipelineGraph, Transition};
 use crate::error::HmError;
 use crate::orchestrator::docker_client::DockerClient;
 use crate::orchestrator::source::build_archive_bytes;
-use crate::plugin::{PluginRegistry, RegistryConfig};
+use crate::runner::{OutputRenderer, RunContext, RunnerRegistry};
 
 use super::archive::ArchiveStore;
 use super::cache;
 use tokio_util::sync::CancellationToken;
 use super::events::EventBus;
-use super::state::{self, OrchestratorState};
 
 #[derive(Clone)]
 struct StepOutcome {
@@ -69,21 +62,22 @@ type StepFuture = futures::future::Shared<BoxFuture<'static, StepOutcome>>;
 /// when any step exited non-zero).
 ///
 /// # Errors
-/// Returns an error if plugin discovery fails, the source archive
-/// cannot be built, the Docker daemon is unreachable, or any
-/// scheduler-level failure occurs. Non-zero step exit codes are
-/// surfaced via the returned `i32`, not as an Err.
+/// Returns an error if the source archive cannot be built, the Docker
+/// daemon is unreachable, or any scheduler-level failure occurs.
+/// Non-zero step exit codes are surfaced via the returned `i32`, not
+/// as an Err.
 pub async fn run(
     graph: PipelineGraph,
     repo_root: PathBuf,
     parallelism: usize,
-    format_name: String,
+    runner_registry: Arc<RunnerRegistry>,
+    renderer: Box<dyn OutputRenderer>,
 ) -> Result<i32> {
     // Set up per-run state.
     let bus = EventBus::new();
-    let archives = ArchiveStore::new();
+    let archives = Arc::new(ArchiveStore::new());
     let cancel = CancellationToken::new();
-    let _ctrlc = crate::plugin::signal::install_ctrlc(cancel.clone());
+    let _ctrlc = super::signal::install_ctrlc(cancel.clone());
     // _ctrlc dropped at end of `run`; runtime tear-down kills the task.
     let docker = DockerClient::connect()
         .map_err(|e| HmError::Docker(format!("daemon unreachable — is Docker running? ({e})")))?;
@@ -97,76 +91,20 @@ pub async fn run(
     let archive_bytes = build_archive_bytes(&repo_root).context("build source archive")?;
     let archive_id = archives.register(archive_bytes);
 
-    // Install per-run state for host fns to read.
-    let state_arc = Arc::new(OrchestratorState {
-        event_bus: bus.clone(),
-        archives,
-        cancel: cancel.clone(),
+    let run_ctx = RunContext {
         docker: docker.clone(),
-        run_id,
-    });
-    state::install(state_arc.clone());
+        event_bus: bus.clone(),
+        archives: archives.clone(),
+        cancel: cancel.clone(),
+    };
 
     let parallelism = parallelism.max(1);
-
-    // Load the plugin registry with the embedded docker plugin.
-    // The docker runner's pool gets pre-sized to `parallelism` so
-    // concurrent chains can run truly in parallel rather than
-    // serialising on a single plugin instance.
-    let mut pool_sizes: std::collections::BTreeMap<String, usize> =
-        std::collections::BTreeMap::new();
-    pool_sizes.insert("docker".to_string(), parallelism);
-    let registry = Arc::new(Mutex::new(
-        PluginRegistry::load(RegistryConfig {
-            auto_discover: true,
-            extra_paths: vec![],
-            embedded: vec![
-                (
-                    "harmont-docker",
-                    crate::plugin::embedded::DOCKER_PLUGIN_WASM,
-                ),
-                (
-                    "harmont-output-human",
-                    crate::plugin::embedded::OUTPUT_HUMAN_PLUGIN_WASM,
-                ),
-                (
-                    "harmont-output-json",
-                    crate::plugin::embedded::OUTPUT_JSON_PLUGIN_WASM,
-                ),
-            ],
-            pool_sizes,
-        })
-        .context("load plugin registry")?,
-    ));
-
-    // Validate the requested output format BEFORE emitting BuildStart
-    // so an invalid `--format` fails fast without producing any output.
-    // We materialise the available list under the lock and then drop
-    // the guard before the (rare) bail to satisfy
-    // `clippy::significant_drop_tightening`.
-    let bad_format: Option<Vec<String>> = {
-        let reg = registry.lock().await;
-        if reg.output_formatter_index.contains_key(&format_name) {
-            None
-        } else {
-            let mut names: Vec<String> = reg.output_formatter_index.keys().cloned().collect();
-            names.sort();
-            Some(names)
-        }
-    };
-    if let Some(available) = bad_format {
-        anyhow::bail!(
-            "unknown --format '{format_name}'; available: {}",
-            available.join(", ")
-        );
-    }
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(parallelism));
 
     // Spawn the output subscriber. Dispatches every BuildEvent to the
-    // selected output-formatter plugin (default: `human`).
-    let sink_handle =
-        super::output_subscriber::spawn(bus.clone(), registry.clone(), format_name.clone());
+    // pre-constructed renderer.
+    let sink_handle = super::output_subscriber::spawn(bus.clone(), renderer);
 
     let dag = graph.dag();
     let chain_info = compute_chain_info(dag);
@@ -180,7 +118,10 @@ pub async fn run(
         plan: PlanSummary {
             step_count: graph.node_count(),
             chain_count: chain_info.chain_count,
-            default_runner: "docker".into(),
+            default_runner: runner_registry
+                .default_runner_name()
+                .unwrap_or("docker")
+                .into(),
         },
         started_at,
     });
@@ -200,9 +141,10 @@ pub async fn run(
         let chain_id = chain_info.node_chain_id[&n];
         let chain_pos = chain_info.node_chain_pos[&n];
         let sem = semaphore.clone();
-        let reg = registry.clone();
+        let reg = runner_registry.clone();
         let bus = bus.clone();
         let cancel = cancel.clone();
+        let run_ctx = run_ctx.clone();
 
         let fut: StepFuture = async move {
             // Await all predecessors.
@@ -237,6 +179,7 @@ pub async fn run(
                 chain_pos,
                 archive_id,
                 run_id,
+                run_ctx,
                 reg,
                 bus,
                 cancel,
@@ -272,8 +215,6 @@ pub async fn run(
 
     let _ = tokio::time::timeout(std::time::Duration::from_secs(2), sink_handle).await;
 
-    state::clear();
-    drop(state_arc);
     Ok(overall)
 }
 
@@ -281,7 +222,7 @@ pub async fn run(
 ///
 /// On cache hit the function returns early with exit code 0 and the
 /// cached snapshot so downstream nodes receive the correct
-/// `parent_snapshot` without running the plugin at all.
+/// `parent_snapshot` without running the runner at all.
 ///
 /// On non-zero exit the cancellation token is cancelled so sibling
 /// tasks observe the failure promptly.
@@ -294,7 +235,8 @@ async fn execute_step(
     chain_pos: usize,
     archive_id: ArchiveId,
     run_id: Uuid,
-    registry: Arc<Mutex<PluginRegistry>>,
+    run_ctx: RunContext,
+    runner_registry: Arc<RunnerRegistry>,
     bus: Arc<EventBus>,
     cancel: CancellationToken,
 ) -> Result<StepOutcome> {
@@ -310,10 +252,7 @@ async fn execute_step(
     });
 
     // Decide cache outcome host-side.
-    let decision = {
-        let s = state::current().context("no orchestrator state")?;
-        cache::decide(&s.docker, &step_wire).await?
-    };
+    let decision = cache::decide(&run_ctx.docker, &step_wire).await?;
     if let hm_plugin_protocol::CacheDecision::Hit { tag } = &decision {
         bus.emit(BuildEvent::StepCacheHit {
             step_id,
@@ -325,7 +264,7 @@ async fn execute_step(
             tag: tag.0.clone(),
         });
         // Short-circuit: the cached image already exists locally, so
-        // there is nothing for the executor plugin to do. Return the
+        // there is nothing for the executor to do. Return the
         // snapshot so downstream nodes can use it as their parent.
         return Ok(StepOutcome {
             exit_code: 0,
@@ -344,43 +283,36 @@ async fn execute_step(
         parent_snapshot,
     };
 
-    // Resolve the runner plugin name. Steps that didn't declare a
-    // runner fall back to whichever plugin registered as
-    // `default: true` (docker, in the embedded binary).
-    let runner = if let Some(name) = input.step.runner.clone() {
-        name
-    } else {
-        let reg = registry.lock().await;
-        reg.default_runner_name()
-            .map_or_else(|| "docker".into(), str::to_string)
-    };
+    // Resolve the runner by name. Steps that didn't declare a runner
+    // fall back to whichever runner was registered as default (docker).
+    let runner_name = input
+        .step
+        .runner
+        .as_deref()
+        .or(runner_registry.default_runner_name())
+        .unwrap_or("docker")
+        .to_owned();
+
     let started = Instant::now();
     bus.emit(BuildEvent::StepStart {
         step_id,
-        runner: runner.clone(),
+        runner: runner_name.clone(),
         image: input.step.image.clone(),
     });
 
-    // Dispatch to the runner-named plugin. Look up the Arc under the
-    // registry lock, drop the lock BEFORE awaiting so other tasks can
-    // dispatch concurrently.
-    let plugin = {
-        let reg = registry.lock().await;
-        let idx = reg
-            .runner_index
-            .get(&runner)
-            .copied()
-            .or(reg.default_runner)
-            .ok_or_else(|| HmError::UnknownRunner {
-                step_key: input.step.key.clone(),
-                runner: runner.clone(),
-                available: reg.runner_index.keys().cloned().collect(),
-            })?;
-        reg.get(idx).context("plugin moved away under us")?
-    };
-    crate::plugin::host_fns::set_current_step_id(step_id);
-    let result: Result<StepResult> = plugin.call_capability("hm_executor_run", &input).await;
-    crate::plugin::host_fns::clear_current_step_id();
+    let runner = runner_registry
+        .resolve(input.step.runner.as_deref())
+        .ok_or_else(|| HmError::UnknownRunner {
+            step_key: input.step.key.clone(),
+            runner: runner_name.clone(),
+            available: runner_registry
+                .runner_names()
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+        })?;
+
+    let result: Result<StepResult> = runner.execute(&run_ctx, input).await;
 
     let dur_ms = started.elapsed().as_millis() as u64;
     match result {

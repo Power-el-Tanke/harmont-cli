@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use anyhow::{Context, Result};
 
 use super::render::{ToolPaths, list_pipelines, render_pipeline_json};
 use crate::cli::RunArgs;
 use crate::context::RunContext;
 use crate::output::format::banner;
+use crate::runner::{RunnerRegistry, docker::DockerRunner};
 
 /// Execute a v0 IR pipeline locally; return the final container id.
 ///
@@ -95,8 +98,18 @@ pub async fn handle(args: RunArgs, _ctx: RunContext) -> Result<i32> {
     let parallelism = args.parallelism.unwrap_or_else(|| {
         std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get)
     });
+
+    let mut runner_registry = RunnerRegistry::new();
+    runner_registry.register(Arc::new(DockerRunner), true);
+    let runner_registry = Arc::new(runner_registry);
+
+    let renderer: Box<dyn crate::runner::OutputRenderer> = match args.format.as_str() {
+        "json" => Box::new(crate::output::json::JsonRenderer::new(std::io::stdout())),
+        _ => Box::new(crate::output::human::HumanRenderer::new(std::io::stderr())),
+    };
+
     let exit_code =
-        crate::orchestrator::run(graph, repo_root, parallelism, args.format.clone())
+        crate::orchestrator::run(graph, repo_root, parallelism, runner_registry, renderer)
             .await?;
     Ok(exit_code)
 }

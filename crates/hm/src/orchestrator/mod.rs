@@ -13,6 +13,7 @@ pub mod docker_host_fns;
 pub mod events;
 pub mod output_subscriber;
 pub mod scheduler;
+pub mod signal;
 pub mod source;
 pub mod state;
 
