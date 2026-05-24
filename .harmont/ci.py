@@ -5,15 +5,30 @@ import harmont as hm
 from harmont.py.uv import UvProject
 from harmont.rust import RustToolchain
 
+ALL_APT = (
+    "curl",
+    "ca-certificates",
+    "build-essential",
+    "pkg-config",
+    "libssl-dev",
+    "python3",
+    "python3-venv",
+)
+
 
 @hm.target()
-def rust_project() -> RustToolchain:
-    return hm.rust(path=".")
+def shared_base() -> hm.Step:
+    return hm.apt_base(packages=ALL_APT)
 
 
 @hm.target()
-def py_project() -> UvProject:
-    return hm.py.uv(path="dsls/harmont-py")
+def rust_project(shared_base: hm.Target[hm.Step]) -> RustToolchain:
+    return hm.rust(path=".", base=shared_base)
+
+
+@hm.target()
+def py_project(shared_base: hm.Target[hm.Step]) -> UvProject:
+    return hm.py.uv(path="dsls/harmont-py", base=shared_base)
 
 
 @hm.pipeline(
@@ -29,13 +44,16 @@ def ci(
     rust_project: hm.Target[RustToolchain],
     py_project: hm.Target[UvProject],
 ) -> tuple[hm.Step, ...]:
+    warm = rust_project.warmup()
     return (
-        rust_project.build(),
-        rust_project.installed.sh(
-            ". $HOME/.cargo/env && cd . && cargo test --lib",
+        warm.sh(
+            ". $HOME/.cargo/env && cd . && cargo test --workspace --locked --no-fail-fast",
             label=":rust: test",
         ),
-        rust_project.clippy(),
+        warm.sh(
+            ". $HOME/.cargo/env && cd . && cargo clippy --workspace --tests --locked -- -D warnings",
+            label=":rust: clippy",
+        ),
         rust_project.fmt(),
         py_project.lint(),
         py_project.fmt(),

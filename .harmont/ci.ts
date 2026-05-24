@@ -1,17 +1,41 @@
-import { pipeline, push, pullRequest, type PipelineDefinition } from "harmont";
+import {
+  pipeline,
+  push,
+  pullRequest,
+  aptBase,
+  type PipelineDefinition,
+} from "harmont";
 import { rust, py } from "harmont/toolchains";
 
-const rustProject = rust({ path: "." });
-const pyProject = py.uv({ path: "dsls/harmont-py" });
+const ALL_APT = [
+  "curl",
+  "ca-certificates",
+  "build-essential",
+  "pkg-config",
+  "libssl-dev",
+  "python3",
+  "python3-venv",
+] as const;
+
+const base = aptBase({ packages: ALL_APT });
+const rustProject = rust({ path: ".", base });
+const pyProject = py.uv({ path: "dsls/harmont-py", base });
+
+const warm = rustProject.warmup();
 
 const pipelines: PipelineDefinition[] = [
   {
     slug: "ci",
     triggers: [push({ branch: "main" }), pullRequest({ branches: ["main"] })],
     pipeline: pipeline(
-      rustProject.build(),
-      rustProject.install().sh(`. $HOME/.cargo/env && cd . && cargo test --lib`, { label: ":rust: test" }),
-      rustProject.clippy(),
+      warm.sh(
+        `. $HOME/.cargo/env && cd . && cargo test --workspace --locked --no-fail-fast`,
+        { label: ":rust: test" },
+      ),
+      warm.sh(
+        `. $HOME/.cargo/env && cd . && cargo clippy --workspace --tests --locked -- -D warnings`,
+        { label: ":rust: clippy" },
+      ),
       rustProject.fmt(),
       pyProject.lint(),
       pyProject.fmt(),
