@@ -289,7 +289,7 @@ async fn execute_step(
         .step
         .runner
         .as_deref()
-        .or(runner_registry.default_runner_name())
+        .or_else(|| runner_registry.default_runner_name())
         .unwrap_or("docker")
         .to_owned();
 

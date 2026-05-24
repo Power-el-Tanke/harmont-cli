@@ -1,5 +1,4 @@
 pub mod dev;
-pub mod external;
 pub mod plugin;
 pub mod run;
 pub mod version;
@@ -46,7 +45,7 @@ pub enum Command {
     /// Run a pipeline locally via Docker.
     Run(RunArgs),
 
-    /// Show hm version and plugin protocol API version.
+    /// Show hm version.
     Version,
 
     /// Manage plugins.
@@ -58,11 +57,6 @@ pub enum Command {
     /// `@hm.deploy`-decorated functions and brings them up via Docker.
     #[command(subcommand)]
     Dev(DevCommand),
-
-    /// Plugin-provided subcommand. Captured raw; the dispatcher
-    /// looks it up in the registry and invokes the matching plugin.
-    #[command(external_subcommand)]
-    External(Vec<String>),
 }
 
 /// Dispatch a parsed CLI command to the appropriate handler. Returns an exit code.
@@ -76,7 +70,5 @@ pub async fn dispatch(command: Command, ctx: RunContext) -> Result<i32> {
         Command::Dev(cmd) => dev::dispatch(cmd, ctx).await,
         Command::Version => version::run().await.map(|()| 0),
         Command::Plugin(cmd) => plugin::run(cmd).await.map(|()| 0),
-        Command::External(argv) => external::run(argv).await,
     }
 }
-

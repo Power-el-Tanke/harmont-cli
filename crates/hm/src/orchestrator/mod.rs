@@ -9,16 +9,13 @@
 pub mod archive;
 pub mod cache;
 pub mod docker_client;
-pub mod docker_host_fns;
 pub mod events;
 pub mod output_subscriber;
 pub mod scheduler;
 pub mod signal;
 pub mod source;
-pub mod state;
 
 pub use scheduler::run;
-pub use state::OrchestratorState;
 
 /// Build a Docker image by running a v0 IR pipeline as a one-shot build
 /// container and committing the result to `image_tag`.

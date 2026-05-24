@@ -38,10 +38,7 @@ where
 {
     /// Look up the human-readable key for a step, falling back to `"?"`.
     fn step_key(&self, id: &Uuid) -> &str {
-        self.step_keys
-            .get(id)
-            .map(String::as_str)
-            .unwrap_or("?")
+        self.step_keys.get(id).map_or("?", String::as_str)
     }
 }
 
@@ -68,12 +65,10 @@ where
                 image,
             } => {
                 let key = self.step_key(step_id);
-                match image {
-                    Some(img) => {
-                        format!("[{key}] start (runner={runner} image={img})\n")
-                    }
-                    None => format!("[{key}] start (runner={runner})\n"),
-                }
+                image.as_ref().map_or_else(
+                    || format!("[{key}] start (runner={runner})\n"),
+                    |img| format!("[{key}] start (runner={runner} image={img})\n"),
+                )
                 .into_bytes()
             }
 

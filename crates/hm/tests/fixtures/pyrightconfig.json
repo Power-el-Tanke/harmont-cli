@@ -1,4 +1,0 @@
-{
-  "extraPaths": ["../../../cidsl/py"],
-  "reportMissingImports": "warning"
-}

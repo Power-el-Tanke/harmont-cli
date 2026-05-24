@@ -19,7 +19,7 @@ pub struct JsonRenderer<W> {
 impl<W> JsonRenderer<W> {
     /// Create a new renderer writing to `out`.
     #[must_use]
-    pub fn new(out: W) -> Self {
+    pub const fn new(out: W) -> Self {
         Self { out }
     }
 }

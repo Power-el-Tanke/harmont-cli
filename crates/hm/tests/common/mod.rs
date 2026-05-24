@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-pub mod fixtures;
-
 /// Construct a Command pointing at the freshly-built `hm` binary.
 ///
 /// # Panics
