@@ -83,6 +83,29 @@ describe("rust actions", () => {
     expect(r.fmt()._label).toBe(":rust: fmt");
     expect(r.doc()._label).toBe(":rust: doc");
   });
+
+  it("warmup runs cargo build --workspace --tests --locked", () => {
+    const r = rust();
+    expect(r.warmup()._cmd).toContain(
+      "cargo build --workspace --tests --locked",
+    );
+  });
+
+  it("warmup chains from install", () => {
+    const r = rust();
+    expect(r.warmup()._parent).toBe(r.install());
+  });
+
+  it("warmup default label", () => {
+    const r = rust();
+    expect(r.warmup()._label).toBe(":rust: warmup");
+  });
+
+  it("warmup accepts options", () => {
+    const r = rust();
+    const w = r.warmup({ label: ":rust: pre-build" });
+    expect(w._label).toBe(":rust: pre-build");
+  });
 });
 
 describe("rust install chain", () => {

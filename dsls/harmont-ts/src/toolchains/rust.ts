@@ -66,6 +66,14 @@ export class RustToolchain {
   doc(opts?: ActionOptions): Step {
     return this._cargo("cargo doc --no-deps", ":rust: doc", opts);
   }
+
+  warmup(opts?: ActionOptions): Step {
+    return this._cargo(
+      "cargo build --workspace --tests --locked",
+      ":rust: warmup",
+      opts,
+    );
+  }
 }
 
 export function rust(opts?: RustOptions): RustToolchain {
