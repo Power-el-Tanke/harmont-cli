@@ -1314,6 +1314,7 @@ name = "hm-plugin-runtime"
 version = "0.0.0-dev"
 dependencies = [
  "anyhow",
+ "borsh",
  "chrono",
  "clap",
  "hex",

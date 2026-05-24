@@ -132,7 +132,7 @@ impl LoadedPlugin {
     /// Extend a `FfiSlice` to `'static` lifetime.
     ///
     /// The plugin's generated code (see `hm-plugin-macros` `expand()`)
-    /// deserializes the input via `serde_json::from_slice` at the very
+    /// deserializes the input via `borsh::from_slice` at the very
     /// start of the async block — before any `.await` / yield point.
     /// The `in_bytes` local outlives the `.await`, so the borrow is
     /// sound even though Rust can't prove it statically.
@@ -213,7 +213,7 @@ impl LoadedPlugin {
                 unsafe { &*(&*plugin as *const PluginDyn) };
             static_ref.manifest()
         };
-        let manifest: PluginManifest = serde_json::from_slice(manifest_bytes.as_slice())
+        let manifest: PluginManifest = borsh::from_slice(manifest_bytes.as_slice())
             .with_context(|| {
                 format!("decode manifest from {}", path.display())
             })?;
@@ -227,13 +227,13 @@ impl LoadedPlugin {
         })
     }
 
-    /// Execute a step. Serializes `input` as JSON, calls the plugin's
+    /// Execute a step. Serializes `input` via borsh, calls the plugin's
     /// `execute_step`, and deserializes the result.
     pub async fn execute_step(
         &self,
         input: &hm_plugin_protocol::ExecutorInput,
     ) -> Result<hm_plugin_protocol::StepResult> {
-        let in_bytes = serde_json::to_vec(input).context("serialize ExecutorInput")?;
+        let in_bytes = borsh::to_vec(input).context("serialize ExecutorInput")?;
         // SAFETY: see `plugin_static()` and `staticify_slice()` docs.
         // The data in `in_bytes` outlives the `.await`, and the plugin
         // copies it before yielding.
@@ -248,7 +248,7 @@ impl LoadedPlugin {
         > = stabby_result.into();
         match std_result {
             Ok(out) => {
-                serde_json::from_slice(out.as_slice()).context("deserialize StepResult")
+                borsh::from_slice(out.as_slice()).context("deserialize StepResult")
             }
             Err(err) => Err(ffi_err_to_anyhow(&self.manifest.name, "execute_step", &err)),
         }
@@ -259,7 +259,7 @@ impl LoadedPlugin {
         &self,
         event: &hm_plugin_protocol::HookEvent,
     ) -> Result<hm_plugin_protocol::HookOutcome> {
-        let in_bytes = serde_json::to_vec(event).context("serialize HookEvent")?;
+        let in_bytes = borsh::to_vec(event).context("serialize HookEvent")?;
         // SAFETY: see `plugin_static()` and `staticify_slice()` docs.
         let ffi_input = unsafe {
             Self::staticify_slice(hm_plugin_sdk::ffi::FfiSlice::from(in_bytes.as_slice()))
@@ -272,7 +272,7 @@ impl LoadedPlugin {
         > = stabby_result.into();
         match std_result {
             Ok(out) => {
-                serde_json::from_slice(out.as_slice()).context("deserialize HookOutcome")
+                borsh::from_slice(out.as_slice()).context("deserialize HookOutcome")
             }
             Err(err) => Err(ffi_err_to_anyhow(&self.manifest.name, "on_hook_event", &err)),
         }
@@ -283,7 +283,7 @@ impl LoadedPlugin {
         &self,
         input: &hm_plugin_protocol::SubcommandInput,
     ) -> Result<hm_plugin_protocol::ExitInfo> {
-        let in_bytes = serde_json::to_vec(input).context("serialize SubcommandInput")?;
+        let in_bytes = borsh::to_vec(input).context("serialize SubcommandInput")?;
         // SAFETY: see `plugin_static()` and `staticify_slice()` docs.
         let ffi_input = unsafe {
             Self::staticify_slice(hm_plugin_sdk::ffi::FfiSlice::from(in_bytes.as_slice()))
@@ -296,7 +296,7 @@ impl LoadedPlugin {
         > = stabby_result.into();
         match std_result {
             Ok(out) => {
-                serde_json::from_slice(out.as_slice()).context("deserialize ExitInfo")
+                borsh::from_slice(out.as_slice()).context("deserialize ExitInfo")
             }
             Err(err) => Err(ffi_err_to_anyhow(&self.manifest.name, "run_subcommand", &err)),
         }
@@ -312,7 +312,7 @@ fn ffi_err_to_anyhow(
     err: &hm_plugin_sdk::ffi::FfiBytes,
 ) -> anyhow::Error {
     let plugin_err: hm_plugin_protocol::PluginError =
-        serde_json::from_slice(err.as_slice())
+        borsh::from_slice(err.as_slice())
             .unwrap_or_else(|_| hm_plugin_protocol::PluginError::new(
                 capability,
                 String::from_utf8_lossy(err.as_slice()).to_string(),
@@ -338,7 +338,7 @@ fn ffi_err_to_anyhow(
 pub fn dummy_subcommand_input() -> hm_plugin_protocol::SubcommandInput {
     hm_plugin_protocol::SubcommandInput {
         verb_path: vec!["fixture-probe".into()],
-        args: serde_json::json!({}).into(),
+        args: hm_plugin_protocol::Value::Object(std::collections::BTreeMap::new()),
         env: std::collections::BTreeMap::new(),
     }
 }
