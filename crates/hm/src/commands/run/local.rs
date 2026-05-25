@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 
-use super::render::{list_pipelines, render_pipeline_json};
+use hm_dsl_engine::detect;
+
 use crate::cli::RunArgs;
 use crate::context::RunContext;
 use crate::runner::{RunnerRegistry, docker::DockerRunner};
@@ -68,10 +69,18 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
         None => std::env::current_dir().context("cannot determine current directory")?,
     };
 
+    let lang = detect::detect_language(&repo_root)
+        .map_err(|e| crate::error::HmError::DslEngine(format!("{e:#}")))?;
+    let engine = hm_dsl_engine::engine_for(lang)
+        .map_err(|e| crate::error::HmError::DslEngine(format!("{e:#}")))?;
+
     let slug = if let Some(s) = &args.pipeline {
         s.clone()
     } else {
-        let metas = list_pipelines(&repo_root).await?;
+        let metas: Vec<hm_dsl_engine::PipelineMeta> = engine
+            .list_pipelines(&repo_root)
+            .await
+            .map_err(|e| crate::error::HmError::PipelineRender(format!("{e:#}")))?;
         let slugs: Vec<String> = metas.into_iter().map(|m| m.slug).collect();
         match slugs.as_slice() {
             [only] => only.clone(),
@@ -86,7 +95,11 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
         }
     };
 
-    let json = render_pipeline_json(&repo_root, &slug).await?;
+    let json_str = engine
+        .render_pipeline_json(&repo_root, &slug)
+        .await
+        .map_err(|e| crate::error::HmError::PipelineRender(format!("{e:#}")))?;
+    let json = json_str.into_bytes();
     let graph = decode_plan_to_wire(&json)?;
     let parallelism = args.parallelism.unwrap_or_else(|| {
         std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get)
