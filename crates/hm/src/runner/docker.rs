@@ -96,6 +96,13 @@ async fn run_step(ctx: &RunContext, input: ExecutorInput) -> Result<StepResult> 
         plan.hit_tag.as_ref(),
         input.parent_snapshot.as_ref(),
     );
+    tracing::debug!(
+        step = %input.step.key,
+        %image,
+        parent_snapshot = ?input.parent_snapshot.as_ref().map(|s| &s.0),
+        hit_tag = ?plan.hit_tag.as_ref().map(|s| &s.0),
+        "resolved boot image"
+    );
     let container_name = sanitize_container_name(&input.run_id.to_string(), &input.step.key);
     let env_vec: Vec<String> = input.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
 

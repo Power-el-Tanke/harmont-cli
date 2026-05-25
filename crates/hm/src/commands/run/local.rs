@@ -100,7 +100,12 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
         .await
         .map_err(|e| crate::error::HmError::PipelineRender(format!("{e:#}")))?;
     let json = json_str.into_bytes();
+    tracing::debug!(
+        raw_json_len = json.len(),
+        "decoded pipeline JSON from DSL engine"
+    );
     let graph = decode_plan_to_wire(&json)?;
+    tracing::info!(node_count = graph.node_count(), "loaded pipeline graph");
     let parallelism = args.parallelism.unwrap_or_else(|| {
         std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get)
     });

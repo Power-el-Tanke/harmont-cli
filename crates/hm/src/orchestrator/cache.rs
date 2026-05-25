@@ -67,11 +67,13 @@ pub struct CacheOutcome {
 /// Returns an error if the Docker daemon `image_exists` call fails.
 pub async fn decide(docker: &DockerClient, step: &CommandStep) -> Result<CacheOutcome> {
     let Some(tag) = cache_image_tag(step) else {
+        tracing::debug!(step = %step.key, "cache: no image tag (policy=none or no key)");
         return Ok(CacheOutcome {
             decision: CacheDecision::MissNoCommit,
             stale_tags: vec![],
         });
     };
+    tracing::debug!(step = %step.key, %tag, "cache: checking image");
     if docker.image_exists(&tag).await? {
         Ok(CacheOutcome {
             decision: CacheDecision::Hit {

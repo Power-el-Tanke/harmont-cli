@@ -112,6 +112,17 @@ pub async fn run(
     let order = toposort(dag.graph(), None)
         .map_err(|c| anyhow::anyhow!("pipeline graph has a cycle at {:?}", c.node_id()))?;
 
+    for &n in &order {
+        let t = &dag[n];
+        tracing::debug!(
+            node_idx = n.index(),
+            key = %t.step.key,
+            label = ?t.step.label,
+            cache_policy = ?t.step.cache.as_ref().map(|c| &c.policy),
+            "topo node"
+        );
+    }
+
     let started_at = chrono::Utc::now();
     bus.emit(BuildEvent::BuildStart {
         run_id,
@@ -151,13 +162,24 @@ pub async fn run(
         let cancel = cancel.clone();
         let run_ctx = run_ctx.clone();
 
+        let step_key_for_log = transition.step.key.clone();
         let fut: StepFuture = async move {
             // Await all predecessors.
             let pred_outcomes: Vec<StepOutcome> =
                 join_all(preds.iter().map(|(_, f)| f.clone())).await;
 
+            tracing::debug!(
+                step = %step_key_for_log,
+                pred_count = pred_outcomes.len(),
+                pred_exit_codes = ?pred_outcomes.iter().map(|o| o.exit_code).collect::<Vec<_>>(),
+                pred_snapshots = ?pred_outcomes.iter().map(|o| o.snapshot.as_ref().map(|s| s.0.as_str())).collect::<Vec<_>>(),
+                cancelled = cancel.is_cancelled(),
+                "predecessors resolved"
+            );
+
             // Early exit if any predecessor failed or the build was cancelled.
             if cancel.is_cancelled() || pred_outcomes.iter().any(|o| o.exit_code != 0) {
+                tracing::info!(step = %step_key_for_log, "skipping: cancelled or predecessor failed");
                 return StepOutcome {
                     exit_code: 0,
                     snapshot: None,
@@ -289,6 +311,7 @@ async fn execute_step(
     // Decide cache outcome host-side.
     let outcome = cache::decide(&run_ctx.docker, &step_wire).await?;
     let decision = outcome.decision;
+    tracing::debug!(step = %step_key, ?decision, "cache decision");
 
     if let hm_plugin_protocol::CacheDecision::Hit { tag } = &decision {
         bus.emit(BuildEvent::StepCacheHit {
