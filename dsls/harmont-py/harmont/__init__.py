@@ -34,7 +34,7 @@ from ._envelope import dump_registry_json
 from ._step import Step, scratch, wait
 from ._target import clear_target_cache, target  # noqa: F401  clear_target_cache used by tests
 from ._toolchain import apt_base
-from ._typing import BaseImage, Dep, Target
+from ._typing import BaseImage, Target
 from .cache import (
     CacheCompose,
     CacheForever,
@@ -141,7 +141,6 @@ __all__ = [
     "CacheOnChange",
     "CachePolicy",
     "CacheTTL",
-    "Dep",
     "Pipeline",
     "RustProject",
     "Step",
