@@ -19,11 +19,19 @@
 </p>
 
 > [!WARNING]
-> Harmont is in **early alpha**. Today it's a powerful local task runner — think `make` or `just`, but with Python-defined pipelines and automatic Docker isolation. The cloud CI/CD platform at [harmont.dev](https://harmont.dev) is under active development. APIs will change. We'd love your feedback — [join the Discord](https://discord.gg/hm-dev).
+> Harmont is in **early alpha**. Today it's a powerful local task runner —
+> think `make` or `just`, but with Python-defined pipelines and automatic
+> Docker isolation. The cloud CI/CD platform at
+> [harmont.dev](https://harmont.dev) is under active development. APIs will
+> change. We'd love your feedback — [join the
+> Discord](https://discord.gg/hm-dev).
 
 ## What is Harmont?
 
-Harmont lets you define CI/CD pipelines in Python and run them instantly on your machine in Docker containers. No YAML. No waiting for CI. Each pipeline step runs in an isolated container with automatic caching, parallel execution, and reproducible builds.
+Harmont lets you define CI/CD pipelines in Typescript/Python and run them
+instantly on your machine in Docker containers. No YAML. No waiting for CI. No
+`commit -m "run ci" --allow-empty` spam. Each pipeline step runs in an isolated
+container with automatic caching, parallel execution, and reproducible builds.
 
 ```python
 import harmont as hm
@@ -52,54 +60,15 @@ curl -fsSL https://get.harmont.dev/install.sh | sh
 hm run ci
 ```
 
-Typed toolchains. Parallel steps. Push triggers. Real Python, not YAML — in two commands.
+<!-- TODO(marko): add asciinema -->
 
-## Highlights
+## Quick Start
 
-- **Python-native pipelines** — Full language, not YAML. Loops, conditionals, type checking, IDE autocomplete — it's just Python.
-- **Docker isolation** — Every chain runs in a fresh container. No "works on my machine" surprises.
-- **Parallel by default** — Forked chains run concurrently, bounded by `--parallelism N`.
-- **Snapshot caching** — Container state is snapshotted between steps. Re-runs skip work that hasn't changed.
-- **16 starter templates** — Rust, Go, Python, Java, C++, React, Next.js, and more in [`examples/`](./examples).
-- **Cloud-ready** — Same pipeline definition runs on [Harmont Cloud](https://harmont.dev) with zero changes (coming soon).
-
-## Install
-
-The recommended way to install Harmont:
+### 0. Download `hm`
 
 ```sh
 curl -fsSL https://get.harmont.dev/install.sh | sh
 ```
-
-**Prerequisites:** [Docker](https://docs.docker.com/get-docker/) and Python 3.11+.
-
-<details>
-<summary>Other installation methods</summary>
-
-### From crates.io
-
-```sh
-cargo install harmont-cli
-```
-
-### From source
-
-```sh
-git clone https://github.com/harmont-dev/harmont-cli
-cd harmont-cli
-cargo build --release
-install -m 0755 target/release/hm /usr/local/bin/hm   # or any dir on $PATH
-```
-
-</details>
-
-Verify:
-
-```sh
-hm --version
-```
-
-## Quick Start
 
 ### 1. Create a pipeline
 
@@ -124,32 +93,73 @@ hm run ci
 
 If the repo declares only one pipeline, the slug is optional — just `hm run`.
 
-Browse the [16 example projects](./examples) for idiomatic pipelines in Rust, Go, Python, Java, C++, React, Next.js, and more.
-
-## Where we're headed
-
-**Today:** Harmont is a local task runner with Docker isolation. Define pipelines in Python, run them on your machine, get reproducible results every time.
-
-**Tomorrow:** The same pipelines run on [Harmont Cloud](https://harmont.dev) — managed caching, secrets, team dashboards, and zero config changes. One definition, local and cloud.
-
-Want to shape the roadmap? [Join the Discord](https://discord.gg/hm-dev) and tell us what you're building.
+Browse the [16 example projects](./examples) for idiomatic pipelines in Rust,
+Go, Python, Java, C++, React, Next.js, and more.
 
 ## Community
 
 - **Discord** — [discord.gg/hm-dev](https://discord.gg/hm-dev)
 - **Slack** — [harmont-dev.slack.com](https://join.slack.com/t/harmont-dev/shared_invite/zt-3yt0tiv7r-qHm1O0p0nVh2GU~KKhUk9A)
 - **Website** — [harmont.dev](https://harmont.dev)
-- **GitHub Issues** — [harmont-dev/harmont-cli/issues](https://github.com/harmont-dev/harmont-cli/issues)
 
 ## Documentation
 
-For the full DSL reference, cloud commands, plugin authoring, and more — see the [docs](https://harmont.dev/docs).
+For the full pipeline reference, rich examples, and more — see the
+[docs](https://harmont.dev/docs).
 
 ## License
 
-Dual-licensed under either of
+The CLI is dual-licensed under either of
 
 - Apache License, Version 2.0 ([`LICENSE-APACHE`](LICENSE-APACHE))
 - MIT license ([`LICENSE-MIT`](LICENSE-MIT))
 
-at your option.
+## Motivation
+
+>
+> The reason [I](https://github.com/markovejnovic) started this project is
+> because every other CI/CD tool I've used in my life has sucked.
+>
+> I've worked at [Tesla](https://tesla.com), [Bun](https://bun.com),
+> [Mesa](https://mesa.dev) and never did I find a CI/CD system that was easy to
+> use and was also fast.
+>
+> At Tesla, we used [Jenkins](https://www.jenkins.io/) -- executors are finite,
+> so your builds are stuck in queues.
+>
+> At Bun, we used [Buildkite](https://buildkite.com/) -- large shell pipelines,
+> and really pricy service, and a TS SDK which is barely slightly better than
+> YAMLs.
+>
+> At Mesa, I migrated everyone to use [BuildBuddy](https://www.buildbuddy.io/)
+> and Buildkite. [Bazel](https://bazel.build/) is awesome, but the mental
+> overhead required to use it is way too high. We, sadly, ended up reverting
+> to plain Buildkite.
+>
+> I asked myself a couple questions:
+>
+> - **Why can't I run my CI/CD pipelines locally?**
+>   [act](https://github.com/nektos/act) is an awesome project, but it's
+>   surprisingly slow (not to the author's fault -- but rather GHA's model).
+> - **Why is my CI/CD system not just a `Makefile`?** Why is there no `hal9000
+>   "build my software"` command that is shared between CI/CD and pipelines.
+> - **Why can't I get preview environments for Haskell, Rust, Zig or
+>   whatever?** Vercel does an awesome job with `next.js` preview environments,
+>   but there is no good way to do this for arbitrary environments.
+> - **Why do we have to write YAMLs for our pipelines?** All my pipelines end
+>   up being [YAML documents from
+>   hell](https://ruuda.nl/2023/the-yaml-document-from-hell). I think we can do
+>   better.
+> - **Why do I need `artifacts-upload` and `artifacts-download` everywhere?**
+>   I don't need it locally, so why do I need it in CI/CD? In other words, why
+>   aren't our CI/CD systems stateful? If my build scripts can write an
+>   `openapi.json` in the local directory, why do I need some magic to transfer
+>   it between individual steps?
+
+Harmont's goal is to answer all these questions rhetorically -- none of these
+presuppositions are necessary. CI/CD _can_ be better, and that's what
+[Harmont](https://harmont.dev) is -- a CI/CD that sucks a lot less.
+
+I quit my job at Mesa to build Harmont. At the time of writing, I have 58 days
+on my H1B grace period, but I vehemently feel that CI/CD can be better -- and
+that's why I'm taking this risk.
