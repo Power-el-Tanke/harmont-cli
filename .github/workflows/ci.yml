@@ -137,7 +137,7 @@ jobs:
       - name: hm run ci
         env:
           HM_NONINTERACTIVE: '1'
-        run: ./target/debug/hm run ci
+        run: ./target/debug/hm run ci --no-bind-mount
 
       - name: Save harmont Docker images
         id: cache-manifest

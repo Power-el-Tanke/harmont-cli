@@ -116,4 +116,4 @@ jobs:
         working-directory: examples/${{ matrix.example }}
         env:
           HM_NONINTERACTIVE: '1'
-        run: ${{ github.workspace }}/bin/hm run ci
+        run: ${{ github.workspace }}/bin/hm run ci --no-bind-mount
