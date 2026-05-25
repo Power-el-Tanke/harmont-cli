@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 use crate::orchestrator::archive::ArchiveStore;
 use crate::orchestrator::docker_client::DockerClient;
 use crate::orchestrator::events::EventBus;
+use crate::orchestrator::workspace::WorkspaceManager;
 
 pub mod docker;
 
@@ -36,6 +37,7 @@ pub struct RunContext {
     pub event_bus: Arc<EventBus>,
     pub archives: Arc<ArchiveStore>,
     pub cancel: CancellationToken,
+    pub workspace: Arc<WorkspaceManager>,
 }
 
 // ---------------------------------------------------------------------------

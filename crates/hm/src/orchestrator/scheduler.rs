@@ -31,7 +31,7 @@ use daggy::petgraph::algo::toposort;
 use daggy::{Dag, NodeIndex, Walker};
 use futures::future::{BoxFuture, FutureExt, join_all};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use hm_plugin_protocol::{
     ArchiveId, BuildEvent, ExecutorInput, PlanSummary, SnapshotRef, StepResult,
 };
@@ -41,12 +41,12 @@ use hm_pipeline_ir::{EdgeKind, PipelineGraph, Transition};
 
 use crate::error::HmError;
 use crate::orchestrator::docker_client::DockerClient;
-use crate::orchestrator::source::build_archive_bytes;
 use crate::runner::{OutputRenderer, RunContext, RunnerRegistry};
 
 use super::archive::ArchiveStore;
 use super::cache;
 use super::events::EventBus;
+use super::workspace;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
@@ -72,6 +72,7 @@ pub async fn run(
     parallelism: usize,
     runner_registry: Arc<RunnerRegistry>,
     renderer: Box<dyn OutputRenderer>,
+    bind_mount: bool,
 ) -> Result<i32> {
     // Set up per-run state.
     let bus = EventBus::new();
@@ -87,15 +88,22 @@ pub async fn run(
         .map_err(|e| HmError::Docker(format!("daemon ping failed: {e}")))?;
     let run_id = Uuid::new_v4();
 
-    // Build the source archive once.
-    let archive_bytes = build_archive_bytes(&repo_root).context("build source archive")?;
-    let archive_id = archives.register(archive_bytes);
+    // Build workspace: either archive-based or bind-mount.
+    let ws = Arc::new(if bind_mount {
+        workspace::WorkspaceManager::bind_mount(repo_root)?
+    } else {
+        workspace::WorkspaceManager::archive(&repo_root, archives.clone())?
+    });
+
+    // archive_id: use workspace's ID or a nil placeholder for bind-mount mode
+    let archive_id = ws.archive_id().unwrap_or(ArchiveId(Uuid::nil()));
 
     let run_ctx = RunContext {
         docker: docker.clone(),
         event_bus: bus.clone(),
         archives: archives.clone(),
         cancel: cancel.clone(),
+        workspace: ws.clone(),
     };
 
     let parallelism = parallelism.max(1);
@@ -332,6 +340,13 @@ async fn execute_step(
         });
     }
 
+    // Resolve workspace host path for bind-mount mode.
+    let workspace_host_path = if run_ctx.workspace.is_bind_mount() {
+        Some(run_ctx.workspace.clone_for_chain(chain_id)?)
+    } else {
+        None
+    };
+
     let input = ExecutorInput {
         step: step_wire,
         workspace_archive_id: archive_id,
@@ -341,7 +356,7 @@ async fn execute_step(
         step_id,
         cache_lookup: decision,
         parent_snapshot,
-        workspace_host_path: None, // Will be wired in Task 6
+        workspace_host_path,
     };
 
     // Resolve the runner by name. Steps that didn't declare a runner
