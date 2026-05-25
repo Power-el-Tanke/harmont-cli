@@ -11,8 +11,9 @@ use anyhow::{Context, Result};
 use bollard::Docker;
 use bollard::container::{
     Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
-    StopContainerOptions,
+    StopContainerOptions, UploadToContainerOptions,
 };
+use bytes::Bytes;
 use bollard::exec::{CreateExecOptions, StartExecResults};
 use bollard::image::{
     CommitContainerOptions, CreateImageOptions, ImportImageOptions, ListImagesOptions,
@@ -315,6 +316,28 @@ impl DockerClient {
             .await
             .map_err(|e| HmError::Docker(format!("inspect_exec: {e}")))?;
         Ok(inspect.exit_code.unwrap_or(0))
+    }
+
+    /// Upload a tar archive directly into a running container at `path`.
+    ///
+    /// Uses Docker's `PUT /containers/{id}/archive` endpoint — no shell
+    /// process or stdin pipe needed. The archive may be plain tar or
+    /// gzip-compressed; Docker detects the format automatically.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HmError::Docker`] if `upload_to_container` fails
+    /// (container not running, path invalid, daemon I/O failure).
+    pub async fn upload_archive(&self, container_id: &str, path: &str, tar: &[u8]) -> Result<()> {
+        let opts = UploadToContainerOptions {
+            path: path.to_string(),
+            ..Default::default()
+        };
+        self.inner
+            .upload_to_container(container_id, Some(opts), Bytes::copy_from_slice(tar))
+            .await
+            .map_err(|e| HmError::Docker(format!("upload_to_container: {e}")))?;
+        Ok(())
     }
 
     /// Commit a running container to an image tag. Returns the tag, which
