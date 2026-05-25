@@ -1,16 +1,33 @@
-import { pipeline, push, pullRequest, type PipelineDefinition } from "harmont";
+import {
+  pipeline,
+  push,
+  pullRequest,
+  aptBase,
+  type PipelineDefinition,
+} from "harmont";
 import { rust, py } from "harmont/toolchains";
 
-const rustProject = rust({ path: "." });
-const pyProject = py.uv({ path: "dsls/harmont-py" });
+const base = aptBase({
+  packages: [
+    "curl",
+    "ca-certificates",
+    "build-essential",
+    "pkg-config",
+    "libssl-dev",
+    "python3",
+    "python3-venv",
+  ],
+});
+
+const rustProject = rust.project({ path: ".", base });
+const pyProject = py.uv({ path: "dsls/harmont-py", base });
 
 const pipelines: PipelineDefinition[] = [
   {
     slug: "ci",
     triggers: [push({ branch: "main" }), pullRequest({ branches: ["main"] })],
     pipeline: pipeline(
-      rustProject.build(),
-      rustProject.install().sh(`. $HOME/.cargo/env && cd . && cargo test --lib`, { label: ":rust: test" }),
+      rustProject.test({ flags: ["--lib"] }),
       rustProject.clippy(),
       rustProject.fmt(),
       pyProject.lint(),

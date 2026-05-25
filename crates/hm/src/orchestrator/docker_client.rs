@@ -15,7 +15,8 @@ use bollard::container::{
 };
 use bollard::exec::{CreateExecOptions, StartExecResults};
 use bollard::image::{
-    CommitContainerOptions, CreateImageOptions, ListImagesOptions, RemoveImageOptions,
+    CommitContainerOptions, CreateImageOptions, ImportImageOptions, ListImagesOptions,
+    RemoveImageOptions,
 };
 use futures_util::StreamExt;
 use tokio::io::AsyncWrite;
@@ -341,6 +342,91 @@ impl DockerClient {
             .await
             .map_err(|e| HmError::Docker(format!("remove_image '{image}': {e}")))?;
         Ok(())
+    }
+
+    /// Export a Docker image to a tar file on disk.
+    ///
+    /// Streams the image layer data from the daemon and writes it to
+    /// `dest` using a buffered writer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HmError::Docker`] if the daemon's export stream fails,
+    /// or an I/O error if writing to `dest` fails.
+    pub async fn export_image(&self, image: &str, dest: &std::path::Path) -> Result<()> {
+        use tokio::io::AsyncWriteExt;
+
+        let mut stream = self.inner.export_image(image);
+        let file = tokio::fs::File::create(dest)
+            .await
+            .with_context(|| format!("create export file '{}'", dest.display()))?;
+        let mut writer = tokio::io::BufWriter::new(file);
+        while let Some(chunk) = stream.next().await {
+            let bytes =
+                chunk.map_err(|e| HmError::Docker(format!("export_image '{image}': {e}")))?;
+            writer
+                .write_all(&bytes)
+                .await
+                .with_context(|| format!("write export data to '{}'", dest.display()))?;
+        }
+        writer
+            .flush()
+            .await
+            .with_context(|| format!("flush export file '{}'", dest.display()))?;
+        Ok(())
+    }
+
+    /// Import a Docker image from a tar file on disk.
+    ///
+    /// Reads the full tar file into memory and loads it into the
+    /// daemon via the image import API.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HmError::Docker`] if the daemon rejects the import
+    /// stream, or an I/O error if reading `src` fails.
+    pub async fn import_image(&self, src: &std::path::Path) -> Result<()> {
+        let body = tokio::fs::read(src)
+            .await
+            .with_context(|| format!("read import file '{}'", src.display()))?;
+        let mut stream =
+            self.inner
+                .import_image(ImportImageOptions { quiet: true }, body.into(), None);
+        while let Some(item) = stream.next().await {
+            item.map_err(|e| HmError::Docker(format!("import_image '{}': {e}", src.display())))?;
+        }
+        Ok(())
+    }
+
+    /// List all image tags whose name starts with `prefix`.
+    ///
+    /// Uses the Docker `reference` filter with a glob pattern and then
+    /// post-filters the returned `repo_tags` to those that truly begin
+    /// with `prefix`. The result is sorted lexicographically.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HmError::Docker`] if the `list_images` API call
+    /// fails (daemon unreachable, malformed filter).
+    pub async fn list_images_by_prefix(&self, prefix: &str) -> Result<Vec<String>> {
+        let mut filters = HashMap::new();
+        filters.insert("reference".to_string(), vec![format!("{prefix}*")]);
+        let images = self
+            .inner
+            .list_images(Some(ListImagesOptions {
+                filters,
+                ..Default::default()
+            }))
+            .await
+            .map_err(|e| HmError::Docker(format!("list_images: {e}")))?;
+        let mut tags: Vec<String> = images
+            .iter()
+            .flat_map(|img| &img.repo_tags)
+            .filter(|tag| tag.starts_with(prefix))
+            .cloned()
+            .collect();
+        tags.sort();
+        Ok(tags)
     }
 
     pub async fn stop_remove(&self, container_id: &str) {
