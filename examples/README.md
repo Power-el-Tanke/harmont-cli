@@ -16,9 +16,6 @@ Minimal idiomatic starter projects, each wired up to a Harmont CI pipeline. Ever
 | [c](./c) | CMake + CTest + clang-format | `hm.cmake(lang="c")` |
 | [cpp](./cpp) | CMake + CTest + clang-format | `hm.cmake(lang="cpp")` |
 | [csharp](./csharp) | dotnet + xunit + dotnet-format | `hm.dotnet(channel="8.0")` |
-| [ruby](./ruby) | Bundler + RSpec + Rubocop | `hm.ruby(...)` |
-| [perl](./perl) | cpanm + Test::More + Perl::Critic | `hm.perl(...)` |
-| [php-laravel](./php-laravel) | Composer + Laravel test + PHPStan | `hm.composer(laravel=True)` |
 | [ocaml](./ocaml) | opam + Dune + Alcotest | `hm.ocaml(compiler="5.1.1")` |
 | [zig](./zig) | zig build/test/fmt | `hm.zig(version="0.13.0")` |
 
