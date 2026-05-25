@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use tracing::info;
 
 use super::manifest::{self, Manifest};
 use crate::orchestrator::docker_client::DockerClient;
@@ -10,14 +11,13 @@ use crate::orchestrator::docker_client::DockerClient;
 /// any known image.
 ///
 /// Prints the manifest's content hash to stdout so CI runners (e.g.
-/// GitHub Actions) can capture it for use as a cache key. Progress
-/// messages go to stderr.
+/// GitHub Actions) can capture it for use as a cache key.
 ///
 /// # Errors
 ///
 /// Returns an error if the Docker daemon is unreachable, an image
 /// export fails, or any filesystem operation on `dir` fails.
-#[allow(clippy::print_stdout, clippy::print_stderr)]
+#[allow(clippy::print_stdout)]
 pub async fn handle_save(dir: &Path) -> Result<i32> {
     let docker = DockerClient::connect()?;
     docker.ping().await?;
@@ -35,9 +35,9 @@ pub async fn handle_save(dir: &Path) -> Result<i32> {
         let tar_path = dir.join(&filename);
 
         if tar_path.exists() {
-            eprintln!("skip (exists): {filename}");
+            info!("skip (exists): {filename}");
         } else {
-            eprintln!("save: {tag} → {filename}");
+            info!("save: {tag} → {filename}");
             docker.export_image(tag, &tar_path).await?;
         }
 
@@ -49,13 +49,12 @@ pub async fn handle_save(dir: &Path) -> Result<i32> {
         .await
         .context("write manifest.json")?;
 
-    // Prune stale tars not in current manifest
     let mut entries = tokio::fs::read_dir(dir).await?;
     while let Some(entry) = entries.next_entry().await? {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
         if name_str.ends_with(".tar") && !manifest.images.contains_key(name_str.as_ref()) {
-            eprintln!("prune stale: {name_str}");
+            info!("prune stale: {name_str}");
             tokio::fs::remove_file(entry.path()).await.ok();
         }
     }

@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use tracing::{info, warn};
 
 use super::manifest;
 use crate::orchestrator::docker_client::DockerClient;
@@ -9,7 +10,7 @@ use crate::orchestrator::docker_client::DockerClient;
 ///
 /// Each `.tar` file is mapped back to its `harmont-local/*` tag via
 /// [`manifest::tag_from_tar_name`]. Images that already exist in the
-/// local Docker daemon are skipped. All progress goes to stderr.
+/// local Docker daemon are skipped.
 ///
 /// # Errors
 ///
@@ -21,6 +22,7 @@ pub async fn handle_restore(dir: &Path) -> Result<i32> {
     docker.ping().await?;
 
     if !dir.exists() {
+        info!("cache dir does not exist, nothing to restore");
         eprintln!("restored 0/0 images (cache dir missing)");
         return Ok(0);
     }
@@ -46,21 +48,21 @@ pub async fn handle_restore(dir: &Path) -> Result<i32> {
 
     for (filename, tar_path) in &tars {
         let Some(tag) = manifest::tag_from_tar_name(filename) else {
-            eprintln!("skip unrecognized tar: {filename}");
+            warn!("skip unrecognized tar: {filename}");
             continue;
         };
 
         if docker.image_exists(&tag).await? {
-            eprintln!("skip (present): {tag}");
+            info!("skip (present): {tag}");
             skipped += 1;
             continue;
         }
 
-        eprintln!("restore: {filename} → {tag}");
+        info!("restore: {filename} → {tag}");
         match docker.import_image(tar_path).await {
             Ok(()) => restored += 1,
             Err(e) => {
-                eprintln!("warning: failed to load {filename}: {e}");
+                warn!("failed to load {filename}: {e}");
             }
         }
     }
