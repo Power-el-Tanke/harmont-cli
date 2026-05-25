@@ -16,6 +16,7 @@ use hm_plugin_protocol::{
 use uuid::Uuid;
 
 use super::{RunContext, StepRunner};
+use crate::orchestrator::docker_client::ContainerOpts;
 use crate::orchestrator::events::EventBus;
 
 // ---------------------------------------------------------------------------
@@ -120,7 +121,13 @@ async fn run_step(ctx: &RunContext, input: ExecutorInput) -> Result<StepResult> 
 
     let cid = ctx
         .docker
-        .start_long_lived(&image, &env_vec, &input.workdir, &container_name)
+        .start_long_lived(ContainerOpts {
+            image: image.clone(),
+            env: env_vec.clone(),
+            workdir: input.workdir.clone(),
+            name: container_name,
+            binds: vec![], // archive mode: no bind mounts for now
+        })
         .await
         .context("docker start failed")?;
 

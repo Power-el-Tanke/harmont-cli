@@ -18,10 +18,23 @@ use bollard::image::{
     CommitContainerOptions, CreateImageOptions, ImportImageOptions, ListImagesOptions,
     RemoveImageOptions,
 };
+use bollard::models::HostConfig;
 use futures_util::StreamExt;
 use tokio::io::AsyncWrite;
 
 use crate::error::HmError;
+
+/// Options for creating a long-lived container.
+#[derive(Debug, Clone)]
+pub struct ContainerOpts {
+    pub image: String,
+    pub env: Vec<String>,
+    pub workdir: String,
+    pub name: String,
+    /// Bind mounts in Docker format: `"/host/path:/container/path:rw"`.
+    /// Empty vec means no bind mounts.
+    pub binds: Vec<String>,
+}
 
 #[derive(Debug, Clone)]
 pub struct DockerClient {
@@ -129,25 +142,28 @@ impl DockerClient {
     /// Returns [`HmError::Docker`] if the container cannot be created
     /// (image not pulled, name conflict, OCI runtime failure) or if
     /// `start_container` rejects the create.
-    pub async fn start_long_lived(
-        &self,
-        image: &str,
-        env: &[String],
-        workdir: &str,
-        name: &str,
-    ) -> Result<String> {
+    pub async fn start_long_lived(&self, opts: ContainerOpts) -> Result<String> {
+        let host_config = if opts.binds.is_empty() {
+            None
+        } else {
+            Some(HostConfig {
+                binds: Some(opts.binds),
+                ..Default::default()
+            })
+        };
         let cfg = Config {
-            image: Some(image.to_string()),
+            image: Some(opts.image),
             cmd: Some(vec!["sh".into(), "-c".into(), "sleep infinity".into()]),
-            env: Some(env.to_vec()),
-            working_dir: Some(workdir.to_string()),
+            env: Some(opts.env),
+            working_dir: Some(opts.workdir),
+            host_config,
             ..Default::default()
         };
         let create = self
             .inner
             .create_container(
                 Some(CreateContainerOptions {
-                    name,
+                    name: opts.name.as_str(),
                     ..Default::default()
                 }),
                 cfg,
@@ -529,5 +545,24 @@ mod smoke {
             .await
             .unwrap();
         assert!(tags.is_empty());
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn container_opts_binds_are_set_correctly() {
+        let opts = ContainerOpts {
+            image: "alpine:latest".into(),
+            env: vec!["FOO=bar".into()],
+            workdir: "/workspace".into(),
+            name: "test".into(),
+            binds: vec!["/tmp/src:/workspace:rw".into()],
+        };
+        assert_eq!(opts.binds.len(), 1);
+        assert!(opts.binds[0].contains("/workspace:rw"));
     }
 }
