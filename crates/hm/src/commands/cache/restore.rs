@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use tracing::{info, warn};
 
 use super::manifest;
 use crate::orchestrator::docker_client::DockerClient;
@@ -10,24 +9,22 @@ use crate::orchestrator::docker_client::DockerClient;
 ///
 /// Each `.tar` file is mapped back to its `harmont-local/*` tag via
 /// [`manifest::tag_from_tar_name`]. Images that already exist in the
-/// local Docker daemon are skipped.
+/// local Docker daemon are skipped. All progress goes to stderr.
 ///
 /// # Errors
 ///
 /// Returns an error if the Docker daemon is unreachable or a filesystem
 /// operation on `dir` fails.
-#[allow(clippy::print_stderr, reason = "status summary must go to stderr for CI visibility")]
+#[allow(clippy::print_stderr)]
 pub async fn handle_restore(dir: &Path) -> Result<i32> {
     let docker = DockerClient::connect()?;
     docker.ping().await?;
 
     if !dir.exists() {
-        info!("cache dir does not exist, nothing to restore");
         eprintln!("restored 0/0 images (cache dir missing)");
         return Ok(0);
     }
 
-    // Scan for .tar files
     let mut tars = Vec::new();
     let mut entries = tokio::fs::read_dir(dir)
         .await
@@ -49,21 +46,21 @@ pub async fn handle_restore(dir: &Path) -> Result<i32> {
 
     for (filename, tar_path) in &tars {
         let Some(tag) = manifest::tag_from_tar_name(filename) else {
-            warn!("skip unrecognized tar: {filename}");
+            eprintln!("skip unrecognized tar: {filename}");
             continue;
         };
 
         if docker.image_exists(&tag).await? {
-            info!("skip (present): {tag}");
+            eprintln!("skip (present): {tag}");
             skipped += 1;
             continue;
         }
 
-        info!("restore: {filename} → {tag}");
+        eprintln!("restore: {filename} → {tag}");
         match docker.import_image(tar_path).await {
             Ok(()) => restored += 1,
             Err(e) => {
-                warn!("failed to load {filename}: {e}");
+                eprintln!("warning: failed to load {filename}: {e}");
             }
         }
     }

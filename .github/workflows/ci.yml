@@ -131,7 +131,9 @@ jobs:
       - name: Save harmont Docker images
         id: cache-manifest
         if: always()
-        run: echo "key=harmont-v1-$(./target/debug/hm cache save .harmont-cache/)" >> "$GITHUB_OUTPUT"
+        run: |
+          hash=$(./target/debug/hm cache save .harmont-cache/)
+          echo "key=harmont-v1-${hash}" >> "$GITHUB_OUTPUT"
 
       - name: Upload Docker cache
         if: always()
