@@ -27,13 +27,23 @@ Harmont lets you define CI/CD pipelines in Python and run them instantly on your
 
 ```python
 import harmont as hm
+from harmont.python import PythonToolchain
 
-@hm.pipeline("ci")
-def ci() -> hm.Step:
+@hm.target()
+def project() -> PythonToolchain:
+    return hm.python(path=".")
+
+@hm.pipeline(
+    "ci",
+    default_image="ubuntu:24.04",
+    triggers=[hm.push(branch="main")],
+)
+def ci(project: hm.Target[PythonToolchain]) -> tuple[hm.Step, ...]:
     return (
-        hm.sh("cargo build", label="build")
-          .sh("cargo test", label="test")
-          .sh("cargo clippy -- -D warnings", label="lint")
+        project.test(),
+        project.lint(),
+        project.fmt(),
+        project.typecheck(),
     )
 ```
 
@@ -42,7 +52,7 @@ curl -fsSL https://get.harmont.dev/install.sh | sh
 hm run ci
 ```
 
-That's it. Pipeline defined in Python, executed in Docker, in two commands.
+Typed toolchains. Parallel steps. Push triggers. Real Python, not YAML — in two commands.
 
 ## Highlights
 
