@@ -51,7 +51,7 @@ Walks `.harmont/*.py`, resolves the slug, renders to IR, schedules chains across
 - **Snapshot caching** — container snapshots reuse across runs, skipping redundant work
 - **Automatic parallelism** — forked chains run concurrently
 - **Cloud parity** — `hm cloud run` executes the same definition on Harmont Cloud
-- **Plugin system** — extend with custom executors, formatters, and lifecycle hooks via Extism/WASM
+- **Plugin system** — extend with custom executors, formatters, and lifecycle hooks
 - **Two DSLs** — Python and TypeScript, both compile to the same IR
 
 ## Toolchain helpers
@@ -59,17 +59,17 @@ Walks `.harmont/*.py`, resolves the slug, renders to IR, schedules chains across
 Built-in helpers eliminate boilerplate for common language toolchains:
 
 ```python
-rust    = hm.rust("1.80.0")      # build, test, clippy, fmt, doc
-go      = hm.go("1.22.0")        # build, test, vet, fmt
-python  = hm.python()            # test, lint, fmt, typecheck (uv)
-npm     = hm.npm()               # install, run, test, lint, fmt
-gradle  = hm.gradle(jdk=21)      # build, test, lint (Java/Kotlin)
-dotnet  = hm.dotnet()            # build, test, fmt (C#)
-cmake   = hm.cmake(lang="cpp")   # configure, build, test, fmt
-zig     = hm.zig("0.13.0")       # build, test, fmt
-haskell = hm.haskell("9.6.7")    # build, test, lint, fmt
-ocaml   = hm.ocaml()             # build, test, fmt
-elm     = hm.elm()               # make, test, review, fmt
+rust    = hm.rust.toolchain(version="1.80.0")  # build, test, clippy, fmt, doc
+go      = hm.go(version="1.22.0")              # build, test, vet, fmt
+python  = hm.python()                          # test, lint, fmt, typecheck (uv)
+npm     = hm.npm()                             # install, run, test, lint, fmt
+gradle  = hm.gradle(jdk="21")                  # build, test, lint (Java/Kotlin)
+dotnet  = hm.dotnet()                          # build, test, fmt (C#)
+cmake   = hm.cmake(lang="cpp")                 # configure, build, test, fmt
+zig     = hm.zig(version="0.13.0")             # build, test, fmt
+haskell = hm.haskell(ghc="9.6.7")              # build, test, lint, fmt
+ocaml   = hm.ocaml()                           # build, test, fmt
+elm     = hm.elm()                              # make, test, review, fmt
 ```
 
 Each handles installation, dependency caching, and smart defaults. Or use `hm.sh()` for anything custom.
@@ -113,6 +113,7 @@ hm run --help                      # full flag reference
 | `hm cloud pipeline list` / `show <slug>` | List or inspect pipelines |
 | `hm cloud build list -p <slug>` | List builds |
 | `hm cloud build show` / `watch` / `cancel` | Inspect or control a build |
+| `hm cloud job list -p <slug> -b <n>` / `job show` | Inspect jobs in a build |
 | `hm cloud run` | Submit a build to the cloud |
 
 <details>
@@ -182,41 +183,34 @@ Dependencies resolved by parameter name. `Target[T]` and `Annotated[Step, BaseIm
 
 </details>
 
-## Plugin authoring
+## Plugins
 
-`hm` is plugin-driven via [Extism](https://extism.org). Start a `cdylib` crate:
-
-```sh
-cargo new --lib my-plugin && cd my-plugin
-cargo add --git https://github.com/harmont-dev/harmont-cli hm-plugin-sdk
-```
-
-Implement `StepExecutor`, `SubcommandPlugin`, `LifecycleHook`, or `OutputFormatter`. Build to WASM and install:
+`hm` uses a plugin architecture internally. The plugin protocol is defined in `crates/hm-plugin-protocol/`. See the built-in Docker executor and cloud client for examples.
 
 ```sh
-cargo build --target wasm32-wasip1 --release
-hm plugin install ./target/wasm32-wasip1/release/my_plugin.wasm
+hm plugin list                     # show installed plugins
 ```
 
 ## Build from source
 
 ```sh
 git clone https://github.com/harmont-dev/harmont-cli && cd harmont-cli
+npm ci --prefix dsls/harmont-ts     # esbuild, required by build
 cargo build
 cargo test                          # local_* tests need Docker
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-OpenAPI client generated at build time from vendored `openapi.json` via [progenitor](https://github.com/oxidecomputer/progenitor).
-
 ## Repository layout
 
 | Path | What |
 |---|---|
 | `crates/hm/` | CLI binary |
+| `crates/hm-dsl-engine/` | Python/TypeScript DSL runtime |
 | `crates/hm-pipeline-ir/` | Pipeline IR schema (serde structs) |
-| `crates/hm-plugin-protocol/`, `hm-plugin-sdk/` | Plugin API for third-party authors |
+| `crates/hm-util/` | Shared OS/filesystem utilities |
+| `crates/hm-plugin-protocol/` | Plugin wire types |
 | `crates/hm-plugin-cloud/` | Bundled cloud client plugin |
 | `dsls/harmont-py/` | Python DSL |
 | `dsls/harmont-ts/` | TypeScript DSL |
