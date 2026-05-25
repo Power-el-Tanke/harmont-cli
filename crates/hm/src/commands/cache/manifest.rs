@@ -54,6 +54,7 @@ pub fn tag_from_tar_name(filename: &str) -> Option<String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, reason = "unit tests")]
 mod tests {
     use super::*;
 
