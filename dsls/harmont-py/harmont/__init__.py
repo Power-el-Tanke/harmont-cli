@@ -56,7 +56,6 @@ from .ocaml import ocaml
 from .pipeline import pipeline as _pipeline_factory
 from .pipeline import pipeline_to_json
 from .python import python
-from .ruby import ruby
 from .rust import RustProject, rust
 from .triggers import pull_request, push, schedule
 from .triggers import pull_request as pr
@@ -171,7 +170,6 @@ __all__ = [
     "push",
     "py",
     "python",
-    "ruby",
     "rust",
     "schedule",
     "scratch",
