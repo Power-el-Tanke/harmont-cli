@@ -11,7 +11,7 @@
   <a href="https://crates.io/crates/harmont-cli"><img src="https://img.shields.io/crates/v/harmont-cli?logo=rust" alt="crates.io"></a>
   <a href="https://discord.gg/hm-dev"><img src="https://img.shields.io/discord/1503184719578136576?logo=discord&label=discord" alt="Discord"></a>
   <a href="https://join.slack.com/t/harmont-dev/shared_invite/zt-3yt0tiv7r-qHm1O0p0nVh2GU~KKhUk9A"><img src="https://img.shields.io/badge/slack-join-brightgreen?logo=slack" alt="Slack"></a>
-  <a href="#license"><img src="https://img.shields.io/crates/l/harmont-cli.svg" alt="License"></a>
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%2FApache--2.0-blue" alt="License"></a>
 </p>
 
 <p align="center">
@@ -50,7 +50,7 @@ That's it. Pipeline defined in Python, executed in Docker, in two commands.
 - **Docker isolation** — Every chain runs in a fresh container. No "works on my machine" surprises.
 - **Parallel by default** — Forked chains run concurrently, bounded by `--parallelism N`.
 - **Snapshot caching** — Container state is snapshotted between steps. Re-runs skip work that hasn't changed.
-- **18 starter templates** — Rust, Go, Python, Java, C++, React, Next.js, and more in [`examples/`](./examples).
+- **16 starter templates** — Rust, Go, Python, Java, C++, React, Next.js, and more in [`examples/`](./examples).
 - **Cloud-ready** — Same pipeline definition runs on [Harmont Cloud](https://harmont.dev) with zero changes (coming soon).
 
 ## Install
@@ -121,7 +121,7 @@ hm run ci
 
 If the repo declares only one pipeline, the slug is optional — just `hm run`.
 
-Browse the [18 example projects](./examples) for idiomatic pipelines in Rust, Go, Python, Java, C++, React, Next.js, and more.
+Browse the [16 example projects](./examples) for idiomatic pipelines in Rust, Go, Python, Java, C++, React, Next.js, and more.
 
 ## Where we're headed
 
