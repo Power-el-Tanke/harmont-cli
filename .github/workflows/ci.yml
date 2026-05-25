@@ -118,6 +118,11 @@ jobs:
       - name: Build hm
         run: cargo build -p harmont-cli
 
+      - name: Install harmont-py into system Python
+        run: |
+          sudo /usr/bin/python3 -m pip install --break-system-packages dsls/harmont-py
+          /usr/bin/python3 -c "import harmont; print('harmont', harmont.__file__)"
+
       - name: Restore harmont Docker cache
         uses: actions/cache/restore@v4
         with:
