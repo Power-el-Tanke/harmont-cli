@@ -113,17 +113,15 @@ jobs:
           /usr/bin/python3 -c "import harmont; print('harmont', harmont.__file__)"
 
       - name: Restore harmont Docker cache
-        id: docker-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
-          path: /tmp/harmont-docker-cache.tar
-          key: harmont-docker-${{ hashFiles('Cargo.lock') }}
+          path: .harmont-cache/
+          key: harmont-v1-will-never-match
           restore-keys: |
-            harmont-docker-
+            harmont-v1-
 
       - name: Load cached Docker images
-        if: steps.docker-cache.outputs.cache-hit == 'true'
-        run: docker load -i /tmp/harmont-docker-cache.tar || true
+        run: ./target/debug/hm cache restore .harmont-cache/
 
       - name: hm run ci
         env:
@@ -131,12 +129,16 @@ jobs:
         run: ./target/debug/hm run ci
 
       - name: Save harmont Docker images
+        id: cache-manifest
         if: always()
-        run: |
-          images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep '^harmont-local/' || true)
-          if [ -n "$images" ]; then
-            docker save $images -o /tmp/harmont-docker-cache.tar
-          fi
+        run: echo "key=harmont-v1-$(./target/debug/hm cache save .harmont-cache/)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Docker cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .harmont-cache/
+          key: ${{ steps.cache-manifest.outputs.key }}
 
   integration:
     name: docker-gated integration test
