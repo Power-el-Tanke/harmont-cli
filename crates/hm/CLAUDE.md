@@ -36,7 +36,6 @@ organization state lives in `~/.harmont/cloud-state.json`.
 ## Feature flags
 
 - `py-env` — test-only: assumes `harmont` Python package is on PATH
-- `docker-integration` — enables Docker-based integration tests
 
 ## DSL engine
 

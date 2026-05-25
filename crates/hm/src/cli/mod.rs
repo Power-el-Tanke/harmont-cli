@@ -1,9 +1,7 @@
-pub mod dev;
 pub mod plugin;
 pub mod run;
 pub mod version;
 
-pub use dev::{DevCommand, DevDownArgs, DevExecArgs, DevLogsArgs, DevPortOfArgs, DevUpArgs};
 pub use plugin::PluginCommand;
 pub use run::RunArgs;
 
@@ -54,12 +52,6 @@ pub enum Command {
     #[command(subcommand)]
     Plugin(PluginCommand),
 
-    /// Manage local long-lived deployments (dev databases, dev API
-    /// servers, dev webapps). Reads `.harmont/*.py` for
-    /// `@hm.deploy`-decorated functions and brings them up via Docker.
-    #[command(subcommand)]
-    Dev(DevCommand),
-
     /// Manage harmont Docker image cache.
     #[command(subcommand)]
     Cache(CacheCommand),
@@ -97,18 +89,19 @@ pub struct CacheRestoreArgs {
 pub async fn dispatch(command: Command, ctx: RunContext) -> Result<i32> {
     match command {
         Command::Run(args) => crate::commands::run::handle(args, ctx).await,
-        Command::Dev(cmd) => dev::dispatch(cmd, ctx).await,
         Command::Cache(cmd) => match cmd {
             CacheCommand::Save(args) => crate::commands::cache::handle_save(&args.dir).await,
             CacheCommand::Restore(args) => crate::commands::cache::handle_restore(&args.dir).await,
         },
         Command::Version => version::run().await.map(|()| 0),
         Command::Plugin(cmd) => plugin::run(cmd).await.map(|()| 0),
-        Command::Cloud(cmd) => {
-            let env: std::collections::BTreeMap<String, String> = std::env::vars()
-                .filter(|(k, _)| k.starts_with("HARMONT_") || k.starts_with("HM_"))
-                .collect();
-            hm_plugin_cloud::cli::dispatch_command(cmd, env).await
+        Command::Cloud(_cmd) => {
+            tracing::info!(
+                "Harmont Cloud is not yet available.\n\
+                 \n\
+                 Sign up for the waitlist at https://harmont.dev to get early access."
+            );
+            Ok(0)
         }
     }
 }
