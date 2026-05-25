@@ -44,6 +44,7 @@ fn executor_input_round_trip() {
         step_id: Uuid::nil(),
         cache_lookup: CacheDecision::MissNoCommit,
         parent_snapshot: None,
+        workspace_host_path: None,
     };
     rt(&inp);
 }

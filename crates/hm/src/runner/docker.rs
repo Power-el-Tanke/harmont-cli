@@ -27,6 +27,7 @@ use crate::orchestrator::events::EventBus;
 /// manifest to clean up files from a previous extract, then unpacks the new
 /// archive and writes a fresh manifest. Files created by the step command
 /// (e.g. `node_modules`, build artifacts) are not tracked and survive untouched.
+#[allow(dead_code)]
 const EXTRACT_CMD_SH: &str = r#"set -e
 mkdir -p "$WORKDIR"
 cd "$WORKDIR"
@@ -119,6 +120,11 @@ async fn run_step(ctx: &RunContext, input: ExecutorInput) -> Result<StepResult> 
         }
     }
 
+    let binds = input.workspace_host_path.as_ref().map_or_else(
+        Vec::new,
+        |host_path| vec![format!("{}:{}:rw", host_path.display(), input.workdir)],
+    );
+
     let cid = ctx
         .docker
         .start_long_lived(ContainerOpts {
@@ -126,7 +132,7 @@ async fn run_step(ctx: &RunContext, input: ExecutorInput) -> Result<StepResult> 
             env: env_vec.clone(),
             workdir: input.workdir.clone(),
             name: container_name,
-            binds: vec![], // archive mode: no bind mounts for now
+            binds,
         })
         .await
         .context("docker start failed")?;
@@ -146,35 +152,26 @@ async fn run_in_container(
     env_vec: &[String],
     plan: &DecisionPlan,
 ) -> Result<StepResult> {
-    // --- Extract workspace archive ---
-    let archive = ctx.archives.read(input.workspace_archive_id, 0, u64::MAX);
-    if archive.is_empty() {
-        anyhow::bail!("archive {} is empty or unknown", input.workspace_archive_id);
-    }
-
-    let docker = ctx.docker.clone();
-    let cancel = ctx.cancel.clone();
-    let cid_owned = cid.to_owned();
-    let workdir = input.workdir.clone();
-    let cmd = vec![
-        "sh".to_string(),
-        "-c".to_string(),
-        EXTRACT_CMD_SH.replace("$WORKDIR", &workdir),
-    ];
-    let extract_fut = async move {
-        let mut sink = tokio::io::sink();
-        let rc = docker
-            .exec_streaming_stdin(&cid_owned, &cmd, &[], "/", &archive, &mut sink)
-            .await?;
-        if rc != 0 {
-            anyhow::bail!("tar extract exited {rc}");
+    // --- Workspace injection ---
+    if input.workspace_host_path.is_none() {
+        // Archive mode: upload tar directly (faster than exec_streaming_stdin)
+        let archive = ctx.archives.read(input.workspace_archive_id, 0, u64::MAX);
+        if archive.is_empty() {
+            anyhow::bail!("archive {} is empty or unknown", input.workspace_archive_id);
         }
-        Ok::<(), anyhow::Error>(())
-    };
-    tokio::select! {
-        result = extract_fut => result.context("workspace extract failed")?,
-        () = cancel.cancelled() => anyhow::bail!("cancelled during workspace extract"),
+        let docker = ctx.docker.clone();
+        let cancel = ctx.cancel.clone();
+        let cid_owned = cid.to_owned();
+        let workdir = input.workdir.clone();
+        let upload_fut = async move {
+            docker.upload_archive(&cid_owned, &workdir, &archive).await
+        };
+        tokio::select! {
+            result = upload_fut => result.context("workspace upload failed")?,
+            () = cancel.cancelled() => anyhow::bail!("cancelled during workspace upload"),
+        }
     }
+    // Bind-mount mode: workspace already mounted via container binds, nothing to do.
 
     // --- Exec step command ---
     let mut writer = StepLogWriter::new(input.step_id, Arc::clone(&ctx.event_bus));
@@ -209,8 +206,8 @@ async fn run_in_container(
     )]
     let exit_code = rc as i32;
 
-    // --- Commit snapshot on success ---
-    let committed = if exit_code == 0 {
+    // --- Commit snapshot on success (only in archive mode) ---
+    let committed = if exit_code == 0 && input.workspace_host_path.is_none() {
         let target_tag = plan.commit_to.clone().unwrap_or_else(|| {
             let safe: String = input
                 .step

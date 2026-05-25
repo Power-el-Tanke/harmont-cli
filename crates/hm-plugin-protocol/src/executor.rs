@@ -89,6 +89,11 @@ pub struct ExecutorInput {
     /// it.
     #[serde(default)]
     pub parent_snapshot: Option<SnapshotRef>,
+
+    /// If set, the workspace is bind-mounted from this host path.
+    /// The runner should skip archive extraction.
+    #[serde(skip)]
+    pub workspace_host_path: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]

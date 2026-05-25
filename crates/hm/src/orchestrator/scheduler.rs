@@ -341,6 +341,7 @@ async fn execute_step(
         step_id,
         cache_lookup: decision,
         parent_snapshot,
+        workspace_host_path: None, // Will be wired in Task 6
     };
 
     // Resolve the runner by name. Steps that didn't declare a runner
