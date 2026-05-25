@@ -2,7 +2,7 @@
 //!
 //! Operations: pull images, start containers (long-lived sleep), exec
 //! commands streaming stdout/stderr, commit container to image, look
-//! up images by tag, remove containers.
+//! up images by tag, stop and remove containers.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -466,31 +466,6 @@ impl DockerClient {
                 }),
             )
             .await;
-    }
-
-    /// Remove a container. Idempotent on "not found".
-    ///
-    /// # Errors
-    ///
-    /// Returns [`HmError::Docker`] for non-404 daemon errors.
-    pub async fn remove_container(&self, container_id: &str) -> Result<()> {
-        match self
-            .inner
-            .remove_container(
-                container_id,
-                Some(RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                }),
-            )
-            .await
-        {
-            Ok(())
-            | Err(bollard::errors::Error::DockerResponseServerError {
-                status_code: 404, ..
-            }) => Ok(()),
-            Err(e) => Err(HmError::Docker(format!("remove_container({container_id}): {e}")).into()),
-        }
     }
 
     /// Internal access to the underlying bollard handle, for callers
