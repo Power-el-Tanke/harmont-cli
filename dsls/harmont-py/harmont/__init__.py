@@ -45,7 +45,6 @@ from .cache import (
     CacheTTL,
 )
 from .cmake import cmake
-from .composer import composer
 from .dotnet import dotnet
 from .elm import elm
 from .go import go
@@ -149,7 +148,6 @@ __all__ = [
     "apt_base",
     "cmake",
     "compose",
-    "composer",
     "deploy",
     "dev",
     "dotnet",

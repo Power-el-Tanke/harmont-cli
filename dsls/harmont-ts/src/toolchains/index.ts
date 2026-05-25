@@ -5,11 +5,6 @@ export { python, PythonToolchain, type PythonOptions } from "./python.js";
 export { cmake, CMakeProject, type CMakeOptions } from "./cmake.js";
 export { gradle, GradleProject, type GradleOptions } from "./gradle.js";
 export { dotnet, DotnetProject, type DotnetOptions } from "./dotnet.js";
-export {
-  composer,
-  ComposerProject,
-  type ComposerOptions,
-} from "./composer.js";
 export { elm, ElmProject, type ElmOptions } from "./elm.js";
 export {
   zig,
