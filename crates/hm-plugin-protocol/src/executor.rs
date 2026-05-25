@@ -94,6 +94,11 @@ pub struct ExecutorInput {
     /// The runner should skip archive extraction.
     #[serde(skip)]
     pub workspace_host_path: Option<std::path::PathBuf>,
+
+    /// Chain ID for container reuse. Steps in the same chain can reuse
+    /// the same container in bind-mount mode.
+    #[serde(skip)]
+    pub chain_id: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]

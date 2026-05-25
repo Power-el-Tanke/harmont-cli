@@ -45,6 +45,7 @@ fn executor_input_round_trip() {
         cache_lookup: CacheDecision::MissNoCommit,
         parent_snapshot: None,
         workspace_host_path: None,
+        chain_id: 0,
     };
     rt(&inp);
 }

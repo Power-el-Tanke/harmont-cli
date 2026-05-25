@@ -41,7 +41,7 @@ use hm_pipeline_ir::{EdgeKind, PipelineGraph, Transition};
 
 use crate::error::HmError;
 use crate::orchestrator::docker_client::DockerClient;
-use crate::runner::{OutputRenderer, RunContext, RunnerRegistry};
+use crate::runner::{ContainerPool, OutputRenderer, RunContext, RunnerRegistry};
 
 use super::archive::ArchiveStore;
 use super::cache;
@@ -98,12 +98,15 @@ pub async fn run(
     // archive_id: use workspace's ID or a nil placeholder for bind-mount mode
     let archive_id = ws.archive_id().unwrap_or(ArchiveId(Uuid::nil()));
 
+    let container_pool = Arc::new(ContainerPool::default());
+
     let run_ctx = RunContext {
         docker: docker.clone(),
         event_bus: bus.clone(),
         archives: archives.clone(),
         cancel: cancel.clone(),
         workspace: ws.clone(),
+        container_pool: container_pool.clone(),
     };
 
     let parallelism = parallelism.max(1);
@@ -249,6 +252,11 @@ pub async fn run(
 
     let dur = started_total.elapsed().as_millis() as u64;
 
+    // Clean up reusable containers from bind-mount mode.
+    for cid in run_ctx.container_pool.take_all() {
+        run_ctx.docker.stop_remove(&cid).await;
+    }
+
     // Clean up ephemeral images created during this run.
     let ephemeral_tags: Vec<&str> = outcomes
         .iter()
@@ -357,6 +365,7 @@ async fn execute_step(
         cache_lookup: decision,
         parent_snapshot,
         workspace_host_path,
+        chain_id,
     };
 
     // Resolve the runner by name. Steps that didn't declare a runner

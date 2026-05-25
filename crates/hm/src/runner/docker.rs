@@ -108,52 +108,98 @@ async fn run_step(ctx: &RunContext, input: ExecutorInput) -> Result<StepResult> 
     let container_name = sanitize_container_name(&input.run_id.to_string(), &input.step.key);
     let env_vec: Vec<String> = input.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
 
-    // Ensure the image is locally available.
-    if !ctx.docker.image_exists(&image).await.unwrap_or(false) {
-        let docker = ctx.docker.clone();
-        let cancel = ctx.cancel.clone();
-        let img = image.clone();
-        let pull_fut = async move { docker.pull_image(&img).await };
-        tokio::select! {
-            result = pull_fut => result.with_context(|| format!("pull '{image}'"))?,
-            () = cancel.cancelled() => anyhow::bail!("cancelled during image pull"),
+    // Check if we can reuse a pooled container (bind-mount mode only).
+    let (cid, reused) = if input.workspace_host_path.is_some() {
+        if let Some(existing) = ctx.container_pool.get(input.chain_id) {
+            (existing, true)
+        } else {
+            // New container for this chain — pull image if needed.
+            if !ctx.docker.image_exists(&image).await.unwrap_or(false) {
+                let docker = ctx.docker.clone();
+                let cancel = ctx.cancel.clone();
+                let img = image.clone();
+                let pull_fut = async move { docker.pull_image(&img).await };
+                tokio::select! {
+                    result = pull_fut => result.with_context(|| format!("pull '{image}'"))?,
+                    () = cancel.cancelled() => anyhow::bail!("cancelled during image pull"),
+                }
+            }
+
+            let binds = input.workspace_host_path.as_ref().map_or_else(
+                Vec::new,
+                |host_path| vec![format!("{}:{}:rw", host_path.display(), input.workdir)],
+            );
+
+            let new_cid = ctx
+                .docker
+                .start_long_lived(ContainerOpts {
+                    image: image.clone(),
+                    env: env_vec.clone(),
+                    workdir: input.workdir.clone(),
+                    name: container_name,
+                    binds,
+                })
+                .await
+                .context("docker start failed")?;
+
+            ctx.container_pool.put(input.chain_id, new_cid.clone());
+            (new_cid, false)
         }
+    } else {
+        // Archive mode: always create a fresh container.
+        if !ctx.docker.image_exists(&image).await.unwrap_or(false) {
+            let docker = ctx.docker.clone();
+            let cancel = ctx.cancel.clone();
+            let img = image.clone();
+            let pull_fut = async move { docker.pull_image(&img).await };
+            tokio::select! {
+                result = pull_fut => result.with_context(|| format!("pull '{image}'"))?,
+                () = cancel.cancelled() => anyhow::bail!("cancelled during image pull"),
+            }
+        }
+
+        let new_cid = ctx
+            .docker
+            .start_long_lived(ContainerOpts {
+                image: image.clone(),
+                env: env_vec.clone(),
+                workdir: input.workdir.clone(),
+                name: container_name,
+                binds: vec![],
+            })
+            .await
+            .context("docker start failed")?;
+
+        (new_cid, false)
+    };
+
+    let result = run_in_container(ctx, &cid, &input, &env_vec, &plan, reused).await;
+
+    // Only stop+remove non-pooled containers. Pooled containers are
+    // cleaned up at the end of the run by the scheduler.
+    if input.workspace_host_path.is_none() {
+        ctx.docker.stop_remove(&cid).await;
     }
 
-    let binds = input.workspace_host_path.as_ref().map_or_else(
-        Vec::new,
-        |host_path| vec![format!("{}:{}:rw", host_path.display(), input.workdir)],
-    );
-
-    let cid = ctx
-        .docker
-        .start_long_lived(ContainerOpts {
-            image: image.clone(),
-            env: env_vec.clone(),
-            workdir: input.workdir.clone(),
-            name: container_name,
-            binds,
-        })
-        .await
-        .context("docker start failed")?;
-
-    // Always stop+remove the container, even on error.
-    let result = run_in_container(ctx, &cid, &input, &env_vec, &plan).await;
-    ctx.docker.stop_remove(&cid).await;
     result
 }
 
 /// Inner body executed with a running container. Separated so the
 /// caller can unconditionally clean up the container in all paths.
+///
+/// When `reused` is true the container was retrieved from the pool and
+/// workspace injection is skipped (it was already done by the first
+/// step in this chain).
 async fn run_in_container(
     ctx: &RunContext,
     cid: &str,
     input: &ExecutorInput,
     env_vec: &[String],
     plan: &DecisionPlan,
+    reused: bool,
 ) -> Result<StepResult> {
     // --- Workspace injection ---
-    if input.workspace_host_path.is_none() {
+    if !reused && input.workspace_host_path.is_none() {
         // Archive mode: upload tar directly (faster than exec_streaming_stdin)
         let archive = ctx.archives.read(input.workspace_archive_id, 0, u64::MAX);
         if archive.is_empty() {

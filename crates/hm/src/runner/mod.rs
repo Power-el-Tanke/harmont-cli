@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use hm_plugin_protocol::{BuildEvent, ExecutorInput, StepResult};
@@ -21,6 +21,43 @@ use crate::orchestrator::events::EventBus;
 use crate::orchestrator::workspace::WorkspaceManager;
 
 pub mod docker;
+
+// ---------------------------------------------------------------------------
+// ContainerPool
+// ---------------------------------------------------------------------------
+
+/// Pool of reusable containers keyed by chain ID.
+///
+/// In bind-mount mode, steps within the same chain reuse a single Docker
+/// container rather than creating/destroying one per step. This eliminates
+/// container start/stop overhead for subsequent steps in a chain.
+#[derive(Debug, Default)]
+pub struct ContainerPool {
+    containers: Mutex<HashMap<usize, String>>,
+}
+
+#[allow(clippy::unwrap_used)]
+impl ContainerPool {
+    /// Retrieve the container ID for a given chain, if one has been pooled.
+    pub fn get(&self, chain_id: usize) -> Option<String> {
+        self.containers.lock().unwrap().get(&chain_id).cloned()
+    }
+
+    /// Store a container ID for a given chain.
+    pub fn put(&self, chain_id: usize, cid: String) {
+        self.containers.lock().unwrap().insert(chain_id, cid);
+    }
+
+    /// Drain all pooled container IDs for final cleanup.
+    pub fn take_all(&self) -> Vec<String> {
+        self.containers
+            .lock()
+            .unwrap()
+            .drain()
+            .map(|(_, cid)| cid)
+            .collect()
+    }
+}
 
 // ---------------------------------------------------------------------------
 // RunContext
@@ -38,6 +75,7 @@ pub struct RunContext {
     pub archives: Arc<ArchiveStore>,
     pub cancel: CancellationToken,
     pub workspace: Arc<WorkspaceManager>,
+    pub container_pool: Arc<ContainerPool>,
 }
 
 // ---------------------------------------------------------------------------
