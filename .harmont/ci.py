@@ -14,12 +14,20 @@ def shared_base() -> hm.Step:
         "libssl-dev",
         "python3",
         "python3-venv",
+        "nodejs",
+        "npm",
     ))
 
 
 @hm.target()
 def rust_project(shared_base: hm.Target[hm.Step]) -> tuple[hm.Step, ...]:
-    project = hm.rust.project(path=".", base=shared_base)
+    # esbuild needed by hm-dsl-engine build.rs to bundle TS DSL
+    base = shared_base.sh(
+        "cd dsls/harmont-ts && npm ci",
+        label=":nodejs: npm-ci",
+        cache=hm.CacheOnChange(paths=("dsls/harmont-ts/package-lock.json",)),
+    )
+    project = hm.rust.project(path=".", base=base)
     return hm.group([
         project.test(flags=("--lib",)),
         project.clippy(),
