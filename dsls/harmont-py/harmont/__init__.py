@@ -53,7 +53,6 @@ from .gradle import gradle
 from .haskell import haskell
 from .npm import npm
 from .ocaml import ocaml
-from .perl import perl
 from .pipeline import pipeline as _pipeline_factory
 from .pipeline import pipeline_to_json
 from .python import python
@@ -165,7 +164,6 @@ __all__ = [
     "npm",
     "ocaml",
     "on_change",
-    "perl",
     "pipeline",
     "pipeline_to_json",
     "pr",
