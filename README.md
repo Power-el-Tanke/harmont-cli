@@ -128,7 +128,7 @@ The CLI is dual-licensed under either of
 > so your builds are stuck in queues.
 >
 > At Bun, we used [Buildkite](https://buildkite.com/) -- large shell pipelines,
-> and really pricy service, and a TS SDK which is barely slightly better than
+> and really pricy service, and a TS SDK that's only slightly better than
 > YAMLs.
 >
 > At Mesa, I migrated everyone to use [BuildBuddy](https://www.buildbuddy.io/)
@@ -141,8 +141,8 @@ The CLI is dual-licensed under either of
 > - **Why can't I run my CI/CD pipelines locally?**
 >   [act](https://github.com/nektos/act) is an awesome project, but it's
 >   surprisingly slow (not to the author's fault -- but rather GHA's model).
-> - **Why is my CI/CD system not just a `Makefile`?** Why is there no `hal9000
->   "build my software"` command that is shared between CI/CD and pipelines.
+> - **Why is my CI/CD system not just a `Makefile`?** Why is there no `hm run`
+>   command that is shared between local dev and CI/CD?
 > - **Why can't I get preview environments for Haskell, Rust, Zig or
 >   whatever?** Vercel does an awesome job with `next.js` preview environments,
 >   but there is no good way to do this for arbitrary environments.
@@ -156,10 +156,10 @@ The CLI is dual-licensed under either of
 >   `openapi.json` in the local directory, why do I need some magic to transfer
 >   it between individual steps?
 
-Harmont's goal is to answer all these questions rhetorically -- none of these
-presuppositions are necessary. CI/CD _can_ be better, and that's what
-[Harmont](https://harmont.dev) is -- a CI/CD that sucks a lot less.
+Harmont's goal is to make all these questions obsolete. CI/CD _can_ be better,
+and that's what [Harmont](https://harmont.dev) is -- a CI/CD that sucks a lot
+less.
 
-I quit my job at Mesa to build Harmont. At the time of writing, I have 58 days
-on my H1B grace period, but I vehemently feel that CI/CD can be better -- and
-that's why I'm taking this risk.
+I quit my job at Mesa to build Harmont. I'm on limited time on my H1B grace
+period, but I vehemently feel that CI/CD can be better -- and that's why I'm
+taking this risk.
