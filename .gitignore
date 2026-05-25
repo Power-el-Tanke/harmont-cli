@@ -6,6 +6,9 @@ __pycache__/
 # Node
 node_modules/
 
+# Harmont local cache (Docker image tarballs)
+.harmont-cache/
+
 # C extensions
 *.so
 
