@@ -71,11 +71,7 @@ The recommended way to install Harmont:
 curl -fsSL https://get.harmont.dev/install.sh | sh
 ```
 
-**Prerequisites:** [Docker](https://docs.docker.com/get-docker/) and Python 3.11+ with the Harmont DSL:
-
-```sh
-pip install harmont
-```
+**Prerequisites:** [Docker](https://docs.docker.com/get-docker/) and Python 3.11+.
 
 <details>
 <summary>Other installation methods</summary>
@@ -93,9 +89,6 @@ git clone https://github.com/harmont-dev/harmont-cli
 cd harmont-cli
 cargo build --release
 install -m 0755 target/release/hm /usr/local/bin/hm   # or any dir on $PATH
-
-git clone https://github.com/harmont-dev/harmont-py
-pip install -e ./harmont-py
 ```
 
 </details>
@@ -153,7 +146,7 @@ Want to shape the roadmap? [Join the Discord](https://discord.gg/hm-dev) and tel
 <details>
 <summary>DSL surface</summary>
 
-The DSL is small. See [`harmont-py`](https://github.com/harmont-dev/harmont-py) for the full reference.
+The DSL is small and ships with `hm`.
 
 | Primitive | What it does |
 |---|---|
