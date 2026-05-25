@@ -84,7 +84,10 @@ pub async fn handle(args: DevPortOfArgs, _ctx: RunContext) -> Result<i32> {
         );
         return Ok(5);
     };
-    tracing::info!("{host_port}");
+    #[allow(clippy::print_stdout)]
+    {
+        println!("{host_port}");
+    }
     Ok(0)
 }
 
