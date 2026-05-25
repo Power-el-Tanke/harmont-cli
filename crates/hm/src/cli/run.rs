@@ -42,4 +42,15 @@ pub struct RunArgs {
     /// Has no effect with `--format json`.
     #[arg(long)]
     pub logs: bool,
+
+    /// Bind-mount workspace into containers instead of extracting archives.
+    /// Faster for local development. Default: auto (enabled unless
+    /// HM_NONINTERACTIVE is set).
+    #[arg(long)]
+    pub bind_mount: bool,
+
+    /// Force archive extraction mode (disable bind-mount). Overrides
+    /// auto-detection.
+    #[arg(long, conflicts_with = "bind_mount")]
+    pub no_bind_mount: bool,
 }

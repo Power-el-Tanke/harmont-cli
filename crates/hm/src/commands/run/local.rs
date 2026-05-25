@@ -86,8 +86,16 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
         other => anyhow::bail!("unknown --format '{other}'\n  available: human, json"),
     };
 
+    let bind_mount = if args.bind_mount {
+        true
+    } else if args.no_bind_mount {
+        false
+    } else {
+        std::env::var("HM_NONINTERACTIVE").is_err()
+    };
+
     let exit_code =
-        crate::orchestrator::run(graph, repo_root, parallelism, runner_registry, renderer, false)
+        crate::orchestrator::run(graph, repo_root, parallelism, runner_registry, renderer, bind_mount)
             .await?;
     Ok(exit_code)
 }
