@@ -52,6 +52,11 @@ fn format_duration(ms: u64) -> String {
 ///
 /// Generic over `W: Write` so tests can capture text output into a
 /// `Vec<u8>` while production code writes to `std::io::Stderr`.
+enum StepTiming {
+    Ran { duration_ms: u64 },
+    Cached,
+}
+
 pub struct ProgressRenderer<W> {
     out: W,
     root_span: Option<Span>,
@@ -60,6 +65,8 @@ pub struct ProgressRenderer<W> {
     step_names: HashMap<Uuid, String>,
     log_buffer: HashMap<Uuid, Vec<String>>,
     failed_steps: Vec<(Uuid, i32)>,
+    step_order: Vec<Uuid>,
+    step_timings: HashMap<Uuid, StepTiming>,
 }
 
 impl<W> fmt::Debug for ProgressRenderer<W> {
@@ -81,6 +88,8 @@ impl<W> ProgressRenderer<W> {
             step_names: HashMap::new(),
             log_buffer: HashMap::new(),
             failed_steps: Vec::new(),
+            step_order: Vec::new(),
+            step_timings: HashMap::new(),
         }
     }
 }
@@ -97,12 +106,26 @@ impl<W: Write> ProgressRenderer<W> {
             }
         }
     }
+
+    fn print_step_summary(&mut self) {
+        let _ = writeln!(self.out);
+        for step_id in &self.step_order {
+            let name = self.step_names.get(step_id).map_or("?", String::as_str);
+            let timing = match self.step_timings.get(step_id) {
+                Some(StepTiming::Ran { duration_ms }) => format_duration(*duration_ms),
+                Some(StepTiming::Cached) => "cached".into(),
+                None => "—".into(),
+            };
+            let _ = writeln!(self.out, "  {name}  {timing}");
+        }
+    }
 }
 
 impl<W> OutputRenderer for ProgressRenderer<W>
 where
     W: Write + Send + fmt::Debug,
 {
+    #[allow(clippy::too_many_lines)]
     fn on_event(&mut self, event: &BuildEvent) {
         match event {
             BuildEvent::BuildStart { plan, .. } => {
@@ -129,6 +152,7 @@ where
             } => {
                 self.step_keys.insert(*step_id, key.clone());
                 self.step_names.insert(*step_id, display_name.clone());
+                self.step_order.push(*step_id);
 
                 let parent_span = parent_key
                     .as_ref()
@@ -170,6 +194,7 @@ where
                     span.pb_set_style(&completed_style());
                     span.pb_set_message(&format!("{name}  (cached)"));
                 }
+                self.step_timings.insert(*step_id, StepTiming::Cached);
                 if let Some(root) = &self.root_span {
                     root.pb_inc(1);
                 }
@@ -202,6 +227,13 @@ where
                     span.pb_set_message(&format!("{name}  ({dur})"));
                 }
 
+                self.step_timings.insert(
+                    *step_id,
+                    StepTiming::Ran {
+                        duration_ms: *duration_ms,
+                    },
+                );
+
                 if let Some(root) = &self.root_span {
                     root.pb_inc(1);
                 }
@@ -209,12 +241,20 @@ where
 
             BuildEvent::ChainFailed { .. } => {}
 
-            BuildEvent::BuildEnd { exit_code, .. } => {
+            BuildEvent::BuildEnd {
+                exit_code,
+                duration_ms,
+            } => {
                 self.step_spans.clear();
                 self.root_span.take();
 
+                self.print_step_summary();
+
                 if *exit_code != 0 {
                     self.print_failure_report();
+                } else {
+                    let dur = format_duration(*duration_ms);
+                    let _ = writeln!(self.out, "✓ Build succeeded in {dur}");
                 }
             }
         }
@@ -360,8 +400,8 @@ mod tests {
         });
 
         assert!(
-            output(&r).is_empty(),
-            "expected no text output on success: {:?}",
+            output(&r).contains("Build succeeded"),
+            "expected success message on success: {:?}",
             output(&r)
         );
     }
