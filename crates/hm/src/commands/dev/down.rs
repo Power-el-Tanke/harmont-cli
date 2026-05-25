@@ -16,10 +16,6 @@ use super::naming::{
 /// # Errors
 ///
 /// Returns Docker errors on list / stop / remove failures.
-#[allow(
-    clippy::print_stderr,
-    reason = "status messages to stderr are intentional for a foreground CLI"
-)]
 pub async fn handle(args: DevDownArgs, _ctx: RunContext) -> Result<i32> {
     let docker = DockerClient::connect()?;
     let worktree_root = resolve_worktree_root()?;
@@ -60,7 +56,7 @@ pub async fn handle(args: DevDownArgs, _ctx: RunContext) -> Result<i32> {
     }
 
     if to_remove.is_empty() {
-        eprintln!("[hm] nothing to sweep");
+        tracing::info!("[hm] nothing to sweep");
         return Ok(0);
     }
 
@@ -68,7 +64,7 @@ pub async fn handle(args: DevDownArgs, _ctx: RunContext) -> Result<i32> {
     for (id, slug, session, name) in &to_remove {
         let _ = docker.stop_container(id).await;
         let _ = docker.remove_container(id).await;
-        eprintln!("[hm] removed {name} (slug={slug}, session={session})");
+        tracing::info!("[hm] removed {name} (slug={slug}, session={session})");
         sessions_swept.insert(session.clone());
     }
 

@@ -40,7 +40,7 @@ async fn list(client: &Client, org: &str, pipe: &str, build: i64) -> Result<()> 
         ))
         .await?;
     for j in &jobs.data {
-        println!(
+        tracing::info!(
             "{}  {:<10}  {}",
             j.id,
             j.state,
@@ -56,7 +56,7 @@ async fn show(client: &Client, org: &str, pipe: &str, build: i64, jid: &str) -> 
             "/organizations/{org}/pipelines/{pipe}/builds/{build}/jobs/{jid}"
         ))
         .await?;
-    println!("{}", serde_json::to_string_pretty(&j).unwrap_or_default());
+    tracing::info!("{}", serde_json::to_string_pretty(&j).unwrap_or_default());
     Ok(())
 }
 
@@ -67,7 +67,7 @@ async fn log_cmd(client: &Client, org: &str, pipe: &str, build: i64, jid: &str) 
         ))
         .await?;
     for chunk in &log.data {
-        println!("{}", chunk.line);
+        tracing::info!("{}", chunk.line);
     }
     Ok(())
 }

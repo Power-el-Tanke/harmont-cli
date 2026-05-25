@@ -158,11 +158,19 @@ pub async fn dispatch(argv: Vec<String>, env: BTreeMap<String, String>) -> Resul
             let msg = e.to_string();
             return match e.kind() {
                 ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
-                    print!("{msg}");
+                    #[allow(clippy::print_stdout)]
+                    {
+                        use std::io::Write;
+                        std::io::stdout().write_all(msg.as_bytes()).ok();
+                    }
                     Ok(0)
                 }
                 _ => {
-                    eprint!("{msg}");
+                    #[allow(clippy::print_stderr)]
+                    {
+                        use std::io::Write;
+                        std::io::stderr().write_all(msg.as_bytes()).ok();
+                    }
                     Ok(2)
                 }
             };
@@ -187,7 +195,7 @@ pub async fn dispatch_command(command: CloudCommand, env: BTreeMap<String, Strin
     match result {
         Ok(()) => Ok(0),
         Err(e) => {
-            eprintln!("{e:#}");
+            tracing::error!("{e:#}");
             Ok(1)
         }
     }

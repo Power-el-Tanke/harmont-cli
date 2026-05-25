@@ -29,7 +29,7 @@ async fn list(client: &Client, org: &str) -> Result<()> {
         .get(&format!("/organizations/{org}/pipelines"))
         .await?;
     for p in &pipes.data {
-        println!(
+        tracing::info!(
             "{:<24} {}",
             p.slug,
             p.label.as_deref().unwrap_or("(no label)")
@@ -49,7 +49,7 @@ async fn show(client: &Client, org: &str, slug: &str) -> Result<()> {
         "default_branch": p.default_branch,
     }))
     .unwrap_or_default();
-    println!("{json}");
+    tracing::info!("{json}");
     Ok(())
 }
 
