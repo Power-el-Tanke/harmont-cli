@@ -86,7 +86,10 @@ mod tests {
 
         cow_clone_dir(src.path(), &dst_path).unwrap();
 
-        assert_eq!(fs::read_to_string(dst_path.join("hello.txt")).unwrap(), "world");
+        assert_eq!(
+            fs::read_to_string(dst_path.join("hello.txt")).unwrap(),
+            "world"
+        );
         assert_eq!(
             fs::read_to_string(dst_path.join("sub/nested.txt")).unwrap(),
             "deep"
@@ -94,6 +97,9 @@ mod tests {
 
         // Writes to clone don't affect source
         fs::write(dst_path.join("hello.txt"), "modified").unwrap();
-        assert_eq!(fs::read_to_string(src.path().join("hello.txt")).unwrap(), "world");
+        assert_eq!(
+            fs::read_to_string(src.path().join("hello.txt")).unwrap(),
+            "world"
+        );
     }
 }

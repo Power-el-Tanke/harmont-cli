@@ -13,13 +13,13 @@ use bollard::container::{
     Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
     StopContainerOptions, UploadToContainerOptions,
 };
-use bytes::Bytes;
 use bollard::exec::{CreateExecOptions, StartExecResults};
 use bollard::image::{
     CommitContainerOptions, CreateImageOptions, ImportImageOptions, ListImagesOptions,
     RemoveImageOptions,
 };
 use bollard::models::HostConfig;
+use bytes::Bytes;
 use futures_util::StreamExt;
 use tokio::io::AsyncWrite;
 

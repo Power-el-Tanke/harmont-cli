@@ -125,10 +125,12 @@ async fn run_step(ctx: &RunContext, input: ExecutorInput) -> Result<StepResult> 
                 }
             }
 
-            let binds = input.workspace_host_path.as_ref().map_or_else(
-                Vec::new,
-                |host_path| vec![format!("{}:{}:rw", host_path.display(), input.workdir)],
-            );
+            let binds = input
+                .workspace_host_path
+                .as_ref()
+                .map_or_else(Vec::new, |host_path| {
+                    vec![format!("{}:{}:rw", host_path.display(), input.workdir)]
+                });
 
             let new_cid = ctx
                 .docker
@@ -209,9 +211,7 @@ async fn run_in_container(
         let cancel = ctx.cancel.clone();
         let cid_owned = cid.to_owned();
         let workdir = input.workdir.clone();
-        let upload_fut = async move {
-            docker.upload_archive(&cid_owned, &workdir, &archive).await
-        };
+        let upload_fut = async move { docker.upload_archive(&cid_owned, &workdir, &archive).await };
         tokio::select! {
             result = upload_fut => result.context("workspace upload failed")?,
             () = cancel.cancelled() => anyhow::bail!("cancelled during workspace upload"),

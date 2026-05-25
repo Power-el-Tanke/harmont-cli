@@ -94,8 +94,14 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
         std::env::var("HM_NONINTERACTIVE").is_err()
     };
 
-    let exit_code =
-        crate::orchestrator::run(graph, repo_root, parallelism, runner_registry, renderer, bind_mount)
-            .await?;
+    let exit_code = crate::orchestrator::run(
+        graph,
+        repo_root,
+        parallelism,
+        runner_registry,
+        renderer,
+        bind_mount,
+    )
+    .await?;
     Ok(exit_code)
 }
