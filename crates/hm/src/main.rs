@@ -1,4 +1,3 @@
-
 #![allow(
     clippy::multiple_crate_versions,
     reason = "transitive dependency version conflicts in rand/windows-sys/thiserror chains; not fixable without upstream updates"
