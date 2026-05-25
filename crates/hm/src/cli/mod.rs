@@ -104,11 +104,13 @@ pub async fn dispatch(command: Command, ctx: RunContext) -> Result<i32> {
         },
         Command::Version => version::run().await.map(|()| 0),
         Command::Plugin(cmd) => plugin::run(cmd).await.map(|()| 0),
-        Command::Cloud(cmd) => {
-            let env: std::collections::BTreeMap<String, String> = std::env::vars()
-                .filter(|(k, _)| k.starts_with("HARMONT_") || k.starts_with("HM_"))
-                .collect();
-            hm_plugin_cloud::cli::dispatch_command(cmd, env).await
+        Command::Cloud(_cmd) => {
+            tracing::info!(
+                "Harmont Cloud is not yet available.\n\
+                 \n\
+                 Sign up for the waitlist at https://harmont.dev to get early access."
+            );
+            Ok(0)
         }
     }
 }
