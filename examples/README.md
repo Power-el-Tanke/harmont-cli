@@ -7,8 +7,7 @@ Minimal idiomatic starter projects, each wired up to a Harmont CI pipeline. Ever
 | [react](./react) | npm + Vite + Vitest + ESLint | `hm.npm(...)` |
 | [nextjs](./nextjs) | npm + Jest + ESLint | `hm.npm(...)` |
 | [typescript](./typescript) | tsc + Vitest + ESLint | `hm.npm(...)` |
-| [rust](./rust) | cargo + clippy + rustfmt | `hm.rust(...)` |
-| [haskell](./haskell) | cabal + hlint + fourmolu | `hm.haskell(ghc="9.6.7")` |
+| [rust](./rust) | cargo + clippy + rustfmt | `hm.rust.toolchain(...)` |
 | [python-uv](./python-uv) | uv + pytest + ruff + mypy | `hm.python(...)` |
 | [go](./go) | go build/test/vet/fmt | `hm.go(...)` |
 | [java](./java) | Gradle + JUnit 5 | `hm.gradle(jdk="21")` |
@@ -18,6 +17,7 @@ Minimal idiomatic starter projects, each wired up to a Harmont CI pipeline. Ever
 | [csharp](./csharp) | dotnet + xunit + dotnet-format | `hm.dotnet(channel="8.0")` |
 | [ocaml](./ocaml) | opam + Dune + Alcotest | `hm.ocaml(compiler="5.1.1")` |
 | [zig](./zig) | zig build/test/fmt | `hm.zig(version="0.13.0")` |
+| [zig-js](./zig-js) | Zig + npm monorepo | `hm.zig(...)` + `hm.npm(...)` |
 
 ## How to run an example locally
 
