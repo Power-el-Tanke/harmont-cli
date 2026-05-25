@@ -1,9 +1,7 @@
-pub mod dev;
 pub mod plugin;
 pub mod run;
 pub mod version;
 
-pub use dev::{DevCommand, DevDownArgs, DevExecArgs, DevLogsArgs, DevPortOfArgs, DevUpArgs};
 pub use plugin::PluginCommand;
 pub use run::RunArgs;
 
@@ -54,12 +52,6 @@ pub enum Command {
     #[command(subcommand)]
     Plugin(PluginCommand),
 
-    /// Manage local long-lived deployments (dev databases, dev API
-    /// servers, dev webapps). Reads `.harmont/*.py` for
-    /// `@hm.deploy`-decorated functions and brings them up via Docker.
-    #[command(subcommand)]
-    Dev(DevCommand),
-
     /// Manage harmont Docker image cache.
     #[command(subcommand)]
     Cache(CacheCommand),
@@ -97,7 +89,6 @@ pub struct CacheRestoreArgs {
 pub async fn dispatch(command: Command, ctx: RunContext) -> Result<i32> {
     match command {
         Command::Run(args) => crate::commands::run::handle(args, ctx).await,
-        Command::Dev(cmd) => dev::dispatch(cmd, ctx).await,
         Command::Cache(cmd) => match cmd {
             CacheCommand::Save(args) => crate::commands::cache::handle_save(&args.dir).await,
             CacheCommand::Restore(args) => crate::commands::cache::handle_restore(&args.dir).await,
