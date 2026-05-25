@@ -1248,6 +1248,7 @@ dependencies = [
 name = "hm-util"
 version = "0.0.0-dev"
 dependencies = [
+ "anyhow",
  "dirs",
  "tempfile",
  "tokio",
