@@ -389,15 +389,11 @@ impl DockerClient {
         let body = tokio::fs::read(src)
             .await
             .with_context(|| format!("read import file '{}'", src.display()))?;
-        let mut stream = self.inner.import_image(
-            ImportImageOptions { quiet: true },
-            body.into(),
-            None,
-        );
+        let mut stream =
+            self.inner
+                .import_image(ImportImageOptions { quiet: true }, body.into(), None);
         while let Some(item) = stream.next().await {
-            item.map_err(|e| {
-                HmError::Docker(format!("import_image '{}': {e}", src.display()))
-            })?;
+            item.map_err(|e| HmError::Docker(format!("import_image '{}': {e}", src.display())))?;
         }
         Ok(())
     }

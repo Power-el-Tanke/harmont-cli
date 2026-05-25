@@ -96,7 +96,11 @@ fn cache_restore_after_save() {
 fn cache_restore_missing_dir() {
     Command::cargo_bin("hm")
         .unwrap()
-        .args(["cache", "restore", "/tmp/harmont-nonexistent-cache-dir-test"])
+        .args([
+            "cache",
+            "restore",
+            "/tmp/harmont-nonexistent-cache-dir-test",
+        ])
         .assert()
         .success()
         .stderr(contains("0/0"));

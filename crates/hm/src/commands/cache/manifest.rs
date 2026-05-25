@@ -94,8 +94,10 @@ mod tests {
     #[test]
     fn manifest_content_hash_is_deterministic() {
         let mut m = Manifest::new();
-        m.images
-            .insert("step1".to_string(), "harmont-local/step1:deadbeef".to_string());
+        m.images.insert(
+            "step1".to_string(),
+            "harmont-local/step1:deadbeef".to_string(),
+        );
 
         let h1 = m.content_hash();
         let h2 = m.content_hash();

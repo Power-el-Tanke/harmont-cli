@@ -100,9 +100,7 @@ pub async fn dispatch(command: Command, ctx: RunContext) -> Result<i32> {
         Command::Dev(cmd) => dev::dispatch(cmd, ctx).await,
         Command::Cache(cmd) => match cmd {
             CacheCommand::Save(args) => crate::commands::cache::handle_save(&args.dir).await,
-            CacheCommand::Restore(args) => {
-                crate::commands::cache::handle_restore(&args.dir).await
-            }
+            CacheCommand::Restore(args) => crate::commands::cache::handle_restore(&args.dir).await,
         },
         Command::Version => version::run().await.map(|()| 0),
         Command::Plugin(cmd) => plugin::run(cmd).await.map(|()| 0),
