@@ -15,23 +15,105 @@
 </p>
 
 <p align="center">
-  <a href="https://harmont.dev">Website</a> · <a href="https://harmont.dev/docs">Docs</a> · <a href="https://discord.gg/hm-dev">Discord</a> · <a href="https://join.slack.com/t/harmont-dev/shared_invite/zt-3yt0tiv7r-qHm1O0p0nVh2GU~KKhUk9A">Slack</a>
+  <a href="https://harmont.dev">Website</a> · <a href="https://harmont.dev/docs">Docs</a> · <a href="https://join.slack.com/t/harmont-dev/shared_invite/zt-3yt0tiv7r-qHm1O0p0nVh2GU~KKhUk9A">Slack</a>
 </p>
 
 > [!WARNING]
 > Harmont is in **early alpha**. Today it's a powerful local task runner —
-> think `make` or `just`, but with Python-defined pipelines and automatic
-> Docker isolation. The cloud CI/CD platform at
-> [harmont.dev](https://harmont.dev) is under active development. APIs will
-> change. We'd love your feedback — [join the
-> Discord](https://discord.gg/hm-dev).
+> think `make` or `just`, but with DAG-based parallel execution, Docker
+> isolation, layer caching, and typed toolchain presets for 16+ languages.
+> The cloud CI/CD platform at [harmont.dev](https://harmont.dev) is under
+> active development. APIs will change. We'd love your feedback — [join the
+> community](#community).
 
 ## What is Harmont?
 
-Harmont lets you define CI/CD pipelines in Typescript/Python and run them
+Harmont lets you define CI/CD pipelines in TypeScript or Python and run them
 instantly on your machine in Docker containers. No YAML. No waiting for CI. No
 `commit -m "run ci" --allow-empty` spam. Each pipeline step runs in an isolated
-container with automatic caching, parallel execution, and reproducible builds.
+container with built-in caching, parallel execution, and consistent environments.
+
+**Features:**
+
+- **Pipelines as real code** — Python or TypeScript, not YAML
+- **Instant local runs** — `hm run` executes in Docker on your machine
+- **DAG-based parallelism** — independent chains run concurrently, automatically
+- **Layer caching** — Docker snapshots are reused across runs; only changed steps re-execute
+- **Typed toolchains** — first-class presets for Rust, Go, Python, Java, C++, React, and more
+- **Plugin system** — extend with custom step runners
+
+<!-- TODO(marko): add asciinema -->
+
+## Quick Start
+
+### 0. Install `hm`
+
+```sh
+curl -fsSL https://get.harmont.dev/install.sh | sh
+```
+
+Or via Cargo:
+
+```sh
+cargo install harmont-cli
+```
+
+### 1. Create a pipeline
+
+Save this as `.harmont/pipeline.py` (or `.harmont/pipeline.ts`):
+
+<details open>
+<summary><b>Python</b></summary>
+
+```python
+import harmont as hm
+
+@hm.pipeline("ci")
+def ci() -> hm.Step:
+    return (
+        hm.sh("echo 'hello from harmont'", label="hello")
+          .sh("uname -a", label="env")
+    )
+```
+
+</details>
+
+<details>
+<summary><b>TypeScript</b></summary>
+
+```typescript
+import { sh, pipeline, type PipelineDefinition } from "harmont";
+
+const pipelines: PipelineDefinition[] = [
+  {
+    slug: "ci",
+    pipeline: pipeline(
+      sh("echo 'hello from harmont'", { label: "hello" })
+        .sh("uname -a", { label: "env" }),
+    ),
+  },
+];
+
+export default pipelines;
+```
+
+</details>
+
+### 2. Run it
+
+```sh
+hm run ci
+```
+
+If the repo declares only one pipeline, the slug is optional — just `hm run`.
+
+### Real-world example
+
+For production pipelines, use typed toolchains — they generate test, lint, and
+format steps from your project layout:
+
+<details open>
+<summary><b>Python</b></summary>
 
 ```python
 import harmont as hm
@@ -55,45 +137,37 @@ def ci(project: hm.Target[PythonToolchain]) -> tuple[hm.Step, ...]:
     )
 ```
 
-```sh
-curl -fsSL https://get.harmont.dev/install.sh | sh
-hm run ci
+</details>
+
+<details>
+<summary><b>TypeScript</b></summary>
+
+```typescript
+import { pipeline, push, type PipelineDefinition } from "harmont";
+import { python } from "harmont/toolchains";
+
+const project = python({ path: "." });
+
+const pipelines: PipelineDefinition[] = [
+  {
+    slug: "ci",
+    triggers: [push({ branch: "main" })],
+    pipeline: pipeline(
+      project.test(),
+      project.lint(),
+      project.fmt(),
+      project.typecheck(),
+      { defaultImage: "ubuntu:24.04" },
+    ),
+  },
+];
+
+export default pipelines;
 ```
 
-<!-- TODO(marko): add asciinema -->
+</details>
 
-## Quick Start
-
-### 0. Download `hm`
-
-```sh
-curl -fsSL https://get.harmont.dev/install.sh | sh
-```
-
-### 1. Create a pipeline
-
-Save this as `.harmont/ci.py`:
-
-```python
-import harmont as hm
-
-@hm.pipeline("ci")
-def ci() -> hm.Step:
-    return (
-        hm.sh("echo 'hello from harmont'", label="hello")
-          .sh("uname -a", label="env")
-    )
-```
-
-### 2. Run it
-
-```sh
-hm run ci
-```
-
-If the repo declares only one pipeline, the slug is optional — just `hm run`.
-
-Browse the [16 example projects](./examples) for idiomatic pipelines in Rust,
+Browse the [example projects](./examples) for idiomatic pipelines in Rust,
 Go, Python, Java, C++, React, Next.js, and more.
 
 ## Community
@@ -157,9 +231,5 @@ The CLI is dual-licensed under either of
 >   it between individual steps?
 
 Harmont's goal is to make all these questions obsolete. CI/CD _can_ be better,
-and that's what [Harmont](https://harmont.dev) is -- a CI/CD that sucks a lot
+and that's what [Harmont](https://harmont.dev) is — a CI/CD that sucks a lot
 less.
-
-I quit my job at Mesa to build Harmont. I'm on limited time on my H1B grace
-period, but I vehemently feel that CI/CD can be better -- and that's why I'm
-taking this risk.
