@@ -40,7 +40,6 @@ container with built-in caching, parallel execution, and consistent environments
 - **DAG-based parallelism** — independent chains run concurrently, automatically
 - **Layer caching** — Docker snapshots are reused across runs; only changed steps re-execute
 - **Typed toolchains** — first-class presets for Rust, Go, Python, Java, C++, React, and more
-- **Plugin system** — extend with custom step runners
 
 <!-- TODO(marko): add asciinema -->
 
@@ -231,5 +230,5 @@ The CLI is dual-licensed under either of
 >   it between individual steps?
 
 Harmont's goal is to make all these questions obsolete. CI/CD _can_ be better,
-and that's what [Harmont](https://harmont.dev) is — a CI/CD that sucks a lot
-less.
+and that's what [Harmont](https://harmont.dev) is -- a CI/CD that wants to suck
+a lot less.
