@@ -1139,6 +1139,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "walkdir",
  "webbrowser",
  "which 6.0.3",
  "wiremock",

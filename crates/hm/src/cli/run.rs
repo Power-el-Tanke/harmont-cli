@@ -2,6 +2,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Parser)]
+#[allow(clippy::struct_excessive_bools, clippy::doc_markdown)]
 pub struct RunArgs {
     /// Pipeline slug. Required when the repo declares more than one
     /// `@hm.pipeline`; the CLI lists available slugs when omitted.

@@ -88,6 +88,15 @@ pub async fn run(
         .map_err(|e| HmError::Docker(format!("daemon ping failed: {e}")))?;
     let run_id = Uuid::new_v4();
 
+    // Evict cache images older than 3 days.
+    #[allow(clippy::duration_suboptimal_units)]
+    let max_age = std::time::Duration::from_secs(3 * 24 * 3600);
+    match docker.evict_stale_cache_images(max_age).await {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(count = n, "evicted stale cache images (>3d)"),
+        Err(e) => tracing::debug!(%e, "cache eviction skipped"),
+    }
+
     // Build workspace: either archive-based or bind-mount.
     let ws = Arc::new(if bind_mount {
         workspace::WorkspaceManager::bind_mount(repo_root)?
@@ -228,7 +237,7 @@ pub async fn run(
             {
                 Ok(outcome) => outcome,
                 Err(e) => {
-                    tracing::error!(%e, "step execution failed");
+                    tracing::error!(error = format!("{e:#}"), "step execution failed");
                     StepOutcome {
                         exit_code: 1,
                         snapshot: None,
@@ -316,6 +325,8 @@ async fn execute_step(
     let env_map = transition.env;
     let step_id = Uuid::new_v4();
 
+    let parent_key_for_workspace = parent_key.clone();
+
     bus.emit(BuildEvent::StepQueued {
         step_id,
         key: step_key.clone(),
@@ -339,9 +350,16 @@ async fn execute_step(
                 .unwrap_or_default(),
             tag: tag.0.clone(),
         });
-        // Short-circuit: the cached image already exists locally, so
-        // there is nothing for the executor to do. Return the
-        // snapshot so downstream nodes can use it as their parent.
+
+        // In bind-mount mode, extract cached image's workspace so
+        // downstream steps inherit artifacts (node_modules, .venv, etc).
+        if run_ctx.workspace.is_bind_mount() {
+            run_ctx
+                .workspace
+                .populate_from_cached_image(&step_key, &tag.0, "/workspace", &run_ctx.docker)
+                .await?;
+        }
+
         return Ok(StepOutcome {
             exit_code: 0,
             snapshot: Some(tag.clone()),
@@ -350,7 +368,11 @@ async fn execute_step(
 
     // Resolve workspace host path for bind-mount mode.
     let workspace_host_path = if run_ctx.workspace.is_bind_mount() {
-        Some(run_ctx.workspace.clone_for_chain(chain_id)?)
+        Some(
+            run_ctx
+                .workspace
+                .clone_for_step(&step_key, parent_key_for_workspace.as_deref())?,
+        )
     } else {
         None
     };

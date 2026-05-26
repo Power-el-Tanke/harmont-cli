@@ -36,7 +36,7 @@ pub struct ContainerPool {
     containers: Mutex<HashMap<usize, String>>,
 }
 
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::missing_panics_doc)]
 impl ContainerPool {
     /// Retrieve the container ID for a given chain, if one has been pooled.
     pub fn get(&self, chain_id: usize) -> Option<String> {

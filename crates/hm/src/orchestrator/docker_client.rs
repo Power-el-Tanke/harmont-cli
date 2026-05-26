@@ -489,6 +489,61 @@ impl DockerClient {
         Ok(tags)
     }
 
+    /// Remove all `harmont-local/*` images older than `max_age`.
+    /// Returns the number of images removed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HmError::Docker`] if listing images fails.
+    pub async fn evict_stale_cache_images(&self, max_age: std::time::Duration) -> Result<usize> {
+        let cutoff =
+            chrono::Utc::now().timestamp() - i64::try_from(max_age.as_secs()).unwrap_or(i64::MAX);
+        let mut filters = HashMap::new();
+        filters.insert("reference".to_string(), vec!["harmont-local/*".to_string()]);
+        let images = self
+            .inner
+            .list_images(Some(ListImagesOptions {
+                filters,
+                ..Default::default()
+            }))
+            .await
+            .map_err(|e| HmError::Docker(format!("list_images: {e}")))?;
+
+        let mut removed = 0usize;
+        for img in images {
+            if img.created < cutoff {
+                for tag in &img.repo_tags {
+                    if tag.starts_with("harmont-local/") {
+                        if let Err(e) = self.remove_image(tag).await {
+                            tracing::debug!(image = %tag, %e, "evict stale image");
+                        } else {
+                            removed += 1;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(removed)
+    }
+
+    /// Remove ALL `harmont-local/*` images. Returns count removed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HmError::Docker`] if listing images fails.
+    pub async fn purge_all_cache_images(&self) -> Result<usize> {
+        let tags = self.list_images_by_prefix("harmont-local/").await?;
+        let mut removed = 0usize;
+        for tag in &tags {
+            if let Err(e) = self.remove_image(tag).await {
+                tracing::debug!(image = %tag, %e, "purge cache image");
+            } else {
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
     pub async fn stop_remove(&self, container_id: &str) {
         let _ = self
             .inner
@@ -520,8 +575,107 @@ impl DockerClient {
         &self.inner
     }
 
-    /// List container summaries filtered by a single label `k=v` predicate.
+    /// Extract the workspace from a cached Docker image to a host directory.
     ///
+    /// Creates a temp container from the image, downloads the `workdir` as tar,
+    /// extracts to `dest` (stripping the top-level dir). Used in bind-mount mode
+    /// so downstream steps inherit cached artifacts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the container cannot be created, the tar download
+    /// fails, or extraction encounters I/O errors.
+    #[allow(clippy::expect_used, clippy::missing_panics_doc)]
+    pub async fn extract_workspace_from_image(
+        &self,
+        image: &str,
+        workdir: &str,
+        dest: &std::path::Path,
+    ) -> Result<()> {
+        use bollard::container::DownloadFromContainerOptions;
+
+        let cfg = Config::<String> {
+            image: Some(image.to_string()),
+            cmd: Some(vec!["true".into()]),
+            ..Default::default()
+        };
+        let cid = self
+            .inner
+            .create_container(None::<CreateContainerOptions<String>>, cfg)
+            .await
+            .map_err(|e| HmError::Docker(format!("create temp container for extract: {e}")))?
+            .id;
+
+        let opts = DownloadFromContainerOptions { path: workdir };
+        let mut stream = self.inner.download_from_container(&cid, Some(opts));
+        let mut tar_bytes: Vec<u8> = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk =
+                chunk.map_err(|e| HmError::Docker(format!("download_from_container: {e}")))?;
+            tar_bytes.extend_from_slice(&chunk);
+        }
+
+        let _ = self
+            .inner
+            .remove_container(
+                &cid,
+                Some(RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                }),
+            )
+            .await;
+
+        // Docker tar has entries prefixed with the basename of the path
+        // (e.g. "workspace/file.txt"). Unpack into a temp dir first (so
+        // hardlinks resolve correctly), then merge the inner directory
+        // into dest.
+        let staging = tempfile::Builder::new()
+            .prefix("hm-extract-")
+            .tempdir()
+            .context("create staging dir")?;
+        let cursor = std::io::Cursor::new(tar_bytes);
+        let mut archive = tar::Archive::new(cursor);
+        archive.set_overwrite(true);
+        archive
+            .unpack(staging.path())
+            .context("unpack workspace tar")?;
+
+        let prefix = std::path::Path::new(workdir)
+            .file_name()
+            .unwrap_or_default();
+        let inner = staging.path().join(prefix);
+        let source = if inner.is_dir() {
+            &inner
+        } else {
+            staging.path()
+        };
+
+        // Merge extracted files into dest, overwriting existing.
+        for entry in walkdir::WalkDir::new(source).min_depth(1) {
+            let entry = entry.context("walk extracted dir")?;
+            let rel = entry
+                .path()
+                .strip_prefix(source)
+                .expect("walkdir entry always has source as prefix");
+            let target = dest.join(rel);
+            if entry.file_type().is_dir() {
+                std::fs::create_dir_all(&target).ok();
+            } else {
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent).ok();
+                }
+                // Use rename for speed; fall back to copy if cross-device.
+                if std::fs::rename(entry.path(), &target).is_err() {
+                    std::fs::copy(entry.path(), &target)
+                        .with_context(|| format!("copy extracted file {}", rel.display()))?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// # Errors
     ///
     /// Returns [`HmError::Docker`] when `list_containers` fails.

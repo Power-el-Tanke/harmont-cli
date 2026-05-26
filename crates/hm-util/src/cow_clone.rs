@@ -1,6 +1,6 @@
 //! Copy-on-write directory cloning.
 //!
-//! The main entry point is [`cow_clone_dir`], which creates a CoW clone
+//! The main entry point is [`cow_clone_dir`], which creates a copy-on-write clone
 //! of a directory tree using the most efficient method available on the
 //! current platform.
 
@@ -54,6 +54,53 @@ fn cow_clone_platform(src: &Path, dst: &Path) -> Result<()> {
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn cow_clone_platform(src: &Path, dst: &Path) -> Result<()> {
     fallback_copy(src, dst)
+}
+
+/// Overlay source files from `src` onto an existing `dst` directory.
+///
+/// Copies all files from `src` into `dst`, overwriting any that already
+/// exist. Used to layer fresh source on top of extracted cached artifacts
+/// so local edits always win over stale cached source.
+///
+/// # Errors
+///
+/// Returns an error if the overlay operation fails.
+pub fn overlay_source(src: &Path, dst: &Path) -> Result<()> {
+    // rsync -a with trailing slash merges contents into dst.
+    let status = std::process::Command::new("rsync")
+        .args(["-a"])
+        .arg(format!("{}/", src.display()))
+        .arg(format!("{}/", dst.display()))
+        .status();
+
+    match status {
+        Ok(s) if s.success() => return Ok(()),
+        _ => {}
+    }
+
+    // Fallback: cp -R src/. dst (POSIX "copy directory contents")
+    #[cfg(target_os = "macos")]
+    {
+        let src_dot = src.join(".");
+        let status = std::process::Command::new("cp")
+            .args(["-R", "--"])
+            .arg(&src_dot)
+            .arg(dst)
+            .status()
+            .context("overlay source via cp")?;
+        anyhow::ensure!(status.success(), "cp overlay exited with {status}");
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let status = std::process::Command::new("cp")
+            .args(["-R", "-T", "--"])
+            .arg(src)
+            .arg(dst)
+            .status()
+            .context("overlay source via cp")?;
+        anyhow::ensure!(status.success(), "cp overlay exited with {status}");
+    }
+    Ok(())
 }
 
 fn fallback_copy(src: &Path, dst: &Path) -> Result<()> {

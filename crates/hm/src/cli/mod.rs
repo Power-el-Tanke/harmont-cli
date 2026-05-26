@@ -67,6 +67,15 @@ pub enum CacheCommand {
     Save(CacheSaveArgs),
     /// Restore harmont Docker images from a cache directory.
     Restore(CacheRestoreArgs),
+    /// Remove all harmont-local/* Docker images.
+    Clean(CacheCleanArgs),
+}
+
+#[derive(Debug, Clone, clap::Args)]
+pub struct CacheCleanArgs {
+    /// Only remove images older than this many days (default: remove all).
+    #[arg(long)]
+    pub older_than_days: Option<u64>,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -92,6 +101,7 @@ pub async fn dispatch(command: Command, ctx: RunContext) -> Result<i32> {
         Command::Cache(cmd) => match cmd {
             CacheCommand::Save(args) => crate::commands::cache::handle_save(&args.dir).await,
             CacheCommand::Restore(args) => crate::commands::cache::handle_restore(&args.dir).await,
+            CacheCommand::Clean(args) => crate::commands::cache::handle_clean(args).await,
         },
         Command::Version => version::run().await.map(|()| 0),
         Command::Plugin(cmd) => plugin::run(cmd).await.map(|()| 0),
