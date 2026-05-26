@@ -129,7 +129,7 @@ async fn run_step(ctx: &RunContext, input: ExecutorInput) -> Result<StepResult> 
                 .workspace_host_path
                 .as_ref()
                 .map_or_else(Vec::new, |host_path| {
-                    vec![format!("{}:{}:rw", host_path.display(), input.workdir)]
+                    vec![format!("{}:/workspace-src:ro", host_path.display())]
                 });
 
             let new_cid = ctx
@@ -192,6 +192,7 @@ async fn run_step(ctx: &RunContext, input: ExecutorInput) -> Result<StepResult> 
 /// When `reused` is true the container was retrieved from the pool and
 /// workspace injection is skipped (it was already done by the first
 /// step in this chain).
+#[allow(clippy::too_many_lines)]
 async fn run_in_container(
     ctx: &RunContext,
     cid: &str,
@@ -217,7 +218,24 @@ async fn run_in_container(
             () = cancel.cancelled() => anyhow::bail!("cancelled during workspace upload"),
         }
     }
-    // Bind-mount mode: workspace already mounted via container binds, nothing to do.
+    // Bind-mount mode: sync fresh source from /workspace-src into /workspace,
+    // preserving artifact dirs (.venv, node_modules, target) from the image.
+    if !reused && input.workspace_host_path.is_some() {
+        let sync_script = concat!(
+            "if command -v rsync >/dev/null 2>&1; then ",
+            "rsync -a --exclude .venv --exclude node_modules --exclude target ",
+            "--exclude .git /workspace-src/ /workspace/; ",
+            "else ",
+            "cp -a /workspace-src/. /workspace/ 2>/dev/null || true; ",
+            "fi"
+        );
+        let sync_cmd = vec!["sh".into(), "-c".into(), sync_script.into()];
+        let mut sink = tokio::io::sink();
+        ctx.docker
+            .exec_streaming(cid, &sync_cmd, &[], &input.workdir, &mut sink)
+            .await
+            .context("workspace source sync")?;
+    }
 
     // --- Exec step command ---
     let mut writer = StepLogWriter::new(input.step_id, Arc::clone(&ctx.event_bus));

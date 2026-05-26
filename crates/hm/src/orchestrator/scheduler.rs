@@ -325,8 +325,6 @@ async fn execute_step(
     let env_map = transition.env;
     let step_id = Uuid::new_v4();
 
-    let parent_key_for_workspace = parent_key.clone();
-
     bus.emit(BuildEvent::StepQueued {
         step_id,
         key: step_key.clone(),
@@ -351,15 +349,6 @@ async fn execute_step(
             tag: tag.0.clone(),
         });
 
-        // In bind-mount mode, extract cached image's workspace so
-        // downstream steps inherit artifacts (node_modules, .venv, etc).
-        if run_ctx.workspace.is_bind_mount() {
-            run_ctx
-                .workspace
-                .populate_from_cached_image(&step_key, &tag.0, "/workspace", &run_ctx.docker)
-                .await?;
-        }
-
         return Ok(StepOutcome {
             exit_code: 0,
             snapshot: Some(tag.clone()),
@@ -367,12 +356,10 @@ async fn execute_step(
     }
 
     // Resolve workspace host path for bind-mount mode.
+    // Host path only provides source files — artifacts come from the
+    // Docker image layer (committed parent or cache hit).
     let workspace_host_path = if run_ctx.workspace.is_bind_mount() {
-        Some(
-            run_ctx
-                .workspace
-                .clone_for_step(&step_key, parent_key_for_workspace.as_deref())?,
-        )
+        Some(run_ctx.workspace.clone_for_step(&step_key, None)?)
     } else {
         None
     };
