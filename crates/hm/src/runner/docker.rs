@@ -252,8 +252,13 @@ async fn run_in_container(
     )]
     let exit_code = rc as i32;
 
-    // --- Commit snapshot on success (only in archive mode) ---
-    let committed = if exit_code == 0 && input.workspace_host_path.is_none() {
+    // --- Commit snapshot on success ---
+    // Commit when there's a cache target OR when in bind-mount mode
+    // (downstream steps need the committed image as their container base
+    // for apt-installed packages, etc).
+    let committed = if exit_code == 0
+        && (plan.commit_to.is_some() || input.workspace_host_path.is_some())
+    {
         let target_tag = plan.commit_to.clone().unwrap_or_else(|| {
             let safe: String = input
                 .step
