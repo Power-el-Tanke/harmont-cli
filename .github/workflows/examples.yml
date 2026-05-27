@@ -112,8 +112,10 @@ jobs:
       - name: Enable FUSE allow_other
         run: sudo sed -i 's/#user_allow_other/user_allow_other/' /etc/fuse.conf
 
-      - name: Run example via hm run
-        working-directory: examples/${{ matrix.example }}
-        env:
-          HM_NONINTERACTIVE: '1'
-        run: ${{ github.workspace }}/bin/hm run ci
+      - name: Run example via harmont
+        uses: harmont-dev/actions-hm@main
+        with:
+          pipeline: ci
+          hm-path: ${{ github.workspace }}/bin/hm
+          working-directory: examples/${{ matrix.example }}
+          cache: 'false'

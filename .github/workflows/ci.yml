@@ -98,6 +98,9 @@ jobs:
     name: dogfood (hm run ci)
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -121,32 +124,8 @@ jobs:
       - name: Enable FUSE allow_other
         run: sudo sed -i 's/#user_allow_other/user_allow_other/' /etc/fuse.conf
 
-      - name: Restore harmont Docker cache
-        uses: actions/cache/restore@v4
+      - name: Run harmont pipeline
+        uses: harmont-dev/actions-hm@main
         with:
-          path: .harmont-cache/
-          key: harmont-v1-will-never-match
-          restore-keys: |
-            harmont-v1-
-
-      - name: Load cached Docker images
-        run: ./target/debug/hm cache restore .harmont-cache/
-
-      - name: hm run ci
-        env:
-          HM_NONINTERACTIVE: '1'
-        run: ./target/debug/hm run ci
-
-      - name: Save harmont Docker images
-        id: cache-manifest
-        if: always()
-        run: |
-          hash=$(./target/debug/hm cache save .harmont-cache/)
-          echo "key=harmont-v1-${hash}" >> "$GITHUB_OUTPUT"
-
-      - name: Upload Docker cache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: .harmont-cache/
-          key: ${{ steps.cache-manifest.outputs.key }}
+          pipeline: ci
+          hm-path: ./target/debug/hm
