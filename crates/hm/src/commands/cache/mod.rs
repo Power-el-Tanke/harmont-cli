@@ -1,5 +1,5 @@
-pub mod manifest;
 mod clean;
+pub mod manifest;
 mod restore;
 mod save;
 

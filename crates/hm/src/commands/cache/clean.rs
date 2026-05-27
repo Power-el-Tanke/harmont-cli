@@ -3,21 +3,20 @@ use anyhow::Result;
 /// # Errors
 /// Returns an error if workspace cache removal or Docker image listing fails.
 pub async fn handle_clean() -> Result<i32> {
-    let mut cleaned =
-        if let Some(ws_cache) = hm_util::dirs::harmont_workspace_cache_dir()
-            && ws_cache.exists()
-        {
-            let size = dir_size(&ws_cache);
-            std::fs::remove_dir_all(&ws_cache)?;
-            tracing::info!(
-                path = %ws_cache.display(),
-                "removed workspace cache ({})",
-                human_bytes(size),
-            );
-            true
-        } else {
-            false
-        };
+    let mut cleaned = if let Some(ws_cache) = hm_util::dirs::harmont_workspace_cache_dir()
+        && ws_cache.exists()
+    {
+        let size = dir_size(&ws_cache);
+        std::fs::remove_dir_all(&ws_cache)?;
+        tracing::info!(
+            path = %ws_cache.display(),
+            "removed workspace cache ({})",
+            human_bytes(size),
+        );
+        true
+    } else {
+        false
+    };
 
     let docker = match crate::orchestrator::docker_client::DockerClient::connect() {
         Ok(d) => match d.ping().await {

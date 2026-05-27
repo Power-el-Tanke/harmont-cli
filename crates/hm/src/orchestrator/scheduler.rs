@@ -306,11 +306,13 @@ async fn execute_step(
         });
     }
 
-    let cache_lookup = cache_tag.as_ref().map_or(CacheDecision::MissNoCommit, |tag| {
-        CacheDecision::MissBuildAs {
-            tag: SnapshotRef::from(tag.clone()),
-        }
-    });
+    let cache_lookup = cache_tag
+        .as_ref()
+        .map_or(CacheDecision::MissNoCommit, |tag| {
+            CacheDecision::MissBuildAs {
+                tag: SnapshotRef::from(tag.clone()),
+            }
+        });
 
     let input = ExecutorInput {
         step: step_wire,

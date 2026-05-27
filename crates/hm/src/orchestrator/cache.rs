@@ -97,7 +97,10 @@ mod tests {
             key: Some("0123456789abcdef0000".into()),
         }));
         let tag = stable_cache_tag(&s);
-        assert_eq!(tag, Some("harmont-cache/build:0123456789abcdef".to_string()));
+        assert_eq!(
+            tag,
+            Some("harmont-cache/build:0123456789abcdef".to_string())
+        );
     }
 
     #[test]

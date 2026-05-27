@@ -96,7 +96,13 @@ async fn run_step(ctx: &RunContext, input: ExecutorInput) -> Result<StepResult> 
         .await
         .context("mkdir /workspace")?;
 
-    let tar_cmd = vec!["tar".into(), "-xzf".into(), "-".into(), "-C".into(), input.workdir.clone()];
+    let tar_cmd = vec![
+        "tar".into(),
+        "-xzf".into(),
+        "-".into(),
+        "-C".into(),
+        input.workdir.clone(),
+    ];
     ctx.docker
         .exec_streaming_stdin(&cid, &tar_cmd, &env_vec, "/", &archive_bytes, &mut sink)
         .await
