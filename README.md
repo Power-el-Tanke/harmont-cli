@@ -22,6 +22,10 @@
 > active development. APIs will change. We'd love your feedback -- [join the
 > community](#community).
 >
+> The performance of the `hm` CLI is not as good as I'd like it to be. I'm
+> actively working on cross-run caching. The code quality is similar -- needs
+> improving and is a work in progress.
+>
 > **`hm` will always remain open-source, and pluggable into any CI/CD
 > provider.**
 
