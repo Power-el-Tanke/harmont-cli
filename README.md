@@ -130,12 +130,6 @@ hm run ci
 
 If the repo declares only one pipeline, the slug is optional - just `hm run`.
 
-### Real-world example
-
-For production pipelines, use typed toolchains - they generate test, lint, and
-format steps from your project layout:
-
-
 Browse the [example projects](./examples) for idiomatic pipelines in Rust,
 Go, Python, Java, C++, React, Next.js, and more.
 
