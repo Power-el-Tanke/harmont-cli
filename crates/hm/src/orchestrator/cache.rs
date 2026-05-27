@@ -26,6 +26,7 @@ fn sanitize_for_tag(s: &str) -> String {
 ///
 /// Returns `None` when the step has no cache, a `"none"` policy, or no
 /// cache key.
+#[must_use]
 pub fn stable_cache_tag(step: &CommandStep) -> Option<String> {
     let cache = step.cache.as_ref()?;
     if cache.policy == "none" {

@@ -288,30 +288,29 @@ async fn execute_step(
 
     // --- Docker image cache check ---
     let cache_tag = cache::stable_cache_tag(&step_wire);
-    if let Some(ref dtag) = cache_tag {
-        if run_ctx.docker.image_exists(dtag).await.unwrap_or(false) {
-            bus.emit(BuildEvent::StepCacheHit {
-                step_id,
-                key: step_wire
-                    .cache
-                    .as_ref()
-                    .and_then(|c| c.key.clone())
-                    .unwrap_or_default(),
-                tag: dtag.clone(),
-            });
-            return Ok(StepOutcome {
-                exit_code: 0,
-                snapshot: Some(SnapshotRef::from(dtag.clone())),
-            });
-        }
+    if let Some(ref dtag) = cache_tag
+        && run_ctx.docker.image_exists(dtag).await.unwrap_or(false)
+    {
+        bus.emit(BuildEvent::StepCacheHit {
+            step_id,
+            key: step_wire
+                .cache
+                .as_ref()
+                .and_then(|c| c.key.clone())
+                .unwrap_or_default(),
+            tag: dtag.clone(),
+        });
+        return Ok(StepOutcome {
+            exit_code: 0,
+            snapshot: Some(SnapshotRef::from(dtag.clone())),
+        });
     }
 
-    let cache_lookup = match &cache_tag {
-        Some(tag) => CacheDecision::MissBuildAs {
+    let cache_lookup = cache_tag.as_ref().map_or(CacheDecision::MissNoCommit, |tag| {
+        CacheDecision::MissBuildAs {
             tag: SnapshotRef::from(tag.clone()),
-        },
-        None => CacheDecision::MissNoCommit,
-    };
+        }
+    });
 
     let input = ExecutorInput {
         step: step_wire,
@@ -375,12 +374,11 @@ async fn execute_step(
                 });
                 cancel.cancel();
             } else if let Some(ref snapshot) = sr.committed_snapshot {
-                if let Some(ref dtag) = cache_tag {
-                    if snapshot.0 != *dtag {
-                        if let Err(e) = run_ctx.docker.tag_image(&snapshot.0, dtag).await {
-                            tracing::warn!(%e, "failed to re-tag Docker image for cache");
-                        }
-                    }
+                if let Some(ref dtag) = cache_tag
+                    && snapshot.0 != *dtag
+                    && let Err(e) = run_ctx.docker.tag_image(&snapshot.0, dtag).await
+                {
+                    tracing::warn!(%e, "failed to re-tag Docker image for cache");
                 }
                 cache::evict_stale_docker_tags(&run_ctx.docker, &step_key, cache_tag.as_deref())
                     .await;

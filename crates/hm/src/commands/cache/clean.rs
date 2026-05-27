@@ -1,11 +1,12 @@
 use anyhow::Result;
 
+/// # Errors
+/// Returns an error if workspace cache removal or Docker image listing fails.
 pub async fn handle_clean() -> Result<i32> {
-    let mut cleaned = false;
-
-    // 1. Remove workspace cache directory.
-    if let Some(ws_cache) = hm_util::dirs::harmont_workspace_cache_dir() {
-        if ws_cache.exists() {
+    let mut cleaned =
+        if let Some(ws_cache) = hm_util::dirs::harmont_workspace_cache_dir()
+            && ws_cache.exists()
+        {
             let size = dir_size(&ws_cache);
             std::fs::remove_dir_all(&ws_cache)?;
             tracing::info!(
@@ -13,11 +14,11 @@ pub async fn handle_clean() -> Result<i32> {
                 "removed workspace cache ({})",
                 human_bytes(size),
             );
-            cleaned = true;
-        }
-    }
+            true
+        } else {
+            false
+        };
 
-    // 2. Connect to Docker for image cleanup.
     let docker = match crate::orchestrator::docker_client::DockerClient::connect() {
         Ok(d) => match d.ping().await {
             Ok(()) => Some(d),
@@ -33,7 +34,6 @@ pub async fn handle_clean() -> Result<i32> {
     };
 
     if let Some(docker) = &docker {
-        // 3. Remove harmont-cache/* Docker images.
         let cache_images = docker.list_images_by_prefix("harmont-cache/").await?;
         for tag in &cache_images {
             if let Err(e) = docker.remove_image(tag).await {
@@ -44,7 +44,6 @@ pub async fn handle_clean() -> Result<i32> {
             }
         }
 
-        // 4. Remove harmont-local-ephemeral/* Docker images.
         let ephemeral_images = docker
             .list_images_by_prefix("harmont-local-ephemeral/")
             .await?;
@@ -70,13 +69,13 @@ fn dir_size(path: &std::path::Path) -> u64 {
         std::fs::read_dir(p)
             .into_iter()
             .flatten()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .map(|e| {
                 let path = e.path();
                 if path.is_dir() {
                     walk(&path)
                 } else {
-                    e.metadata().map(|m| m.len()).unwrap_or(0)
+                    e.metadata().map_or(0, |m| m.len())
                 }
             })
             .sum()
@@ -84,14 +83,19 @@ fn dir_size(path: &std::path::Path) -> u64 {
     walk(path)
 }
 
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "human-readable display; sub-byte precision irrelevant"
+)]
 fn human_bytes(bytes: u64) -> String {
+    let b = bytes as f64;
     if bytes < 1024 {
         format!("{bytes}B")
     } else if bytes < 1024 * 1024 {
-        format!("{:.1}KB", bytes as f64 / 1024.0)
+        format!("{:.1}KB", b / 1024.0)
     } else if bytes < 1024 * 1024 * 1024 {
-        format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0))
+        format!("{:.1}MB", b / (1024.0 * 1024.0))
     } else {
-        format!("{:.1}GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+        format!("{:.1}GB", b / (1024.0 * 1024.0 * 1024.0))
     }
 }
