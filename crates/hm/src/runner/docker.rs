@@ -19,10 +19,6 @@ use uuid::Uuid;
 use super::{RunContext, StepRunner};
 use crate::orchestrator::events::EventBus;
 
-// ---------------------------------------------------------------------------
-// DockerRunner
-// ---------------------------------------------------------------------------
-
 /// Step runner that executes pipeline steps inside Docker containers
 /// via the local daemon (Bollard).
 #[derive(Debug)]
@@ -42,10 +38,6 @@ impl StepRunner for DockerRunner {
         Box::pin(async move { run_step(&ctx, input).await })
     }
 }
-
-// ---------------------------------------------------------------------------
-// Step execution
-// ---------------------------------------------------------------------------
 
 fn resolve_image(step: &CommandStep, input: &ExecutorInput) -> String {
     if let Some(snap) = &input.parent_snapshot {
@@ -198,10 +190,6 @@ async fn run_in_container(
     })
 }
 
-// ---------------------------------------------------------------------------
-// DecisionPlan
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone)]
 struct DecisionPlan {
     run_command: bool,
@@ -229,10 +217,6 @@ fn decision_plan(decision: &CacheDecision) -> DecisionPlan {
     }
 }
 
-// ---------------------------------------------------------------------------
-// sanitize_container_name
-// ---------------------------------------------------------------------------
-
 fn sanitize_container_name(run_id: &str, step_key: &str) -> String {
     let run_short: String = run_id.chars().take(8).collect();
     let key: String = step_key
@@ -247,10 +231,6 @@ fn sanitize_container_name(run_id: &str, step_key: &str) -> String {
         .collect();
     format!("harmont-{run_short}-{key}")
 }
-
-// ---------------------------------------------------------------------------
-// StepLogWriter
-// ---------------------------------------------------------------------------
 
 /// Streams bytes from a Docker exec into per-line [`BuildEvent::StepLog`]
 /// events on the [`EventBus`]. Buffers partial lines until a `\n` arrives.
@@ -319,10 +299,6 @@ impl tokio::io::AsyncWrite for StepLogWriter {
         std::task::Poll::Ready(Ok(()))
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]

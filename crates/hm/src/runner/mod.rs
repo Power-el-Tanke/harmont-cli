@@ -21,10 +21,6 @@ use crate::orchestrator::events::EventBus;
 
 pub mod docker;
 
-// ---------------------------------------------------------------------------
-// RunContext
-// ---------------------------------------------------------------------------
-
 /// Shared context threaded into every runner invocation.
 ///
 /// Replaces the monolithic `OrchestratorState` that the old plugin
@@ -37,10 +33,6 @@ pub struct RunContext {
     pub archives: Arc<ArchiveStore>,
     pub cancel: CancellationToken,
 }
-
-// ---------------------------------------------------------------------------
-// StepRunner trait
-// ---------------------------------------------------------------------------
 
 /// Async trait implemented by step executors (e.g. the Docker runner).
 ///
@@ -68,10 +60,6 @@ pub trait StepRunner: Send + Sync + fmt::Debug {
     ) -> Pin<Box<dyn Future<Output = Result<StepResult>> + Send + '_>>;
 }
 
-// ---------------------------------------------------------------------------
-// OutputRenderer trait
-// ---------------------------------------------------------------------------
-
 /// Synchronous observer of [`BuildEvent`]s.
 ///
 /// Implementations format events for human consumption (progress bars,
@@ -80,10 +68,6 @@ pub trait OutputRenderer: Send + fmt::Debug {
     /// Called once per event in emission order.
     fn on_event(&mut self, event: &BuildEvent);
 }
-
-// ---------------------------------------------------------------------------
-// RunnerRegistry
-// ---------------------------------------------------------------------------
 
 /// Maps runner names to [`StepRunner`] implementations.
 ///
@@ -147,10 +131,6 @@ impl fmt::Debug for RunnerRegistry {
             .finish()
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]

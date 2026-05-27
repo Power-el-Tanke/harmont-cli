@@ -50,8 +50,6 @@ fn edge_kinds(g: &PipelineGraph) -> (usize, usize) {
     (builds_in, depends_on)
 }
 
-// ---- Python fixtures ----
-
 #[test]
 fn python_monorepo_ci() {
     let g = load_fixture("python", "monorepo-ci");
@@ -115,8 +113,6 @@ fn python_kitchen_sink() {
     }
 }
 
-// ---- TypeScript fixtures ----
-
 #[test]
 fn ts_monorepo_ci() {
     let g = load_fixture("ts", "monorepo-ci");
@@ -145,8 +141,6 @@ fn ts_kitchen_sink() {
     assert!(g.node_count() >= 12);
 }
 
-// ---- Structural invariants on all fixtures ----
-
 #[test]
 fn all_fixtures_have_valid_structure() {
     for dsl in ["python", "ts"] {
@@ -171,8 +165,6 @@ fn all_fixtures_have_valid_structure() {
         }
     }
 }
-
-// ---- Cross-DSL parity ----
 
 #[test]
 fn parity_node_count() {
