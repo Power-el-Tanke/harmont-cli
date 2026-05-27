@@ -1,10 +1,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-//! End-to-end test for COW workspace mode.
+//! End-to-end test for workspace state propagation via Docker commits.
 //!
-//! Verifies that `hm run --cow` correctly propagates workspace state
-//! across a three-step chain: step `a` writes a file, step `b` reads
-//! it and writes another, step `c` reads both — proving COW workspace
-//! inheritance works through the entire chain.
+//! Verifies that `hm run` correctly propagates workspace state across a
+//! three-step chain: step `a` writes a file, step `b` reads it and
+//! writes another, step `c` reads both — proving Docker-commit-based
+//! workspace inheritance works through the entire chain.
 //!
 //! Skipped unless `HARMONT_LOCAL_E2E=1` is set AND a Docker daemon is
 //! reachable.
@@ -55,7 +55,7 @@ fn cow_chain_inherits_workspace() {
         .expect("copy fixture into .harmont/");
 
     let out = Command::new(bin)
-        .args(["run", "--cow", "--logs", "--dir"])
+        .args(["run", "--logs", "--dir"])
         .arg(tmp.path())
         .arg("cow-chain")
         .env("HARMONT_CIDSL_PY", repo_root.join("cidsl/py"))
@@ -66,10 +66,10 @@ fn cow_chain_inherits_workspace() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         out.status.success(),
-        "hm run --cow failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "hm run failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
         stderr.contains("c-saw-both"),
-        "step c must see files from a and b via COW workspace.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "step c must see files from a and b via Docker workspace.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 }

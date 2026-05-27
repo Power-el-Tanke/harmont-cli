@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use anyhow::Result;
 use hm_plugin_protocol::{BuildEvent, ExecutorInput, StepResult};
@@ -18,7 +18,6 @@ use tokio_util::sync::CancellationToken;
 use crate::orchestrator::archive::ArchiveStore;
 use crate::orchestrator::docker_client::DockerClient;
 use crate::orchestrator::events::EventBus;
-use crate::orchestrator::workspace::WorkspaceManager;
 
 pub mod docker;
 
@@ -37,7 +36,6 @@ pub struct RunContext {
     pub event_bus: Arc<EventBus>,
     pub archives: Arc<ArchiveStore>,
     pub cancel: CancellationToken,
-    pub workspace: Arc<Mutex<WorkspaceManager>>,
 }
 
 // ---------------------------------------------------------------------------

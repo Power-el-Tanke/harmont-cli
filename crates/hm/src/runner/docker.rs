@@ -1,9 +1,10 @@
 //! Docker-based step runner.
 //!
-//! Each step runs inside a Docker container with the workspace
-//! bind-mounted from the host via COW clones. System-level state
-//! (installed packages) propagates via Docker image commits; workspace
-//! files propagate via host-side COW directory clones.
+//! Each step runs inside a Docker container. The source archive is
+//! piped into `/workspace` via `tar -xzf -` before the step command
+//! runs. System-level state (packages, caches, virtualenvs) AND
+//! workspace files all propagate via Docker image commits — no bind
+//! mounts, no host-side COW clones.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -66,17 +67,6 @@ async fn run_step(ctx: &RunContext, input: ExecutorInput) -> Result<StepResult> 
         });
     }
 
-    let workspace_mgr = &ctx.workspace;
-
-    let workspace_path = {
-        let mgr = workspace_mgr
-            .lock()
-            .map_err(|_| anyhow::anyhow!("workspace manager mutex poisoned"))?;
-        mgr.workspace_path(&input.step.key)
-            .map(std::path::Path::to_path_buf)
-            .ok_or_else(|| anyhow::anyhow!("workspace for step '{}' not created", input.step.key))?
-    };
-
     let image = resolve_image(&input.step, &input);
     let container_name = sanitize_container_name(&input.run_id.to_string(), &input.step.key);
     let env_vec: Vec<String> = input.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
@@ -93,13 +83,32 @@ async fn run_step(ctx: &RunContext, input: ExecutorInput) -> Result<StepResult> 
         }
     }
 
-    // Start container with workspace bind mount.
-    let binds = vec![format!("{}:{}", workspace_path.display(), input.workdir)];
     let cid = ctx
         .docker
-        .start_long_lived_with_mounts(&image, &env_vec, &input.workdir, &container_name, &binds)
+        .start_long_lived(&image, &env_vec, &input.workdir, &container_name)
         .await
-        .context("docker start with mounts failed")?;
+        .context("docker start failed")?;
+
+    // Pipe source archive into /workspace. Runs for every step — cached
+    // parent images contain stale workspace files; tar overwrites source
+    // while preserving build artifacts (tar is additive).
+    let archive_bytes = ctx
+        .archives
+        .get_bytes(input.workspace_archive_id)
+        .ok_or_else(|| anyhow::anyhow!("source archive not found"))?;
+
+    let mkdir_cmd = vec!["mkdir".into(), "-p".into(), input.workdir.clone()];
+    let mut sink = tokio::io::sink();
+    ctx.docker
+        .exec_streaming(&cid, &mkdir_cmd, &env_vec, "/", &mut sink)
+        .await
+        .context("mkdir /workspace")?;
+
+    let tar_cmd = vec!["tar".into(), "-xzf".into(), "-".into(), "-C".into(), input.workdir.clone()];
+    ctx.docker
+        .exec_streaming_stdin(&cid, &tar_cmd, &env_vec, "/", &archive_bytes, &mut sink)
+        .await
+        .context("pipe source archive into container")?;
 
     let result = run_in_container(ctx, &cid, &input, &env_vec, &plan).await;
     ctx.docker.stop_remove(&cid).await;

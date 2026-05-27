@@ -14,6 +14,5 @@ pub mod output_subscriber;
 pub mod scheduler;
 pub mod signal;
 pub mod source;
-pub mod workspace;
 
 pub use scheduler::run;

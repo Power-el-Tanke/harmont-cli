@@ -72,56 +72,6 @@ Save this as `.harmont/pipeline.py` (or `.harmont/pipeline.ts`):
 
 ```python
 import harmont as hm
-
-@hm.pipeline("ci")
-def ci() -> hm.Step:
-    return (
-        hm.sh("echo 'hello from harmont'", label="hello")
-          .sh("uname -a", label="env")
-    )
-```
-
-</details>
-
-<details>
-<summary><b>TypeScript</b></summary>
-
-```typescript
-import { sh, pipeline, type PipelineDefinition } from "harmont";
-
-const pipelines: PipelineDefinition[] = [
-  {
-    slug: "ci",
-    pipeline: pipeline(
-      sh("echo 'hello from harmont'", { label: "hello" })
-        .sh("uname -a", { label: "env" }),
-    ),
-  },
-];
-
-export default pipelines;
-```
-
-</details>
-
-### 2. Run it
-
-```sh
-hm run ci
-```
-
-If the repo declares only one pipeline, the slug is optional - just `hm run`.
-
-### Real-world example
-
-For production pipelines, use typed toolchains - they generate test, lint, and
-format steps from your project layout:
-
-<details open>
-<summary><b>Python</b></summary>
-
-```python
-import harmont as hm
 from harmont.python import PythonToolchain
 
 @hm.target()
@@ -171,6 +121,20 @@ export default pipelines;
 ```
 
 </details>
+
+### 2. Run it
+
+```sh
+hm run ci
+```
+
+If the repo declares only one pipeline, the slug is optional - just `hm run`.
+
+### Real-world example
+
+For production pipelines, use typed toolchains - they generate test, lint, and
+format steps from your project layout:
+
 
 Browse the [example projects](./examples) for idiomatic pipelines in Rust,
 Go, Python, Java, C++, React, Next.js, and more.

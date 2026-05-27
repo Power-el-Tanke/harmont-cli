@@ -89,17 +89,6 @@ pub async fn run(
 
     // Build the source archive once.
     let archive_bytes = build_archive_bytes(&repo_root).context("build source archive")?;
-
-    // Extract the source archive into a temporary directory and create
-    // a workspace manager for per-step COW clones. This must happen
-    // before `archives.register()` which consumes the bytes.
-    let run_dir = std::env::temp_dir().join(format!("harmont-run-{run_id}"));
-    let workspace = {
-        let mgr = super::workspace::WorkspaceManager::from_archive(run_dir, &archive_bytes)
-            .context("init COW workspace")?;
-        Arc::new(std::sync::Mutex::new(mgr))
-    };
-
     let archive_id = archives.register(archive_bytes);
 
     let run_ctx = RunContext {
@@ -107,7 +96,6 @@ pub async fn run(
         event_bus: bus.clone(),
         archives: archives.clone(),
         cancel: cancel.clone(),
-        workspace: workspace.clone(),
     };
 
     let parallelism = parallelism.max(1);
@@ -244,15 +232,6 @@ pub async fn run(
         }
     }
 
-    {
-        let mut mgr = workspace
-            .lock()
-            .map_err(|_| anyhow::anyhow!("workspace manager mutex poisoned"))?;
-        if let Err(e) = mgr.cleanup() {
-            tracing::warn!(%e, "failed to clean up COW workspace");
-        }
-    }
-
     bus.emit(BuildEvent::BuildEnd {
         exit_code: overall,
         duration_ms: dur,
@@ -307,46 +286,32 @@ async fn execute_step(
         display_name: display_name.clone(),
     });
 
-    let cow_outcome = cache::decide_cow(&step_wire)?;
-    let decision = cow_outcome.decision;
-    let cow_cache_to = cow_outcome.cache_to;
-    let cow_stale_dirs = cow_outcome.stale_dirs;
-
-    {
-        let mut mgr = run_ctx
-            .workspace
-            .lock()
-            .map_err(|_| anyhow::anyhow!("workspace manager mutex poisoned"))?;
-        if let CacheDecision::Hit { ref tag } = decision {
-            if tag.0.starts_with("cow:") {
-                let cached_path = PathBuf::from(&tag.0[4..]);
-                mgr.create_workspace_from_cache(&step_key, &cached_path)
-                    .context("create workspace from cache")?;
-            } else {
-                mgr.create_workspace(&step_key, parent_key.as_deref())
-                    .context("create workspace for cache hit")?;
-            }
-        } else {
-            mgr.create_workspace(&step_key, parent_key.as_deref())
-                .context("create workspace for step")?;
+    // --- Docker image cache check ---
+    let cache_tag = cache::stable_cache_tag(&step_wire);
+    if let Some(ref dtag) = cache_tag {
+        if run_ctx.docker.image_exists(dtag).await.unwrap_or(false) {
+            bus.emit(BuildEvent::StepCacheHit {
+                step_id,
+                key: step_wire
+                    .cache
+                    .as_ref()
+                    .and_then(|c| c.key.clone())
+                    .unwrap_or_default(),
+                tag: dtag.clone(),
+            });
+            return Ok(StepOutcome {
+                exit_code: 0,
+                snapshot: Some(SnapshotRef::from(dtag.clone())),
+            });
         }
     }
 
-    if let CacheDecision::Hit { tag } = &decision {
-        bus.emit(BuildEvent::StepCacheHit {
-            step_id,
-            key: step_wire
-                .cache
-                .as_ref()
-                .and_then(|c| c.key.clone())
-                .unwrap_or_default(),
-            tag: tag.0.clone(),
-        });
-        return Ok(StepOutcome {
-            exit_code: 0,
-            snapshot: Some(tag.clone()),
-        });
-    }
+    let cache_lookup = match &cache_tag {
+        Some(tag) => CacheDecision::MissBuildAs {
+            tag: SnapshotRef::from(tag.clone()),
+        },
+        None => CacheDecision::MissNoCommit,
+    };
 
     let input = ExecutorInput {
         step: step_wire,
@@ -355,7 +320,7 @@ async fn execute_step(
         workdir: "/workspace".to_string(),
         run_id,
         step_id,
-        cache_lookup: decision,
+        cache_lookup,
         parent_snapshot,
     };
 
@@ -409,23 +374,16 @@ async fn execute_step(
                     ts: chrono::Utc::now(),
                 });
                 cancel.cancel();
-            } else {
-                if let Some(ref cache_to) = cow_cache_to {
-                    let ws_path = {
-                        let mgr = run_ctx
-                            .workspace
-                            .lock()
-                            .map_err(|_| anyhow::anyhow!("workspace manager mutex poisoned"))?;
-                        mgr.workspace_path(&step_key)
-                            .map(std::path::Path::to_path_buf)
-                    };
-                    if let Some(ws) = ws_path
-                        && let Err(e) = cache::persist_cow_cache(&ws, cache_to)
-                    {
-                        tracing::warn!(%e, "failed to persist COW cache");
+            } else if let Some(ref snapshot) = sr.committed_snapshot {
+                if let Some(ref dtag) = cache_tag {
+                    if snapshot.0 != *dtag {
+                        if let Err(e) = run_ctx.docker.tag_image(&snapshot.0, dtag).await {
+                            tracing::warn!(%e, "failed to re-tag Docker image for cache");
+                        }
                     }
                 }
-                cache::evict_stale_cow_dirs(&cow_stale_dirs);
+                cache::evict_stale_docker_tags(&run_ctx.docker, &step_key, cache_tag.as_deref())
+                    .await;
             }
             Ok(StepOutcome {
                 exit_code: sr.exit_code,

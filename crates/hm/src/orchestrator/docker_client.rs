@@ -16,7 +16,7 @@ use bollard::container::{
 use bollard::exec::{CreateExecOptions, StartExecResults};
 use bollard::image::{
     CommitContainerOptions, CreateImageOptions, ImportImageOptions, ListImagesOptions,
-    RemoveImageOptions,
+    RemoveImageOptions, TagImageOptions,
 };
 use bollard::models::HostConfig;
 use futures_util::StreamExt;
@@ -405,6 +405,30 @@ impl DockerClient {
             )
             .await
             .map_err(|e| HmError::Docker(format!("remove_image '{image}': {e}")))?;
+        Ok(())
+    }
+
+    /// Add an additional tag to an existing image.
+    ///
+    /// `source` is the existing image reference (tag or ID) and
+    /// `new_tag` is the desired `repo:tag` string. If `new_tag`
+    /// contains no `:`, the Docker-default tag `"latest"` is used.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HmError::Docker`] if `tag_image` fails (source image
+    /// not found, daemon I/O failure).
+    pub async fn tag_image(&self, source: &str, new_tag: &str) -> Result<()> {
+        let parts: Vec<&str> = new_tag.splitn(2, ':').collect();
+        let (repo, tag) = match parts.as_slice() {
+            [r, v] => (*r, *v),
+            [r] => (*r, "latest"),
+            _ => unreachable!("splitn(2) yields one or two parts for non-empty input"),
+        };
+        self.inner
+            .tag_image(source, Some(TagImageOptions { repo, tag }))
+            .await
+            .map_err(|e| HmError::Docker(format!("tag_image '{source}' -> '{new_tag}': {e}")))?;
         Ok(())
     }
 

@@ -42,6 +42,12 @@ impl ArchiveStore {
             .unwrap_or(0)
     }
 
+    /// Return a clone of the full archive bytes, or `None` if unknown.
+    #[must_use]
+    pub fn get_bytes(&self, id: ArchiveId) -> Option<Vec<u8>> {
+        self.archives.lock().ok()?.get(&id).cloned()
+    }
+
     /// Read up to `max` bytes from offset `offset`. Returns empty
     /// when offset is beyond end, or when the archive is unknown.
     #[must_use]
