@@ -1,22 +1,38 @@
+"""Dagger mirror of the dogfood CI pipeline in .harmont/ci.py.
+
+Hand-wired equivalent of the harmont pipeline, for comparing Dagger's
+authoring ergonomics against the harmont DSL. Every shell command below is
+copied verbatim from what the harmont toolchains emit
+(harmont.rust / harmont.py.uv / harmont._toolchain).
+"""
+
+import anyio
 import dagger
 from dagger import dag, function, object_type
+
+UBUNTU = "ubuntu:24.04"
+
+# Packages from .harmont/ci.py shared_base().
+APT_PACKAGES = (
+    "curl ca-certificates build-essential pkg-config libssl-dev "
+    "python3 python3-venv"
+)
 
 
 @object_type
 class HarmontDagger:
     @function
-    def container_echo(self, string_arg: str) -> dagger.Container:
-        """Returns a container that echoes whatever string argument is provided"""
-        return dag.container().from_("alpine:latest").with_exec(["echo", string_arg])
-
-    @function
-    async def grep_dir(self, directory_arg: dagger.Directory, pattern: str) -> str:
-        """Returns lines that match a pattern in the files of the provided Directory"""
-        return await (
+    def shared_base(self) -> dagger.Container:
+        """ubuntu:24.04 + apt packages + CI=true (mirrors hm.apt_base)."""
+        return (
             dag.container()
-            .from_("alpine:latest")
-            .with_mounted_directory("/mnt", directory_arg)
-            .with_workdir("/mnt")
-            .with_exec(["grep", "-R", pattern, "."])
-            .stdout()
+            .from_(UBUNTU)
+            .with_env_variable("CI", "true")
+            .with_exec(
+                [
+                    "sh",
+                    "-c",
+                    f"apt-get update && apt-get install -y {APT_PACKAGES}",
+                ]
+            )
         )
