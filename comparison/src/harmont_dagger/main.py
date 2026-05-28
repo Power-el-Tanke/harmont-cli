@@ -15,16 +15,31 @@ from dagger import DefaultPath, Ignore, dag, function, object_type
 UBUNTU = "ubuntu:24.04"
 
 # Source directory argument shared by every leaf. Unlike harmont (which
-# snapshots the git working tree), Dagger uploads the host directory verbatim
-# and does NOT honor .gitignore — so the 33GB `target/` dir would be streamed
-# into the engine unless excluded explicitly. `Ignore` is Dagger's mechanism
-# for that. `DefaultPath` is resolved relative to the module dir (comparison/),
-# so ".." points at the repo root and lets callers omit `--source`. node_modules
-# is kept (the rust build's esbuild step needs the harmont-ts bundle).
+# snapshots the git working tree, implicitly excluding gitignored paths), Dagger
+# uploads the host directory verbatim and does NOT honor .gitignore — so the
+# 33GB `target/` dir would be streamed into the engine unless excluded
+# explicitly. `Ignore` is Dagger's mechanism for that. `DefaultPath` is resolved
+# relative to the module dir (comparison/), so ".." points at the repo root and
+# lets callers omit `--source`.
+#
+# node_modules is excluded to MATCH harmont: harmont's container has no node and
+# its git-tree snapshot omits the (gitignored) node_modules, so the hm-dsl-engine
+# build.rs finds no esbuild and writes stub TS bundles. Mounting the host
+# node_modules would instead ship macOS esbuild binaries into a Linux container
+# and break the build — so excluding it is both faithful and correct.
 Source = Annotated[
     dagger.Directory,
     DefaultPath(".."),
-    Ignore(["target", ".git", "comparison", "**/__pycache__", "**/.venv"]),
+    Ignore(
+        [
+            "target",
+            ".git",
+            "comparison",
+            "**/node_modules",
+            "**/__pycache__",
+            "**/.venv",
+        ]
+    ),
 ]
 
 # Packages from .harmont/ci.py shared_base().
@@ -76,6 +91,55 @@ class HarmontDagger:
             .with_workdir("/src")
             .with_exec(
                 ["sh", "-c", ". $HOME/.cargo/env && cd . && cargo fmt --check"]
+            )
+            .stdout()
+        )
+
+    @function
+    def rust_warmup(self, source: Source) -> dagger.Container:
+        """rust_installed + source + the warmup build that test/clippy fork from."""
+        return (
+            self.rust_installed()
+            .with_directory("/src", source)
+            .with_workdir("/src")
+            .with_exec(
+                [
+                    "sh",
+                    "-c",
+                    ". $HOME/.cargo/env && cd . && "
+                    "cargo build --workspace --tests --locked",
+                ]
+            )
+        )
+
+    @function
+    async def rust_test(self, source: Source) -> str:
+        """cargo test -p harmont-cli --locked --lib (forks warmup)."""
+        return await (
+            self.rust_warmup(source)
+            .with_exec(
+                [
+                    "sh",
+                    "-c",
+                    ". $HOME/.cargo/env && cd . && "
+                    "cargo test -p harmont-cli --locked --lib",
+                ]
+            )
+            .stdout()
+        )
+
+    @function
+    async def rust_clippy(self, source: Source) -> str:
+        """cargo clippy --workspace --tests --locked -- -D warnings (forks warmup)."""
+        return await (
+            self.rust_warmup(source)
+            .with_exec(
+                [
+                    "sh",
+                    "-c",
+                    ". $HOME/.cargo/env && cd . && "
+                    "cargo clippy --workspace --tests --locked -- -D warnings",
+                ]
             )
             .stdout()
         )
