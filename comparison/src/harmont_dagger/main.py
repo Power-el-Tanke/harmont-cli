@@ -6,6 +6,7 @@ copied verbatim from what the harmont toolchains emit
 (harmont.rust / harmont.py.uv / harmont._toolchain).
 """
 
+from collections.abc import Awaitable
 from typing import Annotated
 
 import anyio
@@ -227,7 +228,7 @@ class HarmontDagger:
         """
         results: dict[str, str] = {}
 
-        async def run(name: str, coro) -> None:
+        async def run(name: str, coro: Awaitable[str]) -> None:
             results[name] = await coro
 
         async with anyio.create_task_group() as tg:
