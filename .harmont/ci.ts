@@ -20,7 +20,7 @@ const base = aptBase({
 });
 
 const rustProject = rust.project({ path: ".", base });
-const pyProject = py.uv({ path: "dsls/harmont-py", base });
+const pyProject = py.uv({ path: "crates/hm-dsl-engine/harmont-py", base });
 
 const pipelines: PipelineDefinition[] = [
   {

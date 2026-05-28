@@ -29,7 +29,7 @@ def rust_project(shared_base: hm.Target[hm.Step]) -> tuple[hm.Step, ...]:
 
 @hm.target()
 def py_project(shared_base: hm.Target[hm.Step]) -> tuple[hm.Step, ...]:
-    project = hm.py.uv(path="dsls/harmont-py", base=shared_base)
+    project = hm.py.uv(path="crates/hm-dsl-engine/harmont-py", base=shared_base)
     return hm.group([
         project.lint(),
         project.fmt(),
