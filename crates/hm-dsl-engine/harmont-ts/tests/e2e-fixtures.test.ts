@@ -15,7 +15,7 @@ import { haskell } from "../src/toolchains/haskell.js";
 import { cmake } from "../src/toolchains/cmake.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const FIXTURES_DIR = resolve(__dir, "../../../tests/e2e/fixtures/ts");
+const FIXTURES_DIR = resolve(__dir, "../../../../tests/e2e/fixtures/ts");
 
 function deepSortKeys(obj: unknown): unknown {
   if (Array.isArray(obj)) return obj.map(deepSortKeys);

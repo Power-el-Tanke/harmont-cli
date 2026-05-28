@@ -24,7 +24,7 @@ from harmont.python import python as python_tc
 from harmont.rust import rust
 from harmont.zig import zig
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 FIXTURES_DIR = REPO_ROOT / "tests" / "e2e" / "fixtures" / "python"
 
 
