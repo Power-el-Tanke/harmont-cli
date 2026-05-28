@@ -213,3 +213,32 @@ class HarmontDagger:
             )
             .stdout()
         )
+
+    # ---- Aggregate: mirrors @hm.pipeline("ci") -> [rust_project, py_project] ----
+
+    @function
+    async def ci(self, source: Source) -> str:
+        """Run every leaf concurrently; fail if any leaf fails.
+
+        Mirrors .harmont/ci.py's pipeline returning [rust_project, py_project]:
+        all leaves run, and the pipeline is red if any leaf is. Dagger dedupes
+        the shared work, so rust_test/rust_clippy share one workspace compile and
+        the four Python leaves share one uv sync.
+        """
+        results: dict[str, str] = {}
+
+        async def run(name: str, coro) -> None:
+            results[name] = await coro
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(run, "rust_test", self.rust_test(source))
+            tg.start_soon(run, "rust_clippy", self.rust_clippy(source))
+            tg.start_soon(run, "rust_fmt", self.rust_fmt(source))
+            tg.start_soon(run, "py_lint", self.py_lint(source))
+            tg.start_soon(run, "py_fmt", self.py_fmt(source))
+            tg.start_soon(run, "py_typecheck", self.py_typecheck(source))
+            tg.start_soon(run, "py_test", self.py_test(source))
+
+        return "\n".join(
+            f"=== {name} ===\n{out}" for name, out in sorted(results.items())
+        )
