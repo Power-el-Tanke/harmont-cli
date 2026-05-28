@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { clearTargetCache } from "../src/target.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const EXAMPLES_ROOT = resolve(__dir, "../../../examples");
+const EXAMPLES_ROOT = resolve(__dir, "../../../../examples");
 
 function exampleDirs(): string[] {
   if (!existsSync(EXAMPLES_ROOT)) return [];
