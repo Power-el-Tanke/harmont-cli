@@ -56,6 +56,17 @@ RUSTUP = (
     "rustc --version && cargo --version"
 )
 
+# uv install — verbatim from harmont.py.uv._uv_install_cmd("latest").
+UV_INSTALL = (
+    "curl -LsSf https://astral.sh/uv/install.sh | sh && "
+    "ln -sf /root/.local/bin/uv /usr/local/bin/uv && uv --version"
+)
+
+# .harmont/ci.py passes path="dsls/harmont-py"; in this tree the package is at
+# crates/hm-dsl-engine/harmont-py (the path .github/workflows/ci.yml uses). Point
+# at the directory that exists on disk so the Python leaves run.
+PY_PATH = "crates/hm-dsl-engine/harmont-py"
+
 
 @object_type
 class HarmontDagger:
@@ -139,6 +150,65 @@ class HarmontDagger:
                     "-c",
                     ". $HOME/.cargo/env && cd . && "
                     "cargo clippy --workspace --tests --locked -- -D warnings",
+                ]
+            )
+            .stdout()
+        )
+
+    # ---- Python uv: mirrors hm.py.uv(path=PY_PATH, base=shared_base) ----
+
+    @function
+    def py_synced(self, source: Source) -> dagger.Container:
+        """shared_base + uv install + uv sync --all-extras."""
+        return (
+            self.shared_base()
+            .with_exec(["sh", "-c", UV_INSTALL])
+            .with_directory("/src", source)
+            .with_workdir("/src")
+            .with_exec(["sh", "-c", f"cd {PY_PATH} && uv sync --all-extras"])
+        )
+
+    @function
+    async def py_lint(self, source: Source) -> str:
+        """uv run ruff check . in PY_PATH."""
+        return await (
+            self.py_synced(source)
+            .with_exec(["sh", "-c", f"cd {PY_PATH} && uv run ruff check ."])
+            .stdout()
+        )
+
+    @function
+    async def py_fmt(self, source: Source) -> str:
+        """uv run ruff format --check . in PY_PATH."""
+        return await (
+            self.py_synced(source)
+            .with_exec(
+                ["sh", "-c", f"cd {PY_PATH} && uv run ruff format --check ."]
+            )
+            .stdout()
+        )
+
+    @function
+    async def py_typecheck(self, source: Source) -> str:
+        """uv run ty check harmont in PY_PATH (mirrors typecheck(paths="harmont"))."""
+        return await (
+            self.py_synced(source)
+            .with_exec(["sh", "-c", f"cd {PY_PATH} && uv run ty check harmont"])
+            .stdout()
+        )
+
+    @function
+    async def py_test(self, source: Source) -> str:
+        """uv run pytest with the same deselects as .harmont/ci.py."""
+        return await (
+            self.py_synced(source)
+            .with_exec(
+                [
+                    "sh",
+                    "-c",
+                    f"cd {PY_PATH} && uv run pytest -v "
+                    "--deselect tests/test_gradle.py "
+                    "--deselect tests/test_haskell.py",
                 ]
             )
             .stdout()
