@@ -15,19 +15,6 @@ from dagger import DefaultPath, Ignore, dag, function, object_type
 
 UBUNTU = "ubuntu:24.04"
 
-# Source directory argument shared by every leaf. Unlike harmont (which
-# snapshots the git working tree, implicitly excluding gitignored paths), Dagger
-# uploads the host directory verbatim and does NOT honor .gitignore — so the
-# 33GB `target/` dir would be streamed into the engine unless excluded
-# explicitly. `Ignore` is Dagger's mechanism for that. `DefaultPath` is resolved
-# relative to the module dir (comparison/), so ".." points at the repo root and
-# lets callers omit `--source`.
-#
-# node_modules is excluded to MATCH harmont: harmont's container has no node and
-# its git-tree snapshot omits the (gitignored) node_modules, so the hm-dsl-engine
-# build.rs finds no esbuild and writes stub TS bundles. Mounting the host
-# node_modules would instead ship macOS esbuild binaries into a Linux container
-# and break the build — so excluding it is both faithful and correct.
 Source = Annotated[
     dagger.Directory,
     DefaultPath(".."),
@@ -43,13 +30,11 @@ Source = Annotated[
     ),
 ]
 
-# Packages from .harmont/ci.py shared_base().
 APT_PACKAGES = (
     "curl ca-certificates build-essential pkg-config libssl-dev "
     "python3 python3-venv"
 )
 
-# rustup install — verbatim from harmont.rust._rustup_cmd("stable", ("clippy", "rustfmt")).
 RUSTUP = (
     "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | "
     "sh -s -- -y --default-toolchain stable --profile minimal "
@@ -57,17 +42,12 @@ RUSTUP = (
     "rustc --version && cargo --version"
 )
 
-# uv install — verbatim from harmont.py.uv._uv_install_cmd("latest").
 UV_INSTALL = (
     "curl -LsSf https://astral.sh/uv/install.sh | sh && "
     "ln -sf /root/.local/bin/uv /usr/local/bin/uv && uv --version"
 )
 
-# .harmont/ci.py passes path="dsls/harmont-py"; in this tree the package is at
-# crates/hm-dsl-engine/harmont-py (the path .github/workflows/ci.yml uses). Point
-# at the directory that exists on disk so the Python leaves run.
 PY_PATH = "crates/hm-dsl-engine/harmont-py"
-
 
 @object_type
 class HarmontDagger:
@@ -87,16 +67,12 @@ class HarmontDagger:
             )
         )
 
-    # ---- Rust: mirrors hm.rust.project(path=".", base=shared_base) ----
-
     @function
     def rust_installed(self) -> dagger.Container:
-        """shared_base + rustup stable with clippy & rustfmt. No source mounted."""
         return self.shared_base().with_exec(["sh", "-c", RUSTUP])
 
     @function
     async def rust_fmt(self, source: Source) -> str:
-        """cargo fmt --check. Forks the toolchain (no warmup build), as harmont does."""
         return await (
             self.rust_installed()
             .with_directory("/src", source)
@@ -109,7 +85,6 @@ class HarmontDagger:
 
     @function
     def rust_warmup(self, source: Source) -> dagger.Container:
-        """rust_installed + source + the warmup build that test/clippy fork from."""
         return (
             self.rust_installed()
             .with_directory("/src", source)
@@ -126,7 +101,6 @@ class HarmontDagger:
 
     @function
     async def rust_test(self, source: Source) -> str:
-        """cargo test -p harmont-cli --locked --lib (forks warmup)."""
         return await (
             self.rust_warmup(source)
             .with_exec(
@@ -142,7 +116,6 @@ class HarmontDagger:
 
     @function
     async def rust_clippy(self, source: Source) -> str:
-        """cargo clippy --workspace --tests --locked -- -D warnings (forks warmup)."""
         return await (
             self.rust_warmup(source)
             .with_exec(
@@ -155,8 +128,6 @@ class HarmontDagger:
             )
             .stdout()
         )
-
-    # ---- Python uv: mirrors hm.py.uv(path=PY_PATH, base=shared_base) ----
 
     @function
     def py_synced(self, source: Source) -> dagger.Container:
@@ -180,7 +151,6 @@ class HarmontDagger:
 
     @function
     async def py_fmt(self, source: Source) -> str:
-        """uv run ruff format --check . in PY_PATH."""
         return await (
             self.py_synced(source)
             .with_exec(
@@ -214,8 +184,6 @@ class HarmontDagger:
             )
             .stdout()
         )
-
-    # ---- Aggregate: mirrors @hm.pipeline("ci") -> [rust_project, py_project] ----
 
     @function
     async def ci(self, source: Source) -> str:
