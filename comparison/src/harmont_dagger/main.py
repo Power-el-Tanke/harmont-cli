@@ -1,11 +1,3 @@
-"""Dagger mirror of the dogfood CI pipeline in .harmont/ci.py.
-
-Hand-wired equivalent of the harmont pipeline, for comparing Dagger's
-authoring ergonomics against the harmont DSL. Every shell command below is
-copied verbatim from what the harmont toolchains emit
-(harmont.rust / harmont.py.uv / harmont._toolchain).
-"""
-
 from collections.abc import Awaitable
 from typing import Annotated
 
@@ -53,7 +45,6 @@ PY_PATH = "crates/hm-dsl-engine/harmont-py"
 class HarmontDagger:
     @function
     def shared_base(self) -> dagger.Container:
-        """ubuntu:24.04 + apt packages + CI=true (mirrors hm.apt_base)."""
         return (
             dag.container()
             .from_(UBUNTU)
@@ -161,7 +152,6 @@ class HarmontDagger:
 
     @function
     async def py_typecheck(self, source: Source) -> str:
-        """uv run ty check harmont in PY_PATH (mirrors typecheck(paths="harmont"))."""
         return await (
             self.py_synced(source)
             .with_exec(["sh", "-c", f"cd {PY_PATH} && uv run ty check harmont"])
@@ -187,13 +177,6 @@ class HarmontDagger:
 
     @function
     async def ci(self, source: Source) -> str:
-        """Run every leaf concurrently; fail if any leaf fails.
-
-        Mirrors .harmont/ci.py's pipeline returning [rust_project, py_project]:
-        all leaves run, and the pipeline is red if any leaf is. Dagger dedupes
-        the shared work, so rust_test/rust_clippy share one workspace compile and
-        the four Python leaves share one uv sync.
-        """
         results: dict[str, str] = {}
 
         async def run(name: str, coro: Awaitable[str]) -> None:
