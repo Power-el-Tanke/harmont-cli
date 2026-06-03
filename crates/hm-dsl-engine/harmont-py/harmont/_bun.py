@@ -62,8 +62,7 @@ def _make_bun(
 ) -> BunProject:
     if version is not None and not _VERSION_RE.match(version):
         msg = (
-            f"hm.bun: invalid version {version!r}\n"
-            '  → use a semver version like "1.2.0" or "1.2"'
+            f'hm.bun: invalid version {version!r}\n  → use a semver version like "1.2.0" or "1.2"'
         )
         raise ValueError(msg)
     bun_installed = make_install_chain(
