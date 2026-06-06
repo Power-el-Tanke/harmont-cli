@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+import harmont as hm
 from harmont._toolchain import bun_install_cmd
 
 
@@ -15,15 +18,6 @@ def test_bun_install_cmd_latest():
 def test_bun_install_cmd_version():
     cmd = bun_install_cmd("1.2.0")
     assert "bun-v1.2.0" in cmd
-
-
-# ---------------------------------------------------------------------------
-# BunProject / _BunEntry integration tests
-# ---------------------------------------------------------------------------
-
-import pytest
-
-import harmont as hm
 
 
 def _cmds(p: dict) -> list[str]:
