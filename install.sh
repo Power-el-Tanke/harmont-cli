@@ -60,16 +60,18 @@ sha256_of() {
   fi
 }
 
-# Map (os, arch) to a Rust target triple, or empty if unsupported. The four
-# supported triples mirror the build-binary matrix in release.yml.
+# Map (os, arch) to a Rust target triple, or empty if unsupported. On Linux we
+# always install the statically-linked musl build: it runs on any distro
+# (glibc, musl/Alpine, distroless) with no libc version coupling, at the cost of
+# a larger binary. release.yml builds musl for both Linux arches.
 detect_target() {
   os="$(uname_s)"
   arch="$(uname_m)"
   case "$os" in
     Linux)
       case "$arch" in
-        x86_64 | amd64)  printf 'x86_64-unknown-linux-gnu' ;;
-        aarch64 | arm64) printf 'aarch64-unknown-linux-gnu' ;;
+        x86_64 | amd64)  printf 'x86_64-unknown-linux-musl' ;;
+        aarch64 | arm64) printf 'aarch64-unknown-linux-musl' ;;
         *) printf '' ;;
       esac
       ;;
