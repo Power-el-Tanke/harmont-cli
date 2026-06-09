@@ -184,3 +184,20 @@ fn init_ts_templates_roundtrip_render() {
         );
     }
 }
+
+// ── skills ───────────────────────────────────────────────────────
+
+#[test]
+fn init_noninteractive_skips_skills() {
+    let dir = tempfile::tempdir().unwrap();
+    hm().args(["init", "--template", "rust", "--dir"])
+        .arg(dir.path())
+        .assert()
+        .success();
+
+    let skill = dir.path().join(".claude/commands/validate-ci.md");
+    assert!(
+        !skill.exists(),
+        "non-interactive init should not create skills"
+    );
+}
