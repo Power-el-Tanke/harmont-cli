@@ -63,6 +63,9 @@ struct StepOutcome {
     /// The scheduler propagates this to downstream `BuildsIn` children
     /// so they can COW-copy instead of re-extracting.
     workspace_dir: Option<String>,
+    /// True when the snapshot is ephemeral and must be cleaned up after
+    /// all downstream steps finish.
+    ephemeral_snapshot: bool,
 }
 
 type StepFuture = futures::future::Shared<BoxFuture<'static, StepOutcome>>;
@@ -81,6 +84,7 @@ type StepFuture = futures::future::Shared<BoxFuture<'static, StepOutcome>>;
 /// Returns an error if the source archive cannot be built or any
 /// scheduler-level failure occurs. Non-zero step exit codes are
 /// surfaced via the returned [`BuildOutcome`], not as an `Err`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn run(
     graph: PipelineGraph,
     repo_root: PathBuf,
@@ -89,6 +93,7 @@ pub(crate) async fn run(
     runner_registry: Arc<RunnerRegistry>,
     tx: tokio::sync::mpsc::Sender<BuildEvent>,
     cancel: CancellationToken,
+    vm_backend: Option<Arc<dyn hm_vm::VmBackend>>,
 ) -> crate::Result<BuildOutcome> {
     // Set up per-run state.
     let bus = EventBus::new();
@@ -207,6 +212,7 @@ pub(crate) async fn run(
                         exit_code: None,
                         duration_ms: 0,
                     }),
+                    ephemeral_snapshot: false,
                     workspace_dir: None,
                 };
             }
@@ -260,6 +266,7 @@ pub(crate) async fn run(
                             duration_ms: 0,
                         }),
                         workspace_dir: None,
+                        ephemeral_snapshot: false,
                     }
                 }
             }
@@ -319,6 +326,29 @@ pub(crate) async fn run(
     }
 
     let steps: Vec<StepResultSummary> = outcomes.iter().filter_map(|o| o.summary.clone()).collect();
+
+    // Clean up ephemeral Docker snapshots and kept temp workspace dirs.
+    // These are from uncached steps that used TempDir::keep() so children
+    // could COW-copy from them. Now that all steps have finished, the
+    // temp dirs and one-shot snapshots can be removed.
+    for outcome in &outcomes {
+        if outcome.ephemeral_snapshot
+            && let (Some(backend), Some(snap)) = (vm_backend.as_ref(), outcome.snapshot.as_ref())
+        {
+            let snap_id = hm_vm::SnapshotId(snap.0.clone());
+            if let Err(e) = backend.remove_snapshot(&snap_id).await {
+                tracing::warn!(snapshot = %snap.0, error = %e, "failed to remove ephemeral snapshot");
+            }
+        }
+        if let Some(ref ws) = outcome.workspace_dir
+            && outcome.ephemeral_snapshot
+        {
+            let ws = ws.clone();
+            tokio::task::spawn_blocking(move || std::fs::remove_dir_all(ws).ok())
+                .await
+                .ok();
+        }
+    }
 
     let dur = started_total.elapsed().as_millis() as u64;
 
@@ -488,6 +518,7 @@ async fn execute_step(
                             duration_ms: dur_ms,
                         }),
                         workspace_dir: None,
+                        ephemeral_snapshot: false,
                     });
                 }
             }
@@ -533,6 +564,7 @@ async fn execute_step(
                     duration_ms: dur_ms,
                 }),
                 workspace_dir: sr.workspace_dir,
+                ephemeral_snapshot: sr.ephemeral_snapshot,
             })
         }
         Err(e) => {

@@ -51,6 +51,9 @@ pub struct ExecutionResult {
     pub snapshot: Option<SnapshotId>,
     pub cached: bool,
     pub workspace_dir: Option<PathBuf>,
+    /// True when the snapshot is ephemeral (not registered in the cache)
+    /// and must be cleaned up by the caller after downstream steps finish.
+    pub ephemeral_snapshot: bool,
 }
 
 /// VM resource configuration.

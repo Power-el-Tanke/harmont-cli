@@ -51,6 +51,7 @@ impl StepRunner for VmRunner {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 #[tracing::instrument(skip(vm, ctx), fields(step_key = %input.step.key))]
 async fn run_step_vm(vm: &HmVm, ctx: &StepContext, input: ExecutorInput) -> Result<StepResult> {
     let policy = match &input.cache_lookup {
@@ -59,6 +60,33 @@ async fn run_step_vm(vm: &HmVm, ctx: &StepContext, input: ExecutorInput) -> Resu
         }
         CacheDecision::MissNoCommit => CachingPolicy::None,
     };
+
+    // Fast path: check cache before doing any workspace prep. COW copies
+    // are expensive and entirely wasted on cache hits.
+    if let CachingPolicy::Cache { ref key } = policy
+        && let Some(result) = vm.peek_cache(key).await?
+    {
+        ctx.event_bus.emit(BuildEvent::StepCacheHit {
+            step_id: input.step_id,
+            key: input
+                .step
+                .cache
+                .as_ref()
+                .and_then(|c| c.key.clone())
+                .unwrap_or_default(),
+            tag: result
+                .snapshot
+                .as_ref()
+                .map_or_else(String::new, |s| s.0.clone()),
+        });
+        return Ok(StepResult {
+            exit_code: 0,
+            committed_snapshot: result.snapshot.map(|s| SnapshotRef(s.0)),
+            artifacts: vec![],
+            workspace_dir: result.workspace_dir.map(|p| p.display().to_string()),
+            ephemeral_snapshot: false,
+        });
+    }
 
     let source = if let Some(ref snap) = input.parent_snapshot {
         ImageSource::Snapshot(SnapshotId(snap.0.clone()))
@@ -157,6 +185,7 @@ async fn run_step_vm(vm: &HmVm, ctx: &StepContext, input: ExecutorInput) -> Resu
         committed_snapshot: result.snapshot.map(|s| SnapshotRef(s.0)),
         artifacts: vec![],
         workspace_dir,
+        ephemeral_snapshot: result.ephemeral_snapshot,
     })
 }
 

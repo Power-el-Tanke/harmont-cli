@@ -157,6 +157,7 @@ mod tests {
                     committed_snapshot: None,
                     artifacts: vec![],
                     workspace_dir: None,
+                    ephemeral_snapshot: false,
                 })
             })
         }

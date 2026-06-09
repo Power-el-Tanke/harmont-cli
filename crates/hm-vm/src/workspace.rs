@@ -17,24 +17,55 @@ pub fn cow_copy(src: &Path, dst: &Path) -> Result<()> {
     let src_dot = format!("{}/.", src.display());
 
     let status = if cfg!(target_os = "macos") {
-        let st = Command::new("cp").args(["-cR", &src_dot]).arg(dst).status();
+        let st = Command::new("cp")
+            .args(["-cpR", &src_dot])
+            .arg(dst)
+            .status();
         match st {
             Ok(s) if s.success() => s,
-            _ => Command::new("cp")
-                .args(["-R", &src_dot])
-                .arg(dst)
-                .status()
-                .context("spawning cp")?,
+            _ => {
+                // APFS clonefile failed (cross-volume or non-APFS). Wipe any
+                // partial state left by the failed attempt before falling back
+                // to a regular copy.
+                if dst.exists() {
+                    for entry in std::fs::read_dir(dst)
+                        .with_context(|| format!("cleaning partial COW dst {}", dst.display()))?
+                    {
+                        let p = entry?.path();
+                        if p.is_dir() {
+                            std::fs::remove_dir_all(&p).ok();
+                        } else {
+                            std::fs::remove_file(&p).ok();
+                        }
+                    }
+                }
+                Command::new("cp")
+                    .args(["-pR", &src_dot])
+                    .arg(dst)
+                    .status()
+                    .with_context(|| {
+                        format!(
+                            "spawning cp fallback: {} -> {}",
+                            src.display(),
+                            dst.display()
+                        )
+                    })?
+            }
         }
     } else {
         Command::new("cp")
             .args(["--reflink=auto", "-a", &src_dot])
             .arg(dst)
             .status()
-            .context("spawning cp")?
+            .with_context(|| format!("spawning cp: {} -> {}", src.display(), dst.display()))?
     };
 
-    ensure!(status.success(), "cp exited with {status}");
+    ensure!(
+        status.success(),
+        "cp {} -> {} exited with {status}",
+        src.display(),
+        dst.display()
+    );
     Ok(())
 }
 

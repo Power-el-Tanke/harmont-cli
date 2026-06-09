@@ -196,6 +196,9 @@ def predicate(fn: "Callable[[], str]") -> CachePredicate:
 
         step.run("install", cache=hm.predicate(package_manager))
     """
+    if not callable(fn):
+        msg = f"hm.predicate() requires a callable, got {type(fn).__name__}"
+        raise TypeError(msg)
     return CachePredicate(fn=fn)
 
 

@@ -84,6 +84,7 @@ impl ExecutionBackend for LocalBackend {
         let cancel = CancellationToken::new();
         let parallelism = self.parallelism;
         let token = cancel.clone();
+        let backend = Arc::clone(&self.vm_backend);
         let join = tokio::spawn(async move {
             crate::local::run(
                 req.plan.graph,
@@ -93,6 +94,7 @@ impl ExecutionBackend for LocalBackend {
                 registry,
                 tx,
                 token,
+                Some(backend),
             )
             .await
         });

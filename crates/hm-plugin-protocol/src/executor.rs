@@ -104,4 +104,9 @@ pub struct StepResult {
     #[serde(skip)]
     #[schemars(skip)]
     pub workspace_dir: Option<String>,
+    /// True when the snapshot is ephemeral (not registered in the cache)
+    /// and must be cleaned up by the caller after downstream steps finish.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub ephemeral_snapshot: bool,
 }

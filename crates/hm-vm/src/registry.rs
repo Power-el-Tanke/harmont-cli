@@ -127,39 +127,20 @@ impl ImageRegistry {
         result.map(|(snap, ws)| (SnapshotId(snap), ws))
     }
 
-    /// Insert or update a cache entry.
+    /// Insert or update a cache entry, optionally with a workspace directory.
     ///
     /// Returns the evicted entries (snapshot ID and optional workspace directory)
     /// to keep the registry within its configured capacity. The caller is
     /// responsible for cleaning up backend resources and workspace directories
     /// associated with evicted entries.
-    pub fn put(&self, key: &str, snapshot: &SnapshotId) -> Vec<(SnapshotId, Option<String>)> {
-        let now = epoch_secs();
-
-        let Ok(conn) = self.conn.lock() else {
-            return Vec::new();
-        };
-
-        // INSERT OR REPLACE handles both new and updated entries.
-        let _result = conn.execute(
-            "INSERT OR REPLACE INTO snapshots (key, snapshot_id, accessed_at)
-             VALUES (?1, ?2, ?3)",
-            rusqlite::params![key, snapshot.0, now],
-        );
-
-        drop(conn);
-        self.evict_overflow()
-    }
-
-    /// Insert or update a cache entry with an associated workspace directory.
     ///
-    /// Returns the evicted entries (snapshot ID and optional workspace directory)
-    /// to keep the registry within its configured capacity.
-    pub fn put_with_workspace(
+    /// Upsert + eviction run under a single lock acquisition to prevent
+    /// TOCTOU races between concurrent callers.
+    pub fn put(
         &self,
         key: &str,
         snapshot: &SnapshotId,
-        workspace_dir: &str,
+        workspace_dir: Option<&str>,
     ) -> Vec<(SnapshotId, Option<String>)> {
         let now = epoch_secs();
 
@@ -173,8 +154,7 @@ impl ImageRegistry {
             rusqlite::params![key, snapshot.0, now, workspace_dir],
         );
 
-        drop(conn);
-        self.evict_overflow()
+        Self::evict_overflow_locked(&conn, self.capacity)
     }
 
     /// Remove a specific entry.
@@ -223,19 +203,25 @@ impl ImageRegistry {
     }
 
     /// Evict the oldest entries (by `accessed_at`) when the registry exceeds
-    /// its capacity. Returns the snapshot IDs and optional workspace directories
-    /// of evicted entries.
-    fn evict_overflow(&self) -> Vec<(SnapshotId, Option<String>)> {
-        let count = self.len();
-        if count <= self.capacity {
+    /// its capacity. Caller must already hold the connection lock.
+    ///
+    /// SELECT + DELETE run in one lock scope to prevent TOCTOU races
+    /// between concurrent callers.
+    fn evict_overflow_locked(
+        conn: &Connection,
+        capacity: u64,
+    ) -> Vec<(SnapshotId, Option<String>)> {
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM snapshots", [], |row| row.get(0))
+            .unwrap_or(0);
+        #[allow(clippy::cast_sign_loss)]
+        let count = count as u64;
+
+        if count <= capacity {
             return Vec::new();
         }
 
-        let overflow = count - self.capacity;
-
-        let Ok(conn) = self.conn.lock() else {
-            return Vec::new();
-        };
+        let overflow = count - capacity;
 
         let Ok(mut stmt) = conn.prepare(
             "SELECT snapshot_id, workspace_dir FROM snapshots ORDER BY accessed_at ASC LIMIT ?1",
@@ -254,10 +240,8 @@ impl ImageRegistry {
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default();
 
-        // Drop stmt before using conn again for the delete.
         drop(stmt);
 
-        // Delete those entries.
         let _deleted = conn.execute(
             "DELETE FROM snapshots WHERE key IN (
                  SELECT key FROM snapshots ORDER BY accessed_at ASC LIMIT ?1
@@ -291,7 +275,7 @@ mod tests {
     fn put_then_get_returns_snapshot() {
         let (reg, _dir) = open_temp(10);
         let snap = SnapshotId("snap-abc".into());
-        let evicted = reg.put("my-key", &snap);
+        let evicted = reg.put("my-key", &snap, None);
         assert!(evicted.is_empty());
 
         let got = reg.get("my-key");
@@ -303,12 +287,12 @@ mod tests {
         let (reg, _dir) = open_temp(2);
 
         // Insert a, then b. "a" is older by insertion order.
-        reg.put("a", &SnapshotId("snap-a".into()));
+        reg.put("a", &SnapshotId("snap-a".into()), None);
 
         // Tiny sleep so timestamps differ.
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        reg.put("b", &SnapshotId("snap-b".into()));
+        reg.put("b", &SnapshotId("snap-b".into()), None);
 
         // Touch "a" so it becomes the most recently accessed.
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -317,7 +301,7 @@ mod tests {
         // Now insert "c" -- capacity is 2, so one must be evicted.
         // "b" should be evicted since "a" was touched more recently.
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let evicted = reg.put("c", &SnapshotId("snap-c".into()));
+        let evicted = reg.put("c", &SnapshotId("snap-c".into()), None);
 
         assert_eq!(evicted.len(), 1);
         assert_eq!(evicted[0].0, SnapshotId("snap-b".into()));
@@ -332,13 +316,13 @@ mod tests {
     fn eviction_returns_overflow_entries() {
         let (reg, _dir) = open_temp(2);
 
-        reg.put("x", &SnapshotId("snap-x".into()));
+        reg.put("x", &SnapshotId("snap-x".into()), None);
         std::thread::sleep(std::time::Duration::from_secs(1));
-        reg.put("y", &SnapshotId("snap-y".into()));
+        reg.put("y", &SnapshotId("snap-y".into()), None);
         std::thread::sleep(std::time::Duration::from_secs(1));
 
         // This third insert should evict the oldest ("x").
-        let evicted = reg.put("z", &SnapshotId("snap-z".into()));
+        let evicted = reg.put("z", &SnapshotId("snap-z".into()), None);
 
         assert_eq!(evicted.len(), 1);
         assert_eq!(evicted[0].0, SnapshotId("snap-x".into()));
@@ -352,7 +336,7 @@ mod tests {
 
         {
             let reg = ImageRegistry::open(&db_path, 10).expect("open");
-            reg.put("persistent", &SnapshotId("snap-persist".into()));
+            reg.put("persistent", &SnapshotId("snap-persist".into()), None);
             assert_eq!(reg.len(), 1);
             // reg is dropped here, closing the connection.
         }
@@ -367,7 +351,7 @@ mod tests {
     fn invalidate_returns_removed_snapshot() {
         let (reg, _dir) = open_temp(10);
         let snap = SnapshotId("snap-rm".into());
-        reg.put("to-remove", &snap);
+        reg.put("to-remove", &snap, None);
 
         let removed = reg.invalidate("to-remove");
         assert_eq!(removed, Some((SnapshotId("snap-rm".into()), None)));
@@ -383,7 +367,7 @@ mod tests {
     fn put_with_workspace_then_get_returns_both() {
         let (reg, _dir) = open_temp(10);
         let snap = SnapshotId("snap-ws".into());
-        reg.put_with_workspace("ws-key", &snap, "/cache/workspaces/ws-key");
+        reg.put("ws-key", &snap, Some("/cache/workspaces/ws-key"));
 
         let (got_snap, got_ws) = reg.get_with_workspace("ws-key").unwrap();
         assert_eq!(got_snap, SnapshotId("snap-ws".into()));
@@ -393,7 +377,7 @@ mod tests {
     #[test]
     fn put_without_workspace_returns_none_workspace() {
         let (reg, _dir) = open_temp(10);
-        reg.put("plain-key", &SnapshotId("snap-plain".into()));
+        reg.put("plain-key", &SnapshotId("snap-plain".into()), None);
 
         let (_, got_ws) = reg.get_with_workspace("plain-key").unwrap();
         assert!(got_ws.is_none());
@@ -402,10 +386,10 @@ mod tests {
     #[test]
     fn eviction_includes_workspace_path() {
         let (reg, _dir) = open_temp(1);
-        reg.put_with_workspace("a", &SnapshotId("snap-a".into()), "/ws/a");
+        reg.put("a", &SnapshotId("snap-a".into()), Some("/ws/a"));
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let evicted = reg.put_with_workspace("b", &SnapshotId("snap-b".into()), "/ws/b");
+        let evicted = reg.put("b", &SnapshotId("snap-b".into()), Some("/ws/b"));
         assert_eq!(evicted.len(), 1);
         assert_eq!(evicted[0].0, SnapshotId("snap-a".into()));
         assert_eq!(evicted[0].1.as_deref(), Some("/ws/a"));

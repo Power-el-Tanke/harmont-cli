@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use tracing::{instrument, warn};
+use uuid::Uuid;
 
 use crate::backend::VmBackend;
 use crate::registry::ImageRegistry;
@@ -32,6 +33,41 @@ impl HmVm {
         }
     }
 
+    /// Check whether a cached result exists for `key` without executing anything.
+    ///
+    /// Returns `Some(result)` on a valid hit (snapshot exists in backend and
+    /// workspace dir, if recorded, still exists on disk). Invalidates stale
+    /// entries as a side-effect. Returns `None` on miss.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backend's `snapshot_exists` check fails.
+    pub async fn peek_cache(&self, key: &str) -> Result<Option<ExecutionResult>> {
+        if let Some((snap, ws)) = self.registry.get_with_workspace(key) {
+            let ws_valid = ws.as_ref().is_none_or(|p| std::path::Path::new(p).is_dir());
+            if ws_valid && self.backend.snapshot_exists(&snap).await? {
+                return Ok(Some(ExecutionResult {
+                    exit_code: 0,
+                    snapshot: Some(snap),
+                    cached: true,
+                    workspace_dir: ws.map(PathBuf::from),
+                    ephemeral_snapshot: false,
+                }));
+            }
+            if let Some((old_snap, old_ws)) = self.registry.invalidate(key) {
+                if let Err(e) = self.backend.remove_snapshot(&old_snap).await {
+                    warn!(snapshot = %old_snap.0, error = %e, "failed to remove stale snapshot");
+                }
+                if let Some(ws_path) = old_ws {
+                    tokio::task::spawn_blocking(move || std::fs::remove_dir_all(ws_path).ok())
+                        .await
+                        .ok();
+                }
+            }
+        }
+        Ok(None)
+    }
+
     /// Execute an [`Action`] inside a VM, obeying the given [`CachingPolicy`].
     ///
     /// # Cache behaviour
@@ -56,12 +92,14 @@ impl HmVm {
         if let CachingPolicy::Cache { ref key } = policy
             && let Some((snap, ws)) = self.registry.get_with_workspace(key)
         {
-            if self.backend.snapshot_exists(&snap).await? {
+            let ws_valid = ws.as_ref().is_none_or(|p| std::path::Path::new(p).is_dir());
+            if ws_valid && self.backend.snapshot_exists(&snap).await? {
                 return Ok(ExecutionResult {
                     exit_code: 0,
                     snapshot: Some(snap),
                     cached: true,
                     workspace_dir: ws.map(PathBuf::from),
+                    ephemeral_snapshot: false,
                 });
             }
             if let Some((old_snap, old_ws)) = self.registry.invalidate(key) {
@@ -69,7 +107,9 @@ impl HmVm {
                     warn!(snapshot = %old_snap.0, error = %e, "failed to remove stale snapshot");
                 }
                 if let Some(ws_path) = old_ws {
-                    std::fs::remove_dir_all(ws_path).ok();
+                    tokio::task::spawn_blocking(move || std::fs::remove_dir_all(ws_path).ok())
+                        .await
+                        .ok();
                 }
             }
         }
@@ -119,12 +159,12 @@ impl HmVm {
         };
 
         // 4. Snapshot and cache on success
-        let snapshot = if exit_code == 0 {
-            let label = match &policy {
-                CachingPolicy::Cache { key } => key.as_str(),
-                CachingPolicy::None => "ephemeral",
+        let (snapshot, ephemeral) = if exit_code == 0 {
+            let (label, is_ephemeral) = match &policy {
+                CachingPolicy::Cache { key } => (key.clone(), false),
+                CachingPolicy::None => (format!("ephemeral-{}", Uuid::new_v4()), true),
             };
-            let snap = vm.snapshot(label).await?;
+            let snap = vm.snapshot(&label).await?;
 
             if let CachingPolicy::Cache { key } = &policy {
                 // Persist workspace to cache directory.
@@ -133,34 +173,39 @@ impl HmVm {
                     self.config.workspace_cache_dir.as_ref(),
                 ) {
                     let ws_cache = cache_dir.join(key.as_str());
-                    if ws_cache.exists() {
-                        std::fs::remove_dir_all(&ws_cache).ok();
-                    }
-                    std::fs::create_dir_all(&ws_cache)?;
-                    crate::workspace::cow_copy(&ws.host_path, &ws_cache)?;
+                    let host_path = ws.host_path.clone();
+                    let ws_cache_clone = ws_cache.clone();
+                    tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+                        if ws_cache_clone.exists() {
+                            std::fs::remove_dir_all(&ws_cache_clone).ok();
+                        }
+                        std::fs::create_dir_all(&ws_cache_clone)?;
+                        crate::workspace::cow_copy(&host_path, &ws_cache_clone)?;
+                        Ok(())
+                    })
+                    .await??;
                     workspace_dir = Some(ws_cache);
                 }
 
-                let evicted = workspace_dir.as_ref().map_or_else(
-                    || self.registry.put(key, &snap),
-                    |ws| {
-                        self.registry
-                            .put_with_workspace(key, &snap, &ws.display().to_string())
-                    },
-                );
-                for (old_snap, old_ws) in &evicted {
-                    if let Err(e) = self.backend.remove_snapshot(old_snap).await {
+                let ws_str = workspace_dir.as_ref().map(|ws| ws.display().to_string());
+                let evicted = self.registry.put(key, &snap, ws_str.as_deref());
+                for (old_snap, old_ws) in evicted {
+                    if let Err(e) = self.backend.remove_snapshot(&old_snap).await {
                         warn!(snapshot = %old_snap.0, error = %e, "failed to remove evicted snapshot");
                     }
                     if let Some(ws_path) = old_ws {
-                        std::fs::remove_dir_all(ws_path).ok();
+                        tokio::task::spawn_blocking(move || {
+                            std::fs::remove_dir_all(ws_path).ok();
+                        })
+                        .await
+                        .ok();
                     }
                 }
             }
 
-            Some(snap)
+            (Some(snap), is_ephemeral)
         } else {
-            None
+            (None, false)
         };
 
         Ok(ExecutionResult {
@@ -168,6 +213,7 @@ impl HmVm {
             snapshot,
             cached: false,
             workspace_dir: if exit_code == 0 { workspace_dir } else { None },
+            ephemeral_snapshot: ephemeral,
         })
     }
 }
@@ -357,7 +403,7 @@ mod tests {
         let (registry, _dir) = open_temp_registry(10);
 
         // Pre-populate the registry.
-        registry.put("step-1", &SnapshotId("cached-snap".into()));
+        registry.put("step-1", &SnapshotId("cached-snap".into()), None);
 
         let hm = HmVm::new(Arc::new(backend.clone()), registry, VmConfig::default());
 

@@ -13,6 +13,7 @@ tracing = { workspace = true }
 derive_more = { workspace = true }
 
 rusqlite = { version = "0.37", features = ["bundled"] }
+uuid = { workspace = true }
 
 bollard = { version = "0.18", optional = true }
 futures = { version = "0.3", optional = true }

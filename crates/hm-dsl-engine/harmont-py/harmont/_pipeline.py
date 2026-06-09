@@ -247,8 +247,15 @@ def _cache_to_dict(policy: CachePolicy) -> dict[str, Any]:
             "sub_policies": [_cache_to_dict(p) for p in policy.policies],
         }
     if isinstance(policy, CachePredicate):
-        value = str(policy.fn())  # type: ignore[operator]
-        return {"policy": "predicate", "value": value}
+        try:
+            value = policy.fn()  # type: ignore[operator]
+        except Exception as exc:
+            msg = f"hm.predicate() callback raised {type(exc).__name__}: {exc}"
+            raise ValueError(msg) from exc
+        if value is None:
+            msg = "hm.predicate() callback returned None; it must return a string"
+            raise ValueError(msg)
+        return {"policy": "predicate", "value": str(value)}
     msg = f"unknown CachePolicy: {type(policy).__name__}"
     raise TypeError(msg)
 
