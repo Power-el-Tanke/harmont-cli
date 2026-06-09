@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_API_URL: &str = "https://api.harmont.dev";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CloudConfig {
     pub org: Option<String>,
     pub api_url: String,
@@ -24,7 +24,7 @@ impl Default for CloudConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Preferences {
     pub format: String,
     pub auto_watch: bool,
@@ -39,9 +39,11 @@ impl Default for Preferences {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
+    #[serde(default)]
     pub cloud: CloudConfig,
+    #[serde(default)]
     pub preferences: Preferences,
 }
 
@@ -67,6 +69,7 @@ impl Config {
         Ok(dir.join("config.toml"))
     }
 
+    /// Project-level config path: `<root>/.harmont/config.toml`.
     #[must_use]
     pub fn project_config_path(project_root: &Path) -> PathBuf {
         project_root.join(".harmont").join("config.toml")
@@ -106,6 +109,31 @@ impl Config {
         figment = figment.merge(Env::prefixed("HM_").split("__"));
 
         Ok(figment.extract()?)
+    }
+
+    /// Persist config to `path` atomically.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if TOML serialization fails or the atomic write fails.
+    pub fn save_to(&self, path: &Path) -> Result<()> {
+        let serialized = toml::to_string_pretty(self).context("serializing config")?;
+        hm_util::os::fs::blocking::write_atomic_restricted(
+            path,
+            serialized.as_bytes(),
+            0o644,
+            0o700,
+        )
+        .with_context(|| format!("writing {}", path.display()))
+    }
+
+    /// Save to user-level config path (`~/.config/hm/config.toml`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the path cannot be determined or the write fails.
+    pub fn save_user(&self) -> Result<()> {
+        self.save_to(&Self::user_config_path()?)
     }
 }
 
@@ -197,6 +225,25 @@ org = "project-org"
         assert_eq!(cfg.cloud.org.as_deref(), Some("project-org"));
         assert_eq!(cfg.cloud.api_url, "https://user.api");
         assert_eq!(cfg.preferences.format, "json");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn save_and_reload_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.toml");
+        let cfg = Config {
+            cloud: CloudConfig {
+                org: Some("saved-org".into()),
+                api_url: DEFAULT_API_URL.to_owned(),
+            },
+            preferences: Preferences::default(),
+        };
+        cfg.save_to(&path).unwrap();
+
+        let loaded = Config::load_from_paths(Some(&path), None).unwrap();
+        assert_eq!(loaded.cloud.org.as_deref(), Some("saved-org"));
+        assert_eq!(loaded.cloud.api_url, DEFAULT_API_URL);
+        assert_eq!(loaded.preferences.format, "human");
     }
 
     #[test]
