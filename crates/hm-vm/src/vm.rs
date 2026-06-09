@@ -57,7 +57,9 @@ impl HmVm {
             && let Some(snap) = self.registry.get(key)
         {
             if self.backend.snapshot_exists(&snap).await? {
-                let ws_dir = self.registry.get_with_workspace(key)
+                let ws_dir = self
+                    .registry
+                    .get_with_workspace(key)
                     .and_then(|(_, ws)| ws)
                     .map(PathBuf::from);
                 return Ok(ExecutionResult {
@@ -72,8 +74,16 @@ impl HmVm {
 
         // 2. Create or restore VM
         let mut vm = match &action.source {
-            ImageSource::Image(image) => self.backend.create(image, &self.config, action.workspace.as_ref()).await?,
-            ImageSource::Snapshot(snap) => self.backend.restore(snap, &self.config, action.workspace.as_ref()).await?,
+            ImageSource::Image(image) => {
+                self.backend
+                    .create(image, &self.config, action.workspace.as_ref())
+                    .await?
+            }
+            ImageSource::Snapshot(snap) => {
+                self.backend
+                    .restore(snap, &self.config, action.workspace.as_ref())
+                    .await?
+            }
         };
 
         let result = self.run_in_vm(&mut *vm, &action, &policy, sink).await;
@@ -115,24 +125,27 @@ impl HmVm {
             let snap = vm.snapshot(label).await?;
 
             // Persist workspace to cache directory.
-            if let Some(ref ws) = action.workspace {
-                if let Some(ref cache_dir) = self.config.workspace_cache_dir {
-                    let ws_cache = cache_dir.join(label);
-                    if ws_cache.exists() {
-                        std::fs::remove_dir_all(&ws_cache).ok();
-                    }
-                    std::fs::create_dir_all(&ws_cache)?;
-                    crate::workspace::cow_copy(&ws.host_path, &ws_cache)?;
-                    workspace_dir = Some(ws_cache);
+            if let (Some(ws), Some(cache_dir)) = (
+                action.workspace.as_ref(),
+                self.config.workspace_cache_dir.as_ref(),
+            ) {
+                let ws_cache = cache_dir.join(label);
+                if ws_cache.exists() {
+                    std::fs::remove_dir_all(&ws_cache).ok();
                 }
+                std::fs::create_dir_all(&ws_cache)?;
+                crate::workspace::cow_copy(&ws.host_path, &ws_cache)?;
+                workspace_dir = Some(ws_cache);
             }
 
             if let CachingPolicy::Cache { key } = policy {
-                let evicted = if let Some(ref ws) = workspace_dir {
-                    self.registry.put_with_workspace(key, &snap, &ws.display().to_string())
-                } else {
-                    self.registry.put(key, &snap)
-                };
+                let evicted = workspace_dir.as_ref().map_or_else(
+                    || self.registry.put(key, &snap),
+                    |ws| {
+                        self.registry
+                            .put_with_workspace(key, &snap, &ws.display().to_string())
+                    },
+                );
                 for (old_snap, old_ws) in &evicted {
                     if let Err(e) = self.backend.remove_snapshot(old_snap).await {
                         warn!(snapshot = %old_snap.0, error = %e, "failed to remove evicted snapshot");
@@ -193,7 +206,12 @@ mod tests {
 
     #[async_trait]
     impl VmBackend for MockBackend {
-        async fn create(&self, image: &str, _config: &VmConfig, _workspace: Option<&WorkspaceMount>) -> Result<Box<dyn Vm>> {
+        async fn create(
+            &self,
+            image: &str,
+            _config: &VmConfig,
+            _workspace: Option<&WorkspaceMount>,
+        ) -> Result<Box<dyn Vm>> {
             self.calls
                 .lock()
                 .map_or_else(|_| {}, |mut c| c.push(format!("create:{image}")));
@@ -203,7 +221,12 @@ mod tests {
             }))
         }
 
-        async fn restore(&self, snapshot: &SnapshotId, _config: &VmConfig, _workspace: Option<&WorkspaceMount>) -> Result<Box<dyn Vm>> {
+        async fn restore(
+            &self,
+            snapshot: &SnapshotId,
+            _config: &VmConfig,
+            _workspace: Option<&WorkspaceMount>,
+        ) -> Result<Box<dyn Vm>> {
             self.calls
                 .lock()
                 .map_or_else(|_| {}, |mut c| c.push(format!("restore:{}", snapshot.0)));

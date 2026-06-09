@@ -13,7 +13,7 @@ pub mod docker;
 pub use backend::{Vm, VmBackend};
 pub use registry::ImageRegistry;
 pub use types::{
-    Action, CachingPolicy, ExecutionResult, ImageSource, NullSink, OutputSink, SnapshotId, VmConfig,
-    WorkspaceMount,
+    Action, CachingPolicy, ExecutionResult, ImageSource, NullSink, OutputSink, SnapshotId,
+    VmConfig, WorkspaceMount,
 };
 pub use vm::HmVm;

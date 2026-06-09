@@ -78,12 +78,18 @@ impl DockerBackend {
     }
 
     #[instrument(skip(self))]
-    async fn start_container(&self, image: &str, workspace: Option<&WorkspaceMount>) -> Result<String> {
-        let host_config = workspace.map(|ws| {
-            bollard::service::HostConfig {
-                binds: Some(vec![format!("{}:{}:rw", ws.host_path.display(), ws.guest_path)]),
-                ..Default::default()
-            }
+    async fn start_container(
+        &self,
+        image: &str,
+        workspace: Option<&WorkspaceMount>,
+    ) -> Result<String> {
+        let host_config = workspace.map(|ws| bollard::service::HostConfig {
+            binds: Some(vec![format!(
+                "{}:{}:rw",
+                ws.host_path.display(),
+                ws.guest_path
+            )]),
+            ..Default::default()
         });
         let cfg = Config {
             image: Some(image.to_string()),
@@ -107,7 +113,12 @@ impl DockerBackend {
 #[async_trait]
 impl VmBackend for DockerBackend {
     #[instrument(skip(self, _config, workspace))]
-    async fn create(&self, image: &str, _config: &VmConfig, workspace: Option<&WorkspaceMount>) -> Result<Box<dyn Vm>> {
+    async fn create(
+        &self,
+        image: &str,
+        _config: &VmConfig,
+        workspace: Option<&WorkspaceMount>,
+    ) -> Result<Box<dyn Vm>> {
         self.ensure_image(image).await?;
         let container_id = self.start_container(image, workspace).await?;
         Ok(Box::new(DockerVm {
@@ -117,7 +128,12 @@ impl VmBackend for DockerBackend {
     }
 
     #[instrument(skip(self, _config, workspace))]
-    async fn restore(&self, snapshot: &SnapshotId, _config: &VmConfig, workspace: Option<&WorkspaceMount>) -> Result<Box<dyn Vm>> {
+    async fn restore(
+        &self,
+        snapshot: &SnapshotId,
+        _config: &VmConfig,
+        workspace: Option<&WorkspaceMount>,
+    ) -> Result<Box<dyn Vm>> {
         let container_id = self.start_container(&snapshot.0, workspace).await?;
         Ok(Box::new(DockerVm {
             client: self.client.clone(),

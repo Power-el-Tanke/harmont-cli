@@ -85,8 +85,8 @@ async fn run_step_vm(vm: &HmVm, ctx: &StepContext, input: ExecutorInput) -> Resu
             .archives
             .get_bytes(input.workspace_archive_id)
             .ok_or_else(|| anyhow::anyhow!("source archive not found"))?;
-        let base_dir = extract_archive_to_tempdir(&archive_bytes)
-            .context("extracting workspace archive")?;
+        let base_dir =
+            extract_archive_to_tempdir(&archive_bytes).context("extracting workspace archive")?;
         hm_vm::workspace::cow_copy(base_dir.path(), step_ws.path())
             .context("COW copy source to workspace")?;
     }

@@ -42,8 +42,8 @@ async fn main() {
 
         let (chrome_layer, guard) = build_chrome_layer(trace_path);
 
-        let indicatif_filter = Targets::new()
-            .with_target(hm_render::progress::TUI_TARGET, tracing::Level::TRACE);
+        let indicatif_filter =
+            Targets::new().with_target(hm_render::progress::TUI_TARGET, tracing::Level::TRACE);
 
         tracing_subscriber::registry()
             .with(

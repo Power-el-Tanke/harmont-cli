@@ -11,10 +11,20 @@ use crate::types::{OutputSink, SnapshotId, VmConfig, WorkspaceMount};
 #[async_trait]
 pub trait VmBackend: Send + Sync + fmt::Debug {
     /// Boot a new VM from the given OCI image reference.
-    async fn create(&self, image: &str, config: &VmConfig, workspace: Option<&WorkspaceMount>) -> Result<Box<dyn Vm>>;
+    async fn create(
+        &self,
+        image: &str,
+        config: &VmConfig,
+        workspace: Option<&WorkspaceMount>,
+    ) -> Result<Box<dyn Vm>>;
 
     /// Restore a VM from a previously taken snapshot.
-    async fn restore(&self, snapshot: &SnapshotId, config: &VmConfig, workspace: Option<&WorkspaceMount>) -> Result<Box<dyn Vm>>;
+    async fn restore(
+        &self,
+        snapshot: &SnapshotId,
+        config: &VmConfig,
+        workspace: Option<&WorkspaceMount>,
+    ) -> Result<Box<dyn Vm>>;
 
     /// Check whether a snapshot exists in the backend store.
     async fn snapshot_exists(&self, snapshot: &SnapshotId) -> Result<bool>;

@@ -223,8 +223,9 @@ pub(crate) async fn run(
                 .iter()
                 .zip(&pred_outcomes)
                 .find(|((ek, _), _)| *ek == EdgeKind::BuildsIn)
-                .map(|(_, outcome)| (outcome.snapshot.clone(), outcome.workspace_dir.clone()))
-                .unwrap_or((None, None));
+                .map_or((None, None), |(_, outcome)| {
+                    (outcome.snapshot.clone(), outcome.workspace_dir.clone())
+                });
 
             let mut step_ctx = run_ctx.clone();
             step_ctx.parent_workspace_dir = parent_workspace_dir;
