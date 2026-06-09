@@ -54,22 +54,24 @@ impl HmVm {
     ) -> Result<ExecutionResult> {
         // 1. Cache check
         if let CachingPolicy::Cache { ref key } = policy
-            && let Some(snap) = self.registry.get(key)
+            && let Some((snap, ws)) = self.registry.get_with_workspace(key)
         {
             if self.backend.snapshot_exists(&snap).await? {
-                let ws_dir = self
-                    .registry
-                    .get_with_workspace(key)
-                    .and_then(|(_, ws)| ws)
-                    .map(PathBuf::from);
                 return Ok(ExecutionResult {
                     exit_code: 0,
                     snapshot: Some(snap),
                     cached: true,
-                    workspace_dir: ws_dir,
+                    workspace_dir: ws.map(PathBuf::from),
                 });
             }
-            let _ = self.registry.invalidate(key);
+            if let Some((old_snap, old_ws)) = self.registry.invalidate(key) {
+                if let Err(e) = self.backend.remove_snapshot(&old_snap).await {
+                    warn!(snapshot = %old_snap.0, error = %e, "failed to remove stale snapshot");
+                }
+                if let Some(ws_path) = old_ws {
+                    std::fs::remove_dir_all(ws_path).ok();
+                }
+            }
         }
 
         // 2. Create or restore VM
@@ -118,27 +120,27 @@ impl HmVm {
 
         // 4. Snapshot and cache on success
         let snapshot = if exit_code == 0 {
-            let label = match policy {
+            let label = match &policy {
                 CachingPolicy::Cache { key } => key.as_str(),
                 CachingPolicy::None => "ephemeral",
             };
             let snap = vm.snapshot(label).await?;
 
-            // Persist workspace to cache directory.
-            if let (Some(ws), Some(cache_dir)) = (
-                action.workspace.as_ref(),
-                self.config.workspace_cache_dir.as_ref(),
-            ) {
-                let ws_cache = cache_dir.join(label);
-                if ws_cache.exists() {
-                    std::fs::remove_dir_all(&ws_cache).ok();
+            if let CachingPolicy::Cache { key } = &policy {
+                // Persist workspace to cache directory.
+                if let (Some(ws), Some(cache_dir)) = (
+                    action.workspace.as_ref(),
+                    self.config.workspace_cache_dir.as_ref(),
+                ) {
+                    let ws_cache = cache_dir.join(key.as_str());
+                    if ws_cache.exists() {
+                        std::fs::remove_dir_all(&ws_cache).ok();
+                    }
+                    std::fs::create_dir_all(&ws_cache)?;
+                    crate::workspace::cow_copy(&ws.host_path, &ws_cache)?;
+                    workspace_dir = Some(ws_cache);
                 }
-                std::fs::create_dir_all(&ws_cache)?;
-                crate::workspace::cow_copy(&ws.host_path, &ws_cache)?;
-                workspace_dir = Some(ws_cache);
-            }
 
-            if let CachingPolicy::Cache { key } = policy {
                 let evicted = workspace_dir.as_ref().map_or_else(
                     || self.registry.put(key, &snap),
                     |ws| {

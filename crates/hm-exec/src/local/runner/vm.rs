@@ -144,11 +144,19 @@ async fn run_step_vm(vm: &HmVm, ctx: &StepContext, input: ExecutorInput) -> Resu
         });
     }
 
+    // For cached steps HmVm persists the workspace to the cache dir and
+    // returns it. For uncached steps workspace_dir is None — keep the
+    // step tempdir alive so children can COW-copy from it.
+    let workspace_dir = result
+        .workspace_dir
+        .map(|p| p.display().to_string())
+        .or_else(|| (result.exit_code == 0).then(|| step_ws.keep().display().to_string()));
+
     Ok(StepResult {
         exit_code: result.exit_code,
         committed_snapshot: result.snapshot.map(|s| SnapshotRef(s.0)),
         artifacts: vec![],
-        workspace_dir: result.workspace_dir.map(|p| p.display().to_string()),
+        workspace_dir,
     })
 }
 

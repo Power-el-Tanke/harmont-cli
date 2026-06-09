@@ -28,12 +28,14 @@ def _make_graph(nodes, edges=None):
 
 # -- factory -----------------------------------------------------------------
 
+
 def test_predicate_factory_returns_cache_predicate():
     policy = hm.predicate(lambda: "v1")
     assert isinstance(policy, CachePredicate)
 
 
 # -- lowering ----------------------------------------------------------------
+
 
 def test_predicate_lowering_calls_fn_and_produces_dict():
     policy = hm.predicate(lambda: "v1")
@@ -61,6 +63,7 @@ def test_predicate_fn_is_called_at_lowering_time():
 
 
 # -- keygen ------------------------------------------------------------------
+
 
 def test_predicate_keygen_produces_deterministic_key():
     graph = _make_graph(
@@ -107,6 +110,20 @@ def test_different_predicate_values_produce_different_keys():
 
     g1 = make_graph("v1")
     g2 = make_graph("v2")
-    resolve_pipeline_keys(g1, pipeline_org="o", pipeline_slug="s", now=0, base_path=Path("/tmp"), env={})  # noqa: S108
-    resolve_pipeline_keys(g2, pipeline_org="o", pipeline_slug="s", now=0, base_path=Path("/tmp"), env={})  # noqa: S108
+    resolve_pipeline_keys(
+        g1,
+        pipeline_org="o",
+        pipeline_slug="s",
+        now=0,
+        base_path=Path("/tmp"),
+        env={},  # noqa: S108
+    )
+    resolve_pipeline_keys(
+        g2,
+        pipeline_org="o",
+        pipeline_slug="s",
+        now=0,
+        base_path=Path("/tmp"),
+        env={},  # noqa: S108
+    )
     assert g1["nodes"][0]["step"]["cache"]["key"] != g2["nodes"][0]["step"]["cache"]["key"]

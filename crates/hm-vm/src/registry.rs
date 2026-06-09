@@ -179,26 +179,27 @@ impl ImageRegistry {
 
     /// Remove a specific entry.
     ///
-    /// Returns the removed snapshot's ID so the caller can clean up backend
-    /// resources, or `None` if the key was not present.
+    /// Returns the removed snapshot's ID and workspace directory so the
+    /// caller can clean up backend resources, or `None` if the key was
+    /// not present.
     #[must_use]
-    pub fn invalidate(&self, key: &str) -> Option<SnapshotId> {
+    pub fn invalidate(&self, key: &str) -> Option<(SnapshotId, Option<String>)> {
         let conn = self.conn.lock().ok()?;
 
-        let snapshot: Option<String> = conn
+        let row: Option<(String, Option<String>)> = conn
             .query_row(
-                "SELECT snapshot_id FROM snapshots WHERE key = ?1",
+                "SELECT snapshot_id, workspace_dir FROM snapshots WHERE key = ?1",
                 [key],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .ok();
 
-        if snapshot.is_some() {
+        if row.is_some() {
             let _ = conn.execute("DELETE FROM snapshots WHERE key = ?1", [key]);
         }
 
         drop(conn);
-        snapshot.map(SnapshotId)
+        row.map(|(snap, ws)| (SnapshotId(snap), ws))
     }
 
     /// Returns the number of cached entries.
@@ -369,7 +370,7 @@ mod tests {
         reg.put("to-remove", &snap);
 
         let removed = reg.invalidate("to-remove");
-        assert_eq!(removed, Some(SnapshotId("snap-rm".into())));
+        assert_eq!(removed, Some((SnapshotId("snap-rm".into()), None)));
         assert!(reg.get("to-remove").is_none());
         assert_eq!(reg.len(), 0);
 
