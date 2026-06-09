@@ -6,6 +6,7 @@
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
+use tracing_subscriber::filter::Targets;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -41,6 +42,9 @@ async fn main() {
 
         let (chrome_layer, guard) = build_chrome_layer(trace_path);
 
+        let indicatif_filter = Targets::new()
+            .with_target(hm_render::progress::TUI_TARGET, tracing::Level::TRACE);
+
         tracing_subscriber::registry()
             .with(
                 tracing_subscriber::fmt::layer()
@@ -50,7 +54,7 @@ async fn main() {
                     .with_ansi(color)
                     .with_filter(filter),
             )
-            .with(indicatif_layer)
+            .with(indicatif_layer.with_filter(indicatif_filter))
             .with(chrome_layer)
             .init();
         guard

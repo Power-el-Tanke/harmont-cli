@@ -15,6 +15,13 @@ use hm_plugin_protocol::BuildEvent;
 use indicatif::ProgressStyle;
 use owo_colors::{OwoColorize, Style};
 use tracing::{Span, info_span};
+
+/// Tracing target for TUI progress-bar spans.
+///
+/// Only spans with this target are rendered by `tracing-indicatif`.
+/// Internal `#[instrument]` spans use their module target and are
+/// excluded by the indicatif-layer filter in `main.rs`.
+pub const TUI_TARGET: &str = "hm_tui";
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 use uuid::Uuid;
 
@@ -205,7 +212,7 @@ where
     fn on_event(&mut self, event: &BuildEvent) {
         match event {
             BuildEvent::BuildStart { plan, .. } => {
-                let root = info_span!("pipeline");
+                let root = info_span!(target: TUI_TARGET, "pipeline");
 
                 let tpl = if self.color {
                     "{spinner:.green} {span_name}  {wide_bar:.green/white} {pos}/{len} steps  ({elapsed})"
@@ -243,8 +250,10 @@ where
                     })
                     .or(self.root_span.as_ref());
 
-                let span = parent_span
-                    .map_or_else(|| info_span!("step"), |p| info_span!(parent: p, "step"));
+                let span = parent_span.map_or_else(
+                    || info_span!(target: TUI_TARGET, "step"),
+                    |p| info_span!(target: TUI_TARGET, parent: p, "step"),
+                );
 
                 span.pb_set_style(&active_style(self.color));
                 span.pb_set_message(display_name);
