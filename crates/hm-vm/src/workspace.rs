@@ -13,17 +13,18 @@ pub fn cow_copy(src: &Path, dst: &Path) -> Result<()> {
     let src_dot = format!("{}/.", src.display());
 
     let status = if cfg!(target_os = "macos") {
-        Command::new("cp")
+        let st = Command::new("cp")
             .args(["-cR", &src_dot])
             .arg(dst)
-            .status()
-            .or_else(|_| {
-                Command::new("cp")
-                    .args(["-R", &src_dot])
-                    .arg(dst)
-                    .status()
-            })
-            .context("spawning cp")?
+            .status();
+        match st {
+            Ok(s) if s.success() => s,
+            _ => Command::new("cp")
+                .args(["-R", &src_dot])
+                .arg(dst)
+                .status()
+                .context("spawning cp")?,
+        }
     } else {
         Command::new("cp")
             .args(["--reflink=auto", "-a", &src_dot])
