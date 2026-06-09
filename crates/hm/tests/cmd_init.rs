@@ -201,3 +201,27 @@ fn init_noninteractive_skips_skills() {
         "non-interactive init should not create skills"
     );
 }
+
+#[test]
+fn skill_validate_ci_content_is_well_formed() {
+    let content = include_str!(
+        "../src/commands/init_templates/skill_validate_ci.md"
+    );
+    assert!(!content.is_empty(), "skill template must not be empty");
+    assert!(
+        content.contains("hm run"),
+        "skill must reference `hm run`"
+    );
+    assert!(
+        content.contains("## When to use"),
+        "skill must have 'When to use' section"
+    );
+    assert!(
+        content.contains("## When NOT to use"),
+        "skill must have 'When NOT to use' section"
+    );
+    assert!(
+        content.contains("## Procedure"),
+        "skill must have 'Procedure' section"
+    );
+}
