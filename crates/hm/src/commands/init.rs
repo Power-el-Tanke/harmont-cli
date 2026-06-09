@@ -4,6 +4,8 @@ use anyhow::{Context, Result, bail};
 
 use crate::cli::init::{InitArgs, TemplateKind};
 
+const SKILL_VALIDATE_CI: &str = include_str!("init_templates/skill_validate_ci.md");
+
 struct Template {
     label: &'static str,
     filename: &'static str,
@@ -73,6 +75,15 @@ fn pick_interactive() -> Result<TemplateKind> {
     Ok(ALL[i])
 }
 
+fn prompt_skills() -> Result<bool> {
+    let install = dialoguer::Confirm::new()
+        .with_prompt("Install Claude Code skills for hm?")
+        .default(true)
+        .interact()
+        .context("skills prompt cancelled")?;
+    Ok(install)
+}
+
 fn write_template(dir: &Path, tmpl: &Template, force: bool) -> Result<()> {
     let harmont_dir = dir.join(".hm");
     if harmont_dir.exists() && !force {
@@ -92,6 +103,17 @@ fn write_template(dir: &Path, tmpl: &Template, force: bool) -> Result<()> {
     std::fs::write(&dest, tmpl.content).with_context(|| format!("writing {}", dest.display()))?;
     ensure_gitignore_entry(&harmont_dir, "node_modules/")?;
     ensure_gitignore_entry(&harmont_dir, "__pycache__/")?;
+    Ok(())
+}
+
+fn write_skills(dir: &Path) -> Result<()> {
+    let commands_dir = dir.join(".claude/commands");
+    std::fs::create_dir_all(&commands_dir)
+        .with_context(|| format!("creating {}", commands_dir.display()))?;
+    let dest = commands_dir.join("validate-ci.md");
+    std::fs::write(&dest, SKILL_VALIDATE_CI)
+        .with_context(|| format!("writing {}", dest.display()))?;
+    tracing::info!("installed Claude Code skill: .claude/commands/validate-ci.md");
     Ok(())
 }
 
@@ -119,6 +141,7 @@ fn ensure_gitignore_entry(dir: &Path, entry: &str) -> Result<()> {
 /// already exists without `--force`.
 #[allow(clippy::unused_async)]
 pub async fn handle(args: InitArgs) -> Result<()> {
+    let interactive = args.template.is_none();
     let kind = match args.template {
         Some(k) => k,
         None => pick_interactive()?,
@@ -135,6 +158,10 @@ pub async fn handle(args: InitArgs) -> Result<()> {
         "created .hm/{} ({dsl} pipeline, template: {kind:?})",
         tmpl.filename
     );
+
+    if interactive && prompt_skills()? {
+        write_skills(&args.dir)?;
+    }
 
     tracing::info!("next step: run `hm run` to execute your pipeline locally");
     Ok(())
