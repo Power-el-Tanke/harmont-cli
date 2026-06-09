@@ -74,6 +74,10 @@ async fn run_step_vm(vm: &HmVm, ctx: &StepContext, input: ExecutorInput) -> Resu
 
     // Always inject workspace so every executing step sees fresh source
     // files, even when booting from a cached parent snapshot (CLI-28).
+    // Tar extraction overlays fresh source onto the snapshot: changed files
+    // are overwritten and new files added, but files the user deleted from
+    // their tree may linger. Clearing the directory instead would destroy
+    // build artifacts (node_modules, dist) inherited from cached parents.
     let archive_bytes = ctx
         .archives
         .get_bytes(input.workspace_archive_id)
