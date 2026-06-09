@@ -107,13 +107,13 @@ fn write_template(dir: &Path, tmpl: &Template, force: bool) -> Result<()> {
 }
 
 fn write_skills(dir: &Path) -> Result<()> {
-    let commands_dir = dir.join(".claude/commands");
-    std::fs::create_dir_all(&commands_dir)
-        .with_context(|| format!("creating {}", commands_dir.display()))?;
-    let dest = commands_dir.join("validate-ci.md");
+    let skill_dir = dir.join(".claude/skills/validate-ci");
+    std::fs::create_dir_all(&skill_dir)
+        .with_context(|| format!("creating {}", skill_dir.display()))?;
+    let dest = skill_dir.join("SKILL.md");
     std::fs::write(&dest, SKILL_VALIDATE_CI)
         .with_context(|| format!("writing {}", dest.display()))?;
-    tracing::info!("installed Claude Code skill: .claude/commands/validate-ci.md");
+    tracing::info!("installed Claude Code skill: .claude/skills/validate-ci/SKILL.md");
     Ok(())
 }
 

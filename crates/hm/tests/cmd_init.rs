@@ -195,7 +195,7 @@ fn init_noninteractive_skips_skills() {
         .assert()
         .success();
 
-    let skill = dir.path().join(".claude/commands/validate-ci.md");
+    let skill = dir.path().join(".claude/skills/validate-ci/SKILL.md");
     assert!(
         !skill.exists(),
         "non-interactive init should not create skills"

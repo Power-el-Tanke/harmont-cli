@@ -1,3 +1,8 @@
+---
+name: validate-ci
+description: Validate CI locally with `hm run` before pushing. Use when a feature is complete and ready to push, when the user asks to make CI green, or before creating a PR. Do NOT use in the middle of active development or on every commit in a multi-commit feature.
+---
+
 Validate that the project's CI pipeline passes. Run the pipeline locally with `hm run`, diagnose and fix any failures, and only push to remote once local CI is green.
 
 ## When to use
