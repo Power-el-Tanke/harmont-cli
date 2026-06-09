@@ -29,6 +29,10 @@ pub struct StepContext {
     pub event_bus: Arc<EventBus>,
     pub archives: Arc<ArchiveStore>,
     pub cancel: CancellationToken,
+    /// When set, the step should COW-copy this directory as its
+    /// workspace base instead of extracting from the source archive.
+    /// Populated by the scheduler for child steps in a `BuildsIn` chain.
+    pub parent_workspace_dir: Option<String>,
 }
 
 /// Async trait implemented by step executors (e.g. the VM runner).
@@ -152,6 +156,7 @@ mod tests {
                     exit_code: 0,
                     committed_snapshot: None,
                     artifacts: vec![],
+                    workspace_dir: None,
                 })
             })
         }

@@ -72,16 +72,27 @@ async fn run_step_vm(vm: &HmVm, ctx: &StepContext, input: ExecutorInput) -> Resu
         )
     };
 
-    // Always bind-mount workspace so every executing step sees fresh source
-    // files, even when booting from a cached parent snapshot (CLI-28).
-    let archive_bytes = ctx
-        .archives
-        .get_bytes(input.workspace_archive_id)
-        .ok_or_else(|| anyhow::anyhow!("source archive not found"))?;
-    let temp_guard =
-        extract_archive_to_tempdir(&archive_bytes).context("extracting workspace archive")?;
+    // Prepare the workspace: COW-copy from parent step's workspace (if this
+    // is a child in a BuildsIn chain) or extract from the source archive
+    // (root step). Either way, bind-mount the result into the VM.
+    let step_ws = tempfile::tempdir().context("creating step workspace")?;
+
+    if let Some(ref parent_ws) = ctx.parent_workspace_dir {
+        hm_vm::workspace::cow_copy(std::path::Path::new(parent_ws), step_ws.path())
+            .context("COW copy parent workspace")?;
+    } else {
+        let archive_bytes = ctx
+            .archives
+            .get_bytes(input.workspace_archive_id)
+            .ok_or_else(|| anyhow::anyhow!("source archive not found"))?;
+        let base_dir = extract_archive_to_tempdir(&archive_bytes)
+            .context("extracting workspace archive")?;
+        hm_vm::workspace::cow_copy(base_dir.path(), step_ws.path())
+            .context("COW copy source to workspace")?;
+    }
+
     let workspace = Some(WorkspaceMount {
-        host_path: temp_guard.path().to_path_buf(),
+        host_path: step_ws.path().to_path_buf(),
         guest_path: input.workdir.clone(),
     });
 
@@ -137,6 +148,7 @@ async fn run_step_vm(vm: &HmVm, ctx: &StepContext, input: ExecutorInput) -> Resu
         exit_code: result.exit_code,
         committed_snapshot: result.snapshot.map(|s| SnapshotRef(s.0)),
         artifacts: vec![],
+        workspace_dir: result.workspace_dir.map(|p| p.display().to_string()),
     })
 }
 

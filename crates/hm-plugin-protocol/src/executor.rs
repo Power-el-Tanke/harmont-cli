@@ -98,4 +98,10 @@ pub struct StepResult {
     /// (typically only on `CacheDecision::MissBuildAs`).
     pub committed_snapshot: Option<SnapshotRef>,
     pub artifacts: Vec<ArtifactRef>,
+    /// Host-side path to the workspace directory that survived this step.
+    /// Used by the scheduler to propagate workspace state to downstream
+    /// steps via COW copy instead of re-extracting the source archive.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub workspace_dir: Option<String>,
 }

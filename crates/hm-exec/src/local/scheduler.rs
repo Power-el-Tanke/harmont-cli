@@ -59,6 +59,10 @@ struct StepOutcome {
     /// `None` only for steps short-circuited because a predecessor failed
     /// or the build was cancelled before they could run.
     summary: Option<StepResultSummary>,
+    /// Host-side workspace path produced by this step's runner, if any.
+    /// The scheduler propagates this to downstream `BuildsIn` children
+    /// so they can COW-copy instead of re-extracting.
+    workspace_dir: Option<String>,
 }
 
 type StepFuture = futures::future::Shared<BoxFuture<'static, StepOutcome>>;
@@ -129,6 +133,7 @@ pub(crate) async fn run(
         event_bus: bus.clone(),
         archives: archives.clone(),
         cancel: cancel.clone(),
+        parent_workspace_dir: None,
     };
 
     let parallelism = parallelism.max(1);
@@ -202,6 +207,7 @@ pub(crate) async fn run(
                         exit_code: None,
                         duration_ms: 0,
                     }),
+                    workspace_dir: None,
                 };
             }
 
@@ -211,12 +217,17 @@ pub(crate) async fn run(
                 .await
                 .expect("semaphore closed unexpectedly");
 
-            // Find the BuildsIn parent's snapshot for container lineage.
-            let parent_snapshot = preds
+            // Find the BuildsIn parent's snapshot and workspace dir for
+            // container lineage and COW workspace propagation.
+            let (parent_snapshot, parent_workspace_dir) = preds
                 .iter()
                 .zip(&pred_outcomes)
                 .find(|((ek, _), _)| *ek == EdgeKind::BuildsIn)
-                .and_then(|(_, outcome)| outcome.snapshot.clone());
+                .map(|(_, outcome)| (outcome.snapshot.clone(), outcome.workspace_dir.clone()))
+                .unwrap_or((None, None));
+
+            let mut step_ctx = run_ctx.clone();
+            step_ctx.parent_workspace_dir = parent_workspace_dir;
 
             match execute_step(
                 n,
@@ -227,7 +238,7 @@ pub(crate) async fn run(
                 parent_key,
                 archive_id,
                 run_id,
-                run_ctx,
+                step_ctx,
                 reg,
                 bus,
                 cancel,
@@ -247,6 +258,7 @@ pub(crate) async fn run(
                             exit_code: Some(1),
                             duration_ms: 0,
                         }),
+                        workspace_dir: None,
                     }
                 }
             }
@@ -474,6 +486,7 @@ async fn execute_step(
                             exit_code: Some(124),
                             duration_ms: dur_ms,
                         }),
+                        workspace_dir: None,
                     });
                 }
             }
@@ -518,6 +531,7 @@ async fn execute_step(
                     exit_code: Some(sr.exit_code),
                     duration_ms: dur_ms,
                 }),
+                workspace_dir: sr.workspace_dir,
             })
         }
         Err(e) => {
