@@ -60,6 +60,7 @@ from .triggers import pull_request as pr
 from .types import Pipeline
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import timedelta
 
 
