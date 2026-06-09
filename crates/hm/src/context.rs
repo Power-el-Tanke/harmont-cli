@@ -28,7 +28,7 @@ impl RunContext {
     ///
     /// Returns an error if the config file is unreadable or malformed.
     pub fn from_cli(cli: &Cli) -> Result<Self> {
-        let config = Config::load()?;
+        let config = Config::load(None)?;
 
         let color =
             !cli.no_color && std::env::var("NO_COLOR").is_err() && std::io::stderr().is_terminal();

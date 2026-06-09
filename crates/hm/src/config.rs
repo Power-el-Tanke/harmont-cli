@@ -1,98 +1,215 @@
+use std::path::{Path, PathBuf};
+
 use anyhow::{Context, Result};
+use figment::{
+    Figment,
+    providers::{Env, Format, Serialized, Toml},
+};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
-const DEFAULT_API_URL: &str = "https://api.harmont.dev";
+pub const DEFAULT_API_URL: &str = "https://api.harmont.dev";
 
-/// Resolve the Harmont config dir (`~/.harmont/`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudConfig {
+    pub org: Option<String>,
+    pub api_url: String,
+}
+
+impl Default for CloudConfig {
+    fn default() -> Self {
+        Self {
+            org: None,
+            api_url: DEFAULT_API_URL.to_owned(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Preferences {
+    pub format: String,
+    pub auto_watch: bool,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            format: "human".to_owned(),
+            auto_watch: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Config {
+    pub cloud: CloudConfig,
+    pub preferences: Preferences,
+}
+
+/// Backward-compat: resolve the legacy Harmont config dir (`~/.harmont/`).
+/// Used by `creds_store.rs`. Task 5 may migrate callers.
 ///
 /// # Errors
 ///
-/// Returns an error if the user's home directory cannot be determined
-/// (the `dirs` crate's platform-specific lookup fails — typically only
-/// happens in restrictive sandboxes with no `HOME` / passwd entry).
+/// Returns an error if the user's home directory cannot be determined.
 pub fn user_config_dir() -> Result<PathBuf> {
     hm_util::dirs::harmont_config_dir().context("could not determine home directory")
 }
 
-/// User preferences stored alongside the config.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Preferences {
-    /// Default output format ("human" or "json").
-    pub format: Option<String>,
-    /// Whether `hm build create` should auto-watch.
-    pub auto_watch: Option<bool>,
-}
-
-/// Persistent CLI configuration at `~/.harmont/config.toml`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Config {
-    /// Base URL for the Harmont API.
-    pub api_url: Option<String>,
-    /// Currently active organization slug.
-    pub org: Option<String>,
-    /// User preferences.
-    #[serde(default)]
-    pub preferences: Preferences,
-}
-
 impl Config {
-    /// Returns the path to the config file (`~/.harmont/config.toml`).
+    /// XDG-aware user config path (`~/.config/hm/config.toml`).
     ///
     /// # Errors
     ///
-    /// Returns an error if [`user_config_dir`] fails (no home directory
-    /// available).
-    pub fn path() -> Result<PathBuf> {
-        Ok(user_config_dir()?.join("config.toml"))
+    /// Returns an error if the platform config directory cannot be determined.
+    pub fn user_config_path() -> Result<PathBuf> {
+        let dir =
+            hm_util::dirs::hm_user_config_dir().context("could not determine config directory")?;
+        Ok(dir.join("config.toml"))
     }
 
-    /// Load configuration from disk, returning defaults if the file does not exist.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the config path cannot be resolved, the file
-    /// exists but cannot be read (permissions, I/O error), or the file
-    /// contents are not valid TOML matching the `Config` shape.
-    pub fn load() -> Result<Self> {
-        let path = Self::path()?;
-        if !path.exists() {
-            return Ok(Self::default());
-        }
-        let contents = std::fs::read_to_string(&path)
-            .with_context(|| format!("reading {}", path.display()))?;
-        let config: Self =
-            toml::from_str(&contents).with_context(|| format!("parsing {}", path.display()))?;
-        Ok(config)
-    }
-
-    /// Persist configuration to disk atomically, with the config directory
-    /// (`~/.harmont/`) restricted to 0o700 so adjacent credential
-    /// files are not exposed.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the config path cannot be resolved, the
-    /// `Config` cannot be serialized to TOML (only happens for
-    /// non-string map keys, which `Config` does not have), or the
-    /// atomic write fails (out-of-space, permission denied, parent
-    /// directory cannot be created).
-    pub fn save(&self) -> Result<()> {
-        let path = Self::path()?;
-        let serialized = toml::to_string_pretty(self).context("serializing config")?;
-        hm_util::os::fs::blocking::write_atomic_restricted(
-            &path,
-            serialized.as_bytes(),
-            0o644,
-            0o700,
-        )
-        .with_context(|| format!("writing {}", path.display()))?;
-        Ok(())
-    }
-
-    /// Effective API URL (config value or default).
     #[must_use]
-    pub fn api_url(&self) -> &str {
-        self.api_url.as_deref().unwrap_or(DEFAULT_API_URL)
+    pub fn project_config_path(project_root: &Path) -> PathBuf {
+        project_root.join(".harmont").join("config.toml")
+    }
+
+    /// Load configuration with full layering: defaults -> user file -> project file -> env.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the user config path cannot be determined or
+    /// figment extraction fails (malformed TOML, type mismatches).
+    pub fn load(project_root: Option<&Path>) -> Result<Self> {
+        let user_path = Self::user_config_path()?;
+        let project_path = project_root.map(Self::project_config_path);
+        Self::load_from_paths(Some(&user_path), project_path.as_deref())
+            .context("loading configuration")
+    }
+
+    /// Testable core: build a `Config` from explicit file paths.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if figment extraction fails (malformed TOML, type mismatches).
+    pub fn load_from_paths(
+        user_path: Option<&Path>,
+        project_path: Option<&Path>,
+    ) -> Result<Self> {
+        let mut figment = Figment::new().merge(Serialized::defaults(Self::default()));
+
+        if let Some(p) = user_path {
+            figment = figment.merge(Toml::file(p));
+        }
+        if let Some(p) = project_path {
+            figment = figment.merge(Toml::file(p));
+        }
+
+        figment = figment.merge(Env::prefixed("HM_").split("__"));
+
+        Ok(figment.extract()?)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use std::io::Write as _;
+
+    #[test]
+    fn default_config_values() {
+        let cfg = Config::default();
+        assert_eq!(cfg.cloud.api_url, DEFAULT_API_URL);
+        assert!(cfg.cloud.org.is_none());
+        assert_eq!(cfg.preferences.format, "human");
+        assert!(!cfg.preferences.auto_watch);
+    }
+
+    #[test]
+    fn deserialize_full_toml() {
+        let toml_str = r#"
+[cloud]
+org = "acme"
+api_url = "https://custom.api"
+
+[preferences]
+format = "json"
+auto_watch = true
+"#;
+        let cfg: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.cloud.org.as_deref(), Some("acme"));
+        assert_eq!(cfg.cloud.api_url, "https://custom.api");
+        assert_eq!(cfg.preferences.format, "json");
+        assert!(cfg.preferences.auto_watch);
+    }
+
+    #[test]
+    fn deserialize_sparse_toml() {
+        let toml_str = r#"
+[cloud]
+org = "sparse-co"
+"#;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        f.write_all(toml_str.as_bytes()).unwrap();
+
+        let cfg = Config::load_from_paths(Some(f.path()), None).unwrap();
+        assert_eq!(cfg.cloud.org.as_deref(), Some("sparse-co"));
+        assert_eq!(cfg.cloud.api_url, DEFAULT_API_URL);
+        assert_eq!(cfg.preferences.format, "human");
+        assert!(!cfg.preferences.auto_watch);
+    }
+
+    #[test]
+    fn deserialize_empty_toml() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        f.write_all(b"").unwrap();
+
+        let cfg = Config::load_from_paths(Some(f.path()), None).unwrap();
+        assert_eq!(cfg.cloud.api_url, DEFAULT_API_URL);
+        assert!(cfg.cloud.org.is_none());
+        assert_eq!(cfg.preferences.format, "human");
+        assert!(!cfg.preferences.auto_watch);
+    }
+
+    #[test]
+    fn figment_project_overrides_user() {
+        let user_toml = r#"
+[cloud]
+org = "user-org"
+api_url = "https://user.api"
+
+[preferences]
+format = "json"
+"#;
+        let project_toml = r#"
+[cloud]
+org = "project-org"
+"#;
+
+        let mut user_file = tempfile::NamedTempFile::new().unwrap();
+        user_file.write_all(user_toml.as_bytes()).unwrap();
+
+        let mut project_file = tempfile::NamedTempFile::new().unwrap();
+        project_file.write_all(project_toml.as_bytes()).unwrap();
+
+        let cfg =
+            Config::load_from_paths(Some(user_file.path()), Some(project_file.path())).unwrap();
+
+        assert_eq!(cfg.cloud.org.as_deref(), Some("project-org"));
+        assert_eq!(cfg.cloud.api_url, "https://user.api");
+        assert_eq!(cfg.preferences.format, "json");
+    }
+
+    #[test]
+    fn figment_missing_files_still_resolve() {
+        let nonexistent_user = Path::new("/tmp/harmont-test-nonexistent-user/config.toml");
+        let nonexistent_project = Path::new("/tmp/harmont-test-nonexistent-project/config.toml");
+
+        let cfg =
+            Config::load_from_paths(Some(nonexistent_user), Some(nonexistent_project)).unwrap();
+
+        assert_eq!(cfg.cloud.api_url, DEFAULT_API_URL);
+        assert!(cfg.cloud.org.is_none());
+        assert_eq!(cfg.preferences.format, "human");
+        assert!(!cfg.preferences.auto_watch);
     }
 }
