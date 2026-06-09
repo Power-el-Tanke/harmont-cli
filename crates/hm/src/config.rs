@@ -69,10 +69,10 @@ impl Config {
         Ok(dir.join("config.toml"))
     }
 
-    /// Project-level config path: `<root>/.harmont/config.toml`.
+    /// Project-level config path: `<root>/.hm/config.toml`.
     #[must_use]
     pub fn project_config_path(project_root: &Path) -> PathBuf {
-        project_root.join(".harmont").join("config.toml")
+        project_root.join(".hm").join("config.toml")
     }
 
     /// Load configuration with full layering: defaults -> user file -> project file -> env.

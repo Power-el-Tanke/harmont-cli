@@ -39,13 +39,13 @@ pub fn hm_user_config_dir() -> Option<PathBuf> {
     platform::config_dir().map(|c| c.join("hm"))
 }
 
-/// Walk up from `start` looking for a directory containing `.harmont/`.
-/// Returns the project root (the directory *containing* `.harmont/`),
+/// Walk up from `start` looking for a directory containing `.hm/`.
+/// Returns the project root (the directory *containing* `.hm/`),
 /// or `None` if the filesystem root is reached without finding one.
 pub fn find_project_root(start: &std::path::Path) -> Option<PathBuf> {
     let mut current = start;
     loop {
-        if current.join(".harmont").is_dir() {
+        if current.join(".hm").is_dir() {
             return Some(current.to_path_buf());
         }
         current = current.parent()?;
@@ -105,7 +105,7 @@ mod tests {
     #[test]
     fn find_project_root_at_current_dir() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::create_dir(tmp.path().join(".harmont")).unwrap();
+        std::fs::create_dir(tmp.path().join(".hm")).unwrap();
         let found = find_project_root(tmp.path());
         assert_eq!(found, Some(tmp.path().to_path_buf()));
     }
@@ -113,7 +113,7 @@ mod tests {
     #[test]
     fn find_project_root_walks_up() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::create_dir(tmp.path().join(".harmont")).unwrap();
+        std::fs::create_dir(tmp.path().join(".hm")).unwrap();
         let nested = tmp.path().join("src").join("deep");
         std::fs::create_dir_all(&nested).unwrap();
         let found = find_project_root(&nested);

@@ -110,7 +110,7 @@ fn type_mismatch_returns_error() {
 #[test]
 fn load_resolves_project_root() {
     let project_dir = tempdir().unwrap();
-    let harmont_dir = project_dir.path().join(".harmont");
+    let harmont_dir = project_dir.path().join(".hm");
     fs::create_dir_all(&harmont_dir).unwrap();
     fs::write(harmont_dir.join("config.toml"), b"[cloud]\norg = \"proj-root\"\n").unwrap();
 
