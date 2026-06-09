@@ -52,6 +52,7 @@ from .cache import (
     CacheNone,
     CacheOnChange,
     CachePolicy,
+    CachePredicate,
     CacheTTL,
 )
 from .triggers import pull_request, push
@@ -178,6 +179,25 @@ def compose(*policies: CachePolicy) -> CacheCompose:
     return CacheCompose(policies=tuple(policies))
 
 
+def predicate(fn: "Callable[[], str]") -> CachePredicate:
+    """Cache policy that invalidates when ``fn()`` returns a new value.
+
+    ``fn`` is called once at plan time. Its string return value is
+    folded into the cache key.
+
+    Example::
+
+        import json
+
+        def package_manager():
+            with open("package.json") as f:
+                return json.load(f).get("packageManager", "")
+
+        step.run("install", cache=hm.predicate(package_manager))
+    """
+    return CachePredicate(fn=fn)
+
+
 def timeout(duration: str | int | timedelta, step: Step) -> Step:
     """Apply a wall-clock timeout to a single step.
 
@@ -287,6 +307,7 @@ __all__ = [
     "CacheNone",
     "CacheOnChange",
     "CachePolicy",
+    "CachePredicate",
     "CacheTTL",
     "JsProject",
     "Pipeline",
@@ -306,6 +327,7 @@ __all__ = [
     "pipeline",
     "pipeline_to_json",
     "pr",
+    "predicate",
     "pull_request",
     "push",
     "py",

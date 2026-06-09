@@ -19,7 +19,12 @@ export interface CacheCompose {
   readonly policies: readonly CachePolicy[];
 }
 
-export type CachePolicy = CacheForever | CacheTTL | CacheOnChange | CacheCompose;
+export interface CachePredicate {
+  readonly kind: "predicate";
+  readonly value: string;
+}
+
+export type CachePolicy = CacheForever | CacheTTL | CacheOnChange | CacheCompose | CachePredicate;
 
 export function forever(opts?: { envKeys?: string[] }): CacheForever {
   return { kind: "forever", envKeys: opts?.envKeys ?? [] };
@@ -38,4 +43,8 @@ export function onChange(...paths: string[]): CacheOnChange {
 
 export function compose(...policies: CachePolicy[]): CacheCompose {
   return { kind: "compose", policies };
+}
+
+export function predicate(value: string): CachePredicate {
+  return { kind: "predicate", value };
 }

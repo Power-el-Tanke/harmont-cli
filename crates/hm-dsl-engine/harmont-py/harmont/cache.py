@@ -78,3 +78,14 @@ class CacheCompose(CachePolicy):
     """
 
     policies: tuple[CachePolicy, ...]
+
+
+@dataclass(frozen=True)
+class CachePredicate(CachePolicy):
+    """Cache keyed on the return value of a user-supplied function.
+
+    The function is called at plan time. If it returns a different value
+    than the previous run, the cache key changes and the step re-runs.
+    """
+
+    fn: object  # Callable[[], str] — called at plan time

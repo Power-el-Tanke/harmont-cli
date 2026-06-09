@@ -21,6 +21,7 @@ from .cache import (
     CacheNone,
     CacheOnChange,
     CachePolicy,
+    CachePredicate,
     CacheTTL,
 )
 
@@ -245,6 +246,9 @@ def _cache_to_dict(policy: CachePolicy) -> dict[str, Any]:
             "policy": "compose",
             "sub_policies": [_cache_to_dict(p) for p in policy.policies],
         }
+    if isinstance(policy, CachePredicate):
+        value = str(policy.fn())
+        return {"policy": "predicate", "value": value}
     msg = f"unknown CachePolicy: {type(policy).__name__}"
     raise TypeError(msg)
 
