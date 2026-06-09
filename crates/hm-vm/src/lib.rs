@@ -5,6 +5,7 @@ pub mod backend;
 pub mod registry;
 pub mod types;
 pub mod vm;
+pub mod workspace;
 
 #[cfg(feature = "docker-backend")]
 pub mod docker;
