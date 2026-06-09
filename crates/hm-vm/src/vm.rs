@@ -393,4 +393,40 @@ mod tests {
         // Registry should still be empty.
         assert!(hm.registry.is_empty());
     }
+
+    #[tokio::test]
+    async fn cache_miss_from_snapshot_still_injects_workspace() {
+        let backend = MockBackend::new(0, false);
+        let (registry, _dir) = open_temp_registry(10);
+        let hm = HmVm::new(Arc::new(backend.clone()), registry, VmConfig::default());
+
+        let mut action = make_action();
+        // Simulate child step: source is a snapshot, not an image.
+        action.source = ImageSource::Snapshot(SnapshotId("parent-snap".into()));
+
+        let result = hm
+            .execute(
+                action,
+                CachingPolicy::Cache {
+                    key: "child-step".into(),
+                },
+                &NullSink,
+            )
+            .await
+            .expect("execute should succeed");
+
+        assert_eq!(result.exit_code, 0);
+        assert!(!result.cached);
+
+        let log = calls(&backend);
+        // Must restore from snapshot (not create from image).
+        assert!(log.iter().any(|c| c.starts_with("restore:parent-snap")));
+        // Must still inject workspace even though source is a snapshot.
+        assert!(
+            log.iter().any(|c| c.starts_with("inject:")),
+            "workspace injection skipped for snapshot-sourced step: {log:?}"
+        );
+        assert!(log.iter().any(|c| c.starts_with("exec:")));
+        assert!(log.iter().any(|c| c.starts_with("snapshot:")));
+    }
 }
