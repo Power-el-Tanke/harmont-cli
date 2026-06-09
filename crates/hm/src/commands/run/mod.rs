@@ -110,7 +110,8 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
     };
 
     // 4. Renderer selection (unchanged): logs stream in CI or with --logs.
-    let use_logs = args.logs || std::env::var_os("CI").is_some_and(|v| !v.is_empty());
+    let use_logs =
+        args.logs || std::env::var_os("CI").is_some_and(|v| !v.is_empty()) || !hm_render::stderr_interactive();
     let renderer = hm_render::renderer_for(&args.format, ctx.output.color_enabled(), use_logs)?;
 
     // 5. Start, drive events, own Ctrl-C, await the outcome.
