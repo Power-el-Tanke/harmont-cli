@@ -2,7 +2,7 @@
 //!
 //! Each step runs inside a lightweight VM managed by [`HmVm`]. The
 //! source archive is extracted to a host-side temp directory and
-//! injected into the VM before the step command runs. System-level
+//! bind-mounted into the VM before the step command runs. System-level
 //! state propagates via VM snapshots.
 
 use std::future::Future;
@@ -14,7 +14,7 @@ use hm_plugin_protocol::{
     BuildEvent, CacheDecision, ExecutorInput, SnapshotRef, StdStream, StepResult,
 };
 use hm_vm::types::OutputSink;
-use hm_vm::{Action, CachingPolicy, HmVm, ImageSource, SnapshotId};
+use hm_vm::{Action, CachingPolicy, HmVm, ImageSource, SnapshotId, WorkspaceMount};
 use uuid::Uuid;
 
 use super::{StepContext, StepRunner};
@@ -72,19 +72,18 @@ async fn run_step_vm(vm: &HmVm, ctx: &StepContext, input: ExecutorInput) -> Resu
         )
     };
 
-    // Always inject workspace so every executing step sees fresh source
+    // Always bind-mount workspace so every executing step sees fresh source
     // files, even when booting from a cached parent snapshot (CLI-28).
-    // Tar extraction overlays fresh source onto the snapshot: changed files
-    // are overwritten and new files added, but files the user deleted from
-    // their tree may linger. Clearing the directory instead would destroy
-    // build artifacts (node_modules, dist) inherited from cached parents.
     let archive_bytes = ctx
         .archives
         .get_bytes(input.workspace_archive_id)
         .ok_or_else(|| anyhow::anyhow!("source archive not found"))?;
     let temp_guard =
         extract_archive_to_tempdir(&archive_bytes).context("extracting workspace archive")?;
-    let inject = Some(temp_guard.path().to_path_buf());
+    let workspace = Some(WorkspaceMount {
+        host_path: temp_guard.path().to_path_buf(),
+        guest_path: input.workdir.clone(),
+    });
 
     // Baseline env for shell operation inside VMs.
     let mut env: Vec<(String, String)> = vec![
@@ -102,7 +101,7 @@ async fn run_step_vm(vm: &HmVm, ctx: &StepContext, input: ExecutorInput) -> Resu
         env,
         working_dir: input.workdir.clone(),
         timeout: None,
-        inject,
+        workspace,
     };
 
     let sink = EventBusSink {

@@ -56,6 +56,7 @@ impl LocalBackend {
         let config = VmConfig {
             memory_mib: Some(8192),
             disk_size_gb: Some(10),
+            workspace_cache_dir: Some(cache_dir.join("workspaces")),
             ..Default::default()
         };
 

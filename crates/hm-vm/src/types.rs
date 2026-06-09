@@ -10,6 +10,13 @@ pub enum ImageSource {
     Snapshot(SnapshotId),
 }
 
+/// Bind-mount specification for a host workspace directory.
+#[derive(Clone, Debug)]
+pub struct WorkspaceMount {
+    pub host_path: PathBuf,
+    pub guest_path: String,
+}
+
 /// What to execute inside a VM.
 #[derive(Clone, Debug)]
 pub struct Action {
@@ -18,9 +25,9 @@ pub struct Action {
     pub env: Vec<(String, String)>,
     pub working_dir: String,
     pub timeout: Option<Duration>,
-    /// Host directory to copy into `working_dir` before execution.
+    /// Host workspace directory to bind-mount into the VM.
     /// Skipped on cache hits (snapshot already contains prior state).
-    pub inject: Option<PathBuf>,
+    pub workspace: Option<WorkspaceMount>,
 }
 
 /// How to cache the result.
@@ -43,6 +50,7 @@ pub struct ExecutionResult {
     pub exit_code: i32,
     pub snapshot: Option<SnapshotId>,
     pub cached: bool,
+    pub workspace_dir: Option<PathBuf>,
 }
 
 /// VM resource configuration.
@@ -51,6 +59,7 @@ pub struct VmConfig {
     pub cpus: Option<u32>,
     pub memory_mib: Option<u64>,
     pub disk_size_gb: Option<u64>,
+    pub workspace_cache_dir: Option<PathBuf>,
 }
 
 /// Receives stdout/stderr lines during execution.

@@ -1,5 +1,6 @@
 //! High-level VM orchestrator.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -13,7 +14,7 @@ use crate::types::{Action, CachingPolicy, ExecutionResult, ImageSource, OutputSi
 ///
 /// `HmVm` composes a [`VmBackend`] with an [`ImageRegistry`] to provide
 /// cache-aware execution: if a cached snapshot already exists for a given
-/// caching key the expensive create-inject-exec cycle is skipped entirely.
+/// caching key the expensive create-exec cycle is skipped entirely.
 #[derive(Debug)]
 pub struct HmVm {
     backend: Arc<dyn VmBackend>,
@@ -42,7 +43,7 @@ impl HmVm {
     ///
     /// # Errors
     ///
-    /// Returns an error if the backend fails to create, restore, inject, or
+    /// Returns an error if the backend fails to create, restore, or
     /// execute. Best-effort cleanup is performed even on failure paths.
     #[instrument(skip(self, action, sink), fields(cmd = %action.cmd))]
     pub async fn execute(
@@ -56,10 +57,14 @@ impl HmVm {
             && let Some(snap) = self.registry.get(key)
         {
             if self.backend.snapshot_exists(&snap).await? {
+                let ws_dir = self.registry.get_with_workspace(key)
+                    .and_then(|(_, ws)| ws)
+                    .map(PathBuf::from);
                 return Ok(ExecutionResult {
                     exit_code: 0,
                     snapshot: Some(snap),
                     cached: true,
+                    workspace_dir: ws_dir,
                 });
             }
             let _ = self.registry.invalidate(key);
@@ -67,8 +72,8 @@ impl HmVm {
 
         // 2. Create or restore VM
         let mut vm = match &action.source {
-            ImageSource::Image(image) => self.backend.create(image, &self.config).await?,
-            ImageSource::Snapshot(snap) => self.backend.restore(snap, &self.config).await?,
+            ImageSource::Image(image) => self.backend.create(image, &self.config, action.workspace.as_ref()).await?,
+            ImageSource::Snapshot(snap) => self.backend.restore(snap, &self.config, action.workspace.as_ref()).await?,
         };
 
         let result = self.run_in_vm(&mut *vm, &action, &policy, sink).await;
@@ -79,8 +84,8 @@ impl HmVm {
         result
     }
 
-    /// Inner lifecycle: inject, exec, snapshot. Separated so the caller
-    /// can guarantee `vm.destroy()` runs regardless of outcome.
+    /// Inner lifecycle: exec, snapshot, persist workspace. Separated so the
+    /// caller can guarantee `vm.destroy()` runs regardless of outcome.
     async fn run_in_vm(
         &self,
         vm: &mut dyn crate::backend::Vm,
@@ -88,12 +93,9 @@ impl HmVm {
         policy: &CachingPolicy,
         sink: &dyn OutputSink,
     ) -> Result<ExecutionResult> {
-        // 3. Inject workspace
-        if let Some(ref host_path) = action.inject {
-            vm.inject(host_path, &action.working_dir).await?;
-        }
+        let mut workspace_dir: Option<PathBuf> = None;
 
-        // 4. Execute command (with optional timeout)
+        // 3. Execute command (with optional timeout)
         let exec_fut = vm.exec(&action.cmd, &action.env, &action.working_dir, sink);
         let exit_code = if let Some(timeout) = action.timeout {
             match tokio::time::timeout(timeout, exec_fut).await {
@@ -104,7 +106,7 @@ impl HmVm {
             exec_fut.await?
         };
 
-        // 5. Snapshot and cache on success
+        // 4. Snapshot and cache on success
         let snapshot = if exit_code == 0 {
             let label = match policy {
                 CachingPolicy::Cache { key } => key.as_str(),
@@ -112,16 +114,31 @@ impl HmVm {
             };
             let snap = vm.snapshot(label).await?;
 
+            // Persist workspace to cache directory.
+            if let Some(ref ws) = action.workspace {
+                if let Some(ref cache_dir) = self.config.workspace_cache_dir {
+                    let ws_cache = cache_dir.join(label);
+                    if ws_cache.exists() {
+                        std::fs::remove_dir_all(&ws_cache).ok();
+                    }
+                    std::fs::create_dir_all(&ws_cache)?;
+                    crate::workspace::cow_copy(&ws.host_path, &ws_cache)?;
+                    workspace_dir = Some(ws_cache);
+                }
+            }
+
             if let CachingPolicy::Cache { key } = policy {
-                let evicted = self.registry.put(key, &snap);
+                let evicted = if let Some(ref ws) = workspace_dir {
+                    self.registry.put_with_workspace(key, &snap, &ws.display().to_string())
+                } else {
+                    self.registry.put(key, &snap)
+                };
                 for (old_snap, old_ws) in &evicted {
                     if let Err(e) = self.backend.remove_snapshot(old_snap).await {
                         warn!(snapshot = %old_snap.0, error = %e, "failed to remove evicted snapshot");
                     }
-                    if let Some(ws_dir) = old_ws {
-                        if let Err(e) = std::fs::remove_dir_all(ws_dir) {
-                            warn!(workspace = %ws_dir, error = %e, "failed to remove evicted workspace");
-                        }
+                    if let Some(ws_path) = old_ws {
+                        std::fs::remove_dir_all(ws_path).ok();
                     }
                 }
             }
@@ -135,6 +152,7 @@ impl HmVm {
             exit_code,
             snapshot,
             cached: false,
+            workspace_dir: if exit_code == 0 { workspace_dir } else { None },
         })
     }
 }
@@ -144,9 +162,8 @@ impl HmVm {
 mod tests {
     use super::*;
     use crate::backend::Vm;
-    use crate::types::{NullSink, SnapshotId};
+    use crate::types::{NullSink, SnapshotId, WorkspaceMount};
 
-    use std::path::Path;
     use std::sync::Mutex;
 
     use async_trait::async_trait;
@@ -176,7 +193,7 @@ mod tests {
 
     #[async_trait]
     impl VmBackend for MockBackend {
-        async fn create(&self, image: &str, _config: &VmConfig) -> Result<Box<dyn Vm>> {
+        async fn create(&self, image: &str, _config: &VmConfig, _workspace: Option<&WorkspaceMount>) -> Result<Box<dyn Vm>> {
             self.calls
                 .lock()
                 .map_or_else(|_| {}, |mut c| c.push(format!("create:{image}")));
@@ -186,7 +203,7 @@ mod tests {
             }))
         }
 
-        async fn restore(&self, snapshot: &SnapshotId, _config: &VmConfig) -> Result<Box<dyn Vm>> {
+        async fn restore(&self, snapshot: &SnapshotId, _config: &VmConfig, _workspace: Option<&WorkspaceMount>) -> Result<Box<dyn Vm>> {
             self.calls
                 .lock()
                 .map_or_else(|_| {}, |mut c| c.push(format!("restore:{}", snapshot.0)));
@@ -220,14 +237,6 @@ mod tests {
 
     #[async_trait]
     impl Vm for MockVm {
-        async fn inject(&self, host_path: &Path, guest_path: &str) -> Result<()> {
-            self.calls.lock().map_or_else(
-                |_| {},
-                |mut c| c.push(format!("inject:{}:{guest_path}", host_path.display())),
-            );
-            Ok(())
-        }
-
         async fn exec(
             &self,
             cmd: &str,
@@ -274,7 +283,10 @@ mod tests {
             env: vec![],
             working_dir: "/work".into(),
             timeout: None,
-            inject: Some(std::path::PathBuf::from("/host/src")),
+            workspace: Some(WorkspaceMount {
+                host_path: std::path::PathBuf::from("/host/src"),
+                guest_path: "/work".into(),
+            }),
         }
     }
 
@@ -309,7 +321,6 @@ mod tests {
 
         let log = calls(&backend);
         assert!(log.iter().any(|c| c.starts_with("create:")));
-        assert!(log.iter().any(|c| c.starts_with("inject:")));
         assert!(log.iter().any(|c| c.starts_with("exec:")));
         assert!(log.iter().any(|c| c.starts_with("snapshot:")));
         assert!(log.iter().any(|c| c == "destroy"));
@@ -400,7 +411,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cache_miss_from_snapshot_still_injects_workspace() {
+    async fn cache_miss_from_snapshot_passes_workspace() {
         let backend = MockBackend::new(0, false);
         let (registry, _dir) = open_temp_registry(10);
         let hm = HmVm::new(Arc::new(backend.clone()), registry, VmConfig::default());
@@ -426,11 +437,6 @@ mod tests {
         let log = calls(&backend);
         // Must restore from snapshot (not create from image).
         assert!(log.iter().any(|c| c.starts_with("restore:parent-snap")));
-        // Must still inject workspace even though source is a snapshot.
-        assert!(
-            log.iter().any(|c| c.starts_with("inject:")),
-            "workspace injection skipped for snapshot-sourced step: {log:?}"
-        );
         assert!(log.iter().any(|c| c.starts_with("exec:")));
         assert!(log.iter().any(|c| c.starts_with("snapshot:")));
     }

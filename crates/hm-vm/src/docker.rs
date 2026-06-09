@@ -5,14 +5,13 @@
 //! image commits.
 
 use std::collections::HashMap;
-use std::path::Path;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use bollard::Docker;
 use bollard::container::{
     Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
-    StopContainerOptions, UploadToContainerOptions,
+    StopContainerOptions,
 };
 use bollard::exec::{CreateExecOptions, StartExecResults};
 use bollard::image::{
@@ -22,7 +21,7 @@ use futures::StreamExt;
 use tracing::instrument;
 
 use crate::backend::{Vm, VmBackend};
-use crate::types::{OutputSink, SnapshotId, VmConfig};
+use crate::types::{OutputSink, SnapshotId, VmConfig, WorkspaceMount};
 
 /// Docker-based VM backend.
 ///
@@ -79,10 +78,17 @@ impl DockerBackend {
     }
 
     #[instrument(skip(self))]
-    async fn start_container(&self, image: &str) -> Result<String> {
+    async fn start_container(&self, image: &str, workspace: Option<&WorkspaceMount>) -> Result<String> {
+        let host_config = workspace.map(|ws| {
+            bollard::service::HostConfig {
+                binds: Some(vec![format!("{}:{}:rw", ws.host_path.display(), ws.guest_path)]),
+                ..Default::default()
+            }
+        });
         let cfg = Config {
             image: Some(image.to_string()),
             cmd: Some(vec!["sh".into(), "-c".into(), "sleep infinity".into()]),
+            host_config,
             ..Default::default()
         };
         let create = self
@@ -100,19 +106,19 @@ impl DockerBackend {
 
 #[async_trait]
 impl VmBackend for DockerBackend {
-    #[instrument(skip(self, _config))]
-    async fn create(&self, image: &str, _config: &VmConfig) -> Result<Box<dyn Vm>> {
+    #[instrument(skip(self, _config, workspace))]
+    async fn create(&self, image: &str, _config: &VmConfig, workspace: Option<&WorkspaceMount>) -> Result<Box<dyn Vm>> {
         self.ensure_image(image).await?;
-        let container_id = self.start_container(image).await?;
+        let container_id = self.start_container(image, workspace).await?;
         Ok(Box::new(DockerVm {
             client: self.client.clone(),
             container_id: Some(container_id),
         }))
     }
 
-    #[instrument(skip(self, _config))]
-    async fn restore(&self, snapshot: &SnapshotId, _config: &VmConfig) -> Result<Box<dyn Vm>> {
-        let container_id = self.start_container(&snapshot.0).await?;
+    #[instrument(skip(self, _config, workspace))]
+    async fn restore(&self, snapshot: &SnapshotId, _config: &VmConfig, workspace: Option<&WorkspaceMount>) -> Result<Box<dyn Vm>> {
+        let container_id = self.start_container(&snapshot.0, workspace).await?;
         Ok(Box::new(DockerVm {
             client: self.client.clone(),
             container_id: Some(container_id),
@@ -168,68 +174,8 @@ impl Drop for DockerVm {
     }
 }
 
-/// Build a tar archive from a host directory.
-///
-/// The archive contains all files under `host_path` with paths relative
-/// to `host_path` itself (i.e. the directory contents, not the directory).
-fn tar_directory(host_path: &Path) -> Result<Vec<u8>> {
-    let mut archive = tar::Builder::new(Vec::new());
-    archive
-        .append_dir_all(".", host_path)
-        .with_context(|| format!("archiving '{}'", host_path.display()))?;
-    archive.finish().context("finalizing tar archive")?;
-    archive.into_inner().context("extracting tar bytes")
-}
-
 #[async_trait]
 impl Vm for DockerVm {
-    #[instrument(skip(self), fields(host = %host_path.display()))]
-    async fn inject(&self, host_path: &Path, guest_path: &str) -> Result<()> {
-        // Ensure the destination directory exists inside the container.
-        let cid = self
-            .container_id
-            .as_deref()
-            .context("container already destroyed")?;
-        let mkdir = self
-            .client
-            .create_exec(
-                cid,
-                CreateExecOptions {
-                    cmd: Some(vec!["mkdir", "-p", guest_path]),
-                    attach_stdout: Some(true),
-                    attach_stderr: Some(true),
-                    ..Default::default()
-                },
-            )
-            .await
-            .context("create mkdir exec")?;
-        if let StartExecResults::Attached { mut output, .. } = self
-            .client
-            .start_exec(&mkdir.id, None)
-            .await
-            .context("start mkdir exec")?
-        {
-            while output.next().await.is_some() {}
-        }
-
-        let tar_bytes = tar_directory(host_path)?;
-        let options = UploadToContainerOptions {
-            path: guest_path,
-            ..Default::default()
-        };
-        self.client
-            .upload_to_container(cid, Some(options), tar_bytes.into())
-            .await
-            .with_context(|| {
-                format!(
-                    "uploading '{}' to container '{}:{guest_path}'",
-                    host_path.display(),
-                    cid.get(..12).unwrap_or(cid),
-                )
-            })?;
-        Ok(())
-    }
-
     #[instrument(skip(self, env, sink))]
     async fn exec(
         &self,
