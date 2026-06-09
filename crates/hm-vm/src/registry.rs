@@ -72,6 +72,19 @@ impl ImageRegistry {
              );",
         )?;
 
+        // Idempotent migration: add workspace_dir column if missing.
+        let has_ws_col: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('snapshots') WHERE name='workspace_dir'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_ws_col {
+            conn.execute_batch("ALTER TABLE snapshots ADD COLUMN workspace_dir TEXT;")?;
+        }
+
         Ok(Self {
             conn: Mutex::new(conn),
             capacity,
@@ -83,18 +96,27 @@ impl ImageRegistry {
     /// Returns `None` if no entry exists for `key`.
     #[must_use]
     pub fn get(&self, key: &str) -> Option<SnapshotId> {
+        self.get_with_workspace(key).map(|(snap, _)| snap)
+    }
+
+    /// Look up a cached snapshot and its workspace directory, updating the
+    /// access time.
+    ///
+    /// Returns `None` if no entry exists for `key`.
+    #[must_use]
+    pub fn get_with_workspace(&self, key: &str) -> Option<(SnapshotId, Option<String>)> {
         let now = epoch_secs();
         let conn = self.conn.lock().ok()?;
 
-        let snapshot: Option<String> = conn
+        let result: Option<(String, Option<String>)> = conn
             .query_row(
-                "SELECT snapshot_id FROM snapshots WHERE key = ?1",
+                "SELECT snapshot_id, workspace_dir FROM snapshots WHERE key = ?1",
                 [key],
-                |row| row.get(0),
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
             )
             .ok();
 
-        if snapshot.is_some() {
+        if result.is_some() {
             let _ = conn.execute(
                 "UPDATE snapshots SET accessed_at = ?1 WHERE key = ?2",
                 rusqlite::params![now, key],
@@ -102,15 +124,16 @@ impl ImageRegistry {
         }
 
         drop(conn);
-        snapshot.map(SnapshotId)
+        result.map(|(snap, ws)| (SnapshotId(snap), ws))
     }
 
     /// Insert or update a cache entry.
     ///
-    /// Returns the [`SnapshotId`]s of any entries evicted to keep the registry
-    /// within its configured capacity. The caller is responsible for cleaning
-    /// up the backend resources associated with evicted snapshots.
-    pub fn put(&self, key: &str, snapshot: &SnapshotId) -> Vec<SnapshotId> {
+    /// Returns the evicted entries (snapshot ID and optional workspace directory)
+    /// to keep the registry within its configured capacity. The caller is
+    /// responsible for cleaning up backend resources and workspace directories
+    /// associated with evicted entries.
+    pub fn put(&self, key: &str, snapshot: &SnapshotId) -> Vec<(SnapshotId, Option<String>)> {
         let now = epoch_secs();
 
         let Ok(conn) = self.conn.lock() else {
@@ -122,6 +145,32 @@ impl ImageRegistry {
             "INSERT OR REPLACE INTO snapshots (key, snapshot_id, accessed_at)
              VALUES (?1, ?2, ?3)",
             rusqlite::params![key, snapshot.0, now],
+        );
+
+        drop(conn);
+        self.evict_overflow()
+    }
+
+    /// Insert or update a cache entry with an associated workspace directory.
+    ///
+    /// Returns the evicted entries (snapshot ID and optional workspace directory)
+    /// to keep the registry within its configured capacity.
+    pub fn put_with_workspace(
+        &self,
+        key: &str,
+        snapshot: &SnapshotId,
+        workspace_dir: &str,
+    ) -> Vec<(SnapshotId, Option<String>)> {
+        let now = epoch_secs();
+
+        let Ok(conn) = self.conn.lock() else {
+            return Vec::new();
+        };
+
+        let _result = conn.execute(
+            "INSERT OR REPLACE INTO snapshots (key, snapshot_id, accessed_at, workspace_dir)
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![key, snapshot.0, now, workspace_dir],
         );
 
         drop(conn);
@@ -173,8 +222,9 @@ impl ImageRegistry {
     }
 
     /// Evict the oldest entries (by `accessed_at`) when the registry exceeds
-    /// its capacity. Returns the snapshot IDs of evicted entries.
-    fn evict_overflow(&self) -> Vec<SnapshotId> {
+    /// its capacity. Returns the snapshot IDs and optional workspace directories
+    /// of evicted entries.
+    fn evict_overflow(&self) -> Vec<(SnapshotId, Option<String>)> {
         let count = self.len();
         if count <= self.capacity {
             return Vec::new();
@@ -186,14 +236,19 @@ impl ImageRegistry {
             return Vec::new();
         };
 
-        let Ok(mut stmt) =
-            conn.prepare("SELECT snapshot_id FROM snapshots ORDER BY accessed_at ASC LIMIT ?1")
-        else {
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT snapshot_id, workspace_dir FROM snapshots ORDER BY accessed_at ASC LIMIT ?1",
+        ) else {
             return Vec::new();
         };
 
-        let evicted: Vec<SnapshotId> = stmt
-            .query_map([overflow], |row| row.get::<_, String>(0).map(SnapshotId))
+        let evicted: Vec<(SnapshotId, Option<String>)> = stmt
+            .query_map([overflow], |row| {
+                Ok((
+                    SnapshotId(row.get::<_, String>(0)?),
+                    row.get::<_, Option<String>>(1)?,
+                ))
+            })
             .ok()
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default();
@@ -264,7 +319,7 @@ mod tests {
         let evicted = reg.put("c", &SnapshotId("snap-c".into()));
 
         assert_eq!(evicted.len(), 1);
-        assert_eq!(evicted[0], SnapshotId("snap-b".into()));
+        assert_eq!(evicted[0].0, SnapshotId("snap-b".into()));
 
         // "a" should still be present.
         assert!(reg.get("a").is_some());
@@ -285,7 +340,7 @@ mod tests {
         let evicted = reg.put("z", &SnapshotId("snap-z".into()));
 
         assert_eq!(evicted.len(), 1);
-        assert_eq!(evicted[0], SnapshotId("snap-x".into()));
+        assert_eq!(evicted[0].0, SnapshotId("snap-x".into()));
         assert_eq!(reg.len(), 2);
     }
 
@@ -321,5 +376,37 @@ mod tests {
         // Invalidating a non-existent key returns None.
         let removed2 = reg.invalidate("to-remove");
         assert!(removed2.is_none());
+    }
+
+    #[test]
+    fn put_with_workspace_then_get_returns_both() {
+        let (reg, _dir) = open_temp(10);
+        let snap = SnapshotId("snap-ws".into());
+        reg.put_with_workspace("ws-key", &snap, "/cache/workspaces/ws-key");
+
+        let (got_snap, got_ws) = reg.get_with_workspace("ws-key").unwrap();
+        assert_eq!(got_snap, SnapshotId("snap-ws".into()));
+        assert_eq!(got_ws.as_deref(), Some("/cache/workspaces/ws-key"));
+    }
+
+    #[test]
+    fn put_without_workspace_returns_none_workspace() {
+        let (reg, _dir) = open_temp(10);
+        reg.put("plain-key", &SnapshotId("snap-plain".into()));
+
+        let (_, got_ws) = reg.get_with_workspace("plain-key").unwrap();
+        assert!(got_ws.is_none());
+    }
+
+    #[test]
+    fn eviction_includes_workspace_path() {
+        let (reg, _dir) = open_temp(1);
+        reg.put_with_workspace("a", &SnapshotId("snap-a".into()), "/ws/a");
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let evicted = reg.put_with_workspace("b", &SnapshotId("snap-b".into()), "/ws/b");
+        assert_eq!(evicted.len(), 1);
+        assert_eq!(evicted[0].0, SnapshotId("snap-a".into()));
+        assert_eq!(evicted[0].1.as_deref(), Some("/ws/a"));
     }
 }

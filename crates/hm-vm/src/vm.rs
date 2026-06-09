@@ -114,9 +114,14 @@ impl HmVm {
 
             if let CachingPolicy::Cache { key } = policy {
                 let evicted = self.registry.put(key, &snap);
-                for old in &evicted {
-                    if let Err(e) = self.backend.remove_snapshot(old).await {
-                        warn!(snapshot = %old.0, error = %e, "failed to remove evicted snapshot");
+                for (old_snap, old_ws) in &evicted {
+                    if let Err(e) = self.backend.remove_snapshot(old_snap).await {
+                        warn!(snapshot = %old_snap.0, error = %e, "failed to remove evicted snapshot");
+                    }
+                    if let Some(ws_dir) = old_ws {
+                        if let Err(e) = std::fs::remove_dir_all(ws_dir) {
+                            warn!(workspace = %ws_dir, error = %e, "failed to remove evicted workspace");
+                        }
                     }
                 }
             }
