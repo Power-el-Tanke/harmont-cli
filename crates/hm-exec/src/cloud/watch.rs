@@ -14,15 +14,21 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use harmont_cloud::{
-    HarmontClient,
+    HarmontClient, HarmontError,
     logs::{LogEvent, StreamKind},
     models::{build_is_terminal, job_is_terminal},
+    types::JobState,
 };
 use hm_plugin_protocol::events::{BuildEvent, PlanSummary, StdStream};
 use uuid::Uuid;
 
 /// Poll-interval for build/job status.
 const POLL: Duration = Duration::from_millis(1500);
+
+/// Re-mint the log token when its remaining lifetime drops below this margin,
+/// so a stream spawned late in a long build starts with a fresh, valid token
+/// instead of one that 401s within seconds.
+const TOKEN_REFRESH_MARGIN: chrono::Duration = chrono::Duration::minutes(5);
 
 /// Aborts any still-running stream tasks when dropped (covers early-return
 /// error paths so no detached ghost tasks outlive `watch_build`).
@@ -51,10 +57,45 @@ fn duration_ms(start: Option<DateTime<Utc>>, end: Option<DateTime<Utc>>) -> u64 
     }
 }
 
+/// Whether a job has reached a state where its logs exist (running or already
+/// terminal), and so a log stream should be started for it.
+///
+/// Matching the typed [`JobState`] enum (rather than `to_string()`/`as_str()`
+/// against string literals) makes the set of states exhaustive: when the cloud
+/// adds a new `JobState` variant the compiler forces this decision to be
+/// revisited, and a misspelled state can no longer silently drop a job's logs.
+const fn job_logs_available(state: JobState) -> bool {
+    match state {
+        JobState::Running
+        | JobState::Passed
+        | JobState::Failed
+        | JobState::TimedOut
+        | JobState::Canceling
+        | JobState::Canceled
+        | JobState::TimingOut => true,
+        // No logs yet (not started) or never produced (skipped).
+        JobState::Pending | JobState::Scheduled | JobState::Assigned | JobState::Skipped => false,
+    }
+}
+
+/// Map a terminal build state to the process exit code the renderer and the
+/// `hm run` driver use. `passed` → 0, `canceled` → 130 (SIGINT-cancel, mirrors
+/// [`crate::BuildStatus::Canceled`]), everything else (`failed`, and any
+/// unexpected state) → 1. Kept in lockstep with the backend's state→status map
+/// so a server-side cancel is never reported as a failure.
+pub(crate) fn exit_code_for_state(state: &str) -> i32 {
+    match state {
+        "passed" => 0,
+        "canceled" => 130,
+        _ => 1,
+    }
+}
+
 /// Watch `build #number` until terminal, emitting [`BuildEvent`]s on `tx`.
 ///
 /// `log_base` is the host serving the SSE log stream (the API base in prod).
-/// Returns 0 if the build passed, else 1.
+/// Returns the terminal exit code via [`exit_code_for_state`]: 0 passed, 130
+/// canceled, 1 otherwise.
 ///
 /// # Errors
 /// Returns an error if any SDK call fails (build status poll, job list, or log
@@ -69,10 +110,13 @@ pub async fn watch_build(
     number: i64,
     tx: tokio::sync::mpsc::Sender<BuildEvent>,
 ) -> Result<i32> {
-    // TODO: log token has a ~1h TTL; very long builds will 401 mid-stream and
-    // lose remaining logs (build-status poll still drives completion).
-    // Refresh via LogToken.expires_at if needed.
-    let token = client.log_token(org, pipeline, number).await?.token;
+    // Log tokens carry a ~1h TTL. A long build outlives a single mint, so a
+    // job whose stream starts late in the build would 401 mid-stream. We keep
+    // the minted token (with its `expires_at`) and re-mint before spawning a
+    // new stream once we're within `TOKEN_REFRESH_MARGIN` of expiry, so every
+    // later-starting step gets a valid token. Streams that 401 anyway surface a
+    // one-line notice (see `stream_one`) rather than silently dropping logs.
+    let mut log_token = client.log_token(org, pipeline, number).await?;
 
     let started = Instant::now();
     if tx
@@ -109,18 +153,7 @@ pub async fn watch_build(
         // state where logs exist (running or already terminal).
         let jobs = client.list_jobs(org, pipeline, number).await?;
         for job in &jobs {
-            let state = job.state.to_string();
-            let logs_available = matches!(
-                state.as_str(),
-                "running"
-                    | "passed"
-                    | "failed"
-                    | "timed_out"
-                    | "canceling"
-                    | "canceled"
-                    | "timing_out"
-            );
-            if logs_available && streaming.insert(job.id) {
+            if job_logs_available(job.state) && streaming.insert(job.id) {
                 let name = job.name.clone().unwrap_or_else(|| "job".to_string());
                 let idx = *chain_idx.entry(job.id).or_insert_with(|| {
                     let i = next_idx;
@@ -151,11 +184,21 @@ pub async fn watch_build(
                 {
                     return Ok(1);
                 }
+                // Re-mint the token if it's near expiry before this (possibly
+                // late-starting) stream begins. A re-mint failure is
+                // non-fatal: fall back to the existing token and let
+                // `stream_one` surface a notice if the server rejects it.
+                if log_token.expires_at - Utc::now() < TOKEN_REFRESH_MARGIN {
+                    match client.log_token(org, pipeline, number).await {
+                        Ok(fresh) => log_token = fresh,
+                        Err(e) => tracing::warn!("log-token refresh failed: {e}"),
+                    }
+                }
                 guard.0.push(tokio::spawn(stream_one(
                     client.clone(),
                     log_base.to_string(),
                     job.id,
-                    token.clone(),
+                    log_token.token.clone(),
                     tx.clone(),
                 )));
             }
@@ -194,8 +237,7 @@ pub async fn watch_build(
         }
     }
 
-    let passed = final_state == "passed";
-    let code = i32::from(!passed);
+    let code = exit_code_for_state(&final_state);
     // Best-effort close; ignore a dropped receiver.
     let _ = tx
         .send(BuildEvent::BuildEnd {
@@ -299,7 +341,11 @@ pub async fn stream_job_logs_as_events(
 }
 
 /// Thin wrapper used by the multi-job watch loop. Errors are treated as
-/// best-effort (log stream for this job stops, other jobs continue).
+/// best-effort (log stream for this job stops, other jobs continue) — with one
+/// exception: a `401 Unauthorized` (the log token expired mid-build) is
+/// surfaced as a single one-line notice on the step's stream instead of being
+/// dropped silently, so the gulf of evaluation ("why did my logs stop?") stays
+/// narrow. The build-status poll still drives the build to its real verdict.
 async fn stream_one(
     client: HarmontClient,
     log_base: String,
@@ -307,7 +353,25 @@ async fn stream_one(
     token: String,
     tx: tokio::sync::mpsc::Sender<BuildEvent>,
 ) {
-    let _ = stream_job_logs_as_events(&client, &log_base, job_id, &token, &tx).await;
+    let expired = stream_job_logs_as_events(&client, &log_base, job_id, &token, &tx)
+        .await
+        .err()
+        .and_then(|e| {
+            e.downcast_ref::<HarmontError>()
+                .map(|h| matches!(h, HarmontError::Unauthorized))
+        })
+        .unwrap_or(false);
+    if expired {
+        let _ = tx
+            .send(BuildEvent::StepLog {
+                step_id: job_id,
+                stream: StdStream::Stderr,
+                line: "live logs expired; full logs available via `hm cloud build show`"
+                    .to_string(),
+                ts: Utc::now(),
+            })
+            .await;
+    }
 }
 
 /// Map the SDK stream kind onto the renderer's two-way stream: `Meta` folds
@@ -343,4 +407,46 @@ async fn emit(
         .map_err(|_| ())?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{JobState, exit_code_for_state, job_logs_available};
+
+    #[test]
+    fn logs_available_for_running_and_terminal_states() {
+        for state in [
+            JobState::Running,
+            JobState::Passed,
+            JobState::Failed,
+            JobState::TimedOut,
+            JobState::Canceling,
+            JobState::Canceled,
+            JobState::TimingOut,
+        ] {
+            assert!(job_logs_available(state), "expected logs for {state}");
+        }
+    }
+
+    #[test]
+    fn no_logs_before_start_or_when_skipped() {
+        for state in [
+            JobState::Pending,
+            JobState::Scheduled,
+            JobState::Assigned,
+            JobState::Skipped,
+        ] {
+            assert!(!job_logs_available(state), "expected no logs for {state}");
+        }
+    }
+
+    #[test]
+    fn passed_is_zero_canceled_is_130_else_is_one() {
+        assert_eq!(exit_code_for_state("passed"), 0);
+        // A server-side cancel must NOT collapse to the generic failure code.
+        assert_eq!(exit_code_for_state("canceled"), 130);
+        assert_eq!(exit_code_for_state("failed"), 1);
+        // Unexpected/unknown terminal states fail closed.
+        assert_eq!(exit_code_for_state("timed_out"), 1);
+    }
 }

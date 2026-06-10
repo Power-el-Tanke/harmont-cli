@@ -23,6 +23,7 @@
 )]
 
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -59,6 +60,12 @@ struct StepOutcome {
     /// `None` only for steps short-circuited because a predecessor failed
     /// or the build was cancelled before they could run.
     summary: Option<StepResultSummary>,
+    /// Set when this step did not complete successfully — it failed, timed
+    /// out, was cancelled, or was itself skipped. Descendants gate on this
+    /// (not on `exit_code`) so a skip propagates transitively: a skipped
+    /// step reports `exit_code == 0`, so the exit code alone cannot
+    /// distinguish "passed" from "skipped" and the cascade would break.
+    failed_or_skipped: bool,
 }
 
 type StepFuture = futures::future::Shared<BoxFuture<'static, StepOutcome>>;
@@ -77,11 +84,12 @@ type StepFuture = futures::future::Shared<BoxFuture<'static, StepOutcome>>;
 /// Returns an error if the source archive cannot be built or any
 /// scheduler-level failure occurs. Non-zero step exit codes are
 /// surfaced via the returned [`BuildOutcome`], not as an `Err`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn run(
     graph: PipelineGraph,
     repo_root: PathBuf,
     pipeline_slug: String,
-    parallelism: usize,
+    parallelism: NonZeroUsize,
     runner_registry: Arc<RunnerRegistry>,
     tx: tokio::sync::mpsc::Sender<BuildEvent>,
     cancel: CancellationToken,
@@ -132,9 +140,7 @@ pub(crate) async fn run(
         cancel: cancel.clone(),
     };
 
-    let parallelism = parallelism.max(1);
-
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(parallelism));
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(parallelism.get()));
 
     let dag = graph.dag();
     let pipeline_timeout = graph.timeout_seconds();
@@ -186,8 +192,12 @@ pub(crate) async fn run(
             let pred_outcomes: Vec<StepOutcome> =
                 join_all(preds.iter().map(|(_, f)| f.clone())).await;
 
-            // Early exit if any predecessor failed or the build was cancelled.
-            if cancel.is_cancelled() || pred_outcomes.iter().any(|o| o.exit_code != 0) {
+            // Early exit if any predecessor failed/was skipped, or the build
+            // was cancelled. Gating on `failed_or_skipped` (not `exit_code`)
+            // is what makes the skip propagate transitively: a skipped
+            // predecessor reports `exit_code == 0`, so an exit-code-only gate
+            // would let a skipped step's descendants run anyway.
+            if cancel.is_cancelled() || pred_outcomes.iter().any(|o| o.failed_or_skipped) {
                 let status = if cancel.is_cancelled() {
                     StepStatus::Canceled
                 } else {
@@ -203,6 +213,7 @@ pub(crate) async fn run(
                         exit_code: None,
                         duration_ms: 0,
                     }),
+                    failed_or_skipped: true,
                 };
             }
 
@@ -249,6 +260,7 @@ pub(crate) async fn run(
                             exit_code: Some(1),
                             duration_ms: 0,
                         }),
+                        failed_or_skipped: true,
                     }
                 }
             }
@@ -264,29 +276,42 @@ pub(crate) async fn run(
     // set twice: once racing the deadline (to fire cancellation promptly), then
     // again to drain every step to completion before tearing down.
     let pending: Vec<StepFuture> = done.into_values().collect();
-    let timed_out = match pipeline_timeout {
-        Some(secs) if secs > 0 => {
-            let join_fut = join_all(pending.clone());
-            tokio::pin!(join_fut);
-            tokio::select! {
-                _ = &mut join_fut => false,
-                () = tokio::time::sleep(Duration::from_secs(u64::from(secs))) => {
-                    // Whole-build budget blown: signal every step to stop. New
-                    // steps short-circuit via the `cancel.is_cancelled()` check
-                    // in the spawn closure; in-flight runners observe
-                    // run_ctx.cancel.
-                    cancel.cancel();
-                    true
-                }
+    let timed_out = if let Some(secs) = pipeline_timeout {
+        let join_fut = join_all(pending.clone());
+        tokio::pin!(join_fut);
+        tokio::select! {
+            _ = &mut join_fut => false,
+            () = tokio::time::sleep(Duration::from_secs(u64::from(secs.get()))) => {
+                // Whole-build budget blown: signal every step to stop. New
+                // steps short-circuit via the `cancel.is_cancelled()` check
+                // in the spawn closure; in-flight runners observe
+                // run_ctx.cancel.
+                cancel.cancel();
+                true
             }
         }
-        _ => {
-            let _ = join_all(pending.clone()).await;
-            false
-        }
+    } else {
+        let _ = join_all(pending.clone()).await;
+        false
     };
     let outcomes: Vec<StepOutcome> = join_all(pending).await;
     let any_failed = outcomes.iter().any(|o| o.exit_code != 0);
+
+    // Reap ephemeral leaf snapshots. Uncached steps commit an `ephemeral:*`
+    // image for downstream container lineage; the cache registry never tracks
+    // them, so once the run is over nothing else will. Collect every such
+    // snapshot the steps produced and ask the default runner to remove them
+    // (best-effort — failures are logged, not fatal).
+    let ephemeral: Vec<SnapshotRef> = outcomes
+        .iter()
+        .filter_map(|o| o.snapshot.clone())
+        .filter(|s| s.0.starts_with("ephemeral:"))
+        .collect();
+    if !ephemeral.is_empty()
+        && let Some(runner) = runner_registry.resolve(None)
+    {
+        runner.reap_snapshots(ephemeral).await;
+    }
 
     // Derive the overall verdict. Timeout wins (it also fired cancellation);
     // then cancellation; then any failed step; otherwise the build passed.
@@ -302,7 +327,7 @@ pub(crate) async fn run(
 
     if timed_out {
         tracing::warn!(
-            timeout_seconds = pipeline_timeout,
+            timeout_seconds = ?pipeline_timeout,
             "pipeline wall-clock timeout exceeded; build failed"
         );
     }
@@ -366,10 +391,13 @@ async fn execute_step(
     let step_key = step_wire.key.clone();
     let display_name = step_wire.label.clone().unwrap_or_else(|| {
         let cmd = step_wire.cmd.trim();
-        if cmd.len() <= 40 {
+        if cmd.chars().count() <= 40 {
             cmd.to_owned()
         } else {
-            format!("{}…", &cmd[..39])
+            // Truncate on a char boundary, not a byte offset: `&cmd[..39]`
+            // panics if byte 39 falls inside a multibyte UTF-8 sequence.
+            let truncated: String = cmd.chars().take(39).collect();
+            format!("{truncated}…")
         }
     });
     let env_map = transition.env;
@@ -444,8 +472,8 @@ async fn execute_step(
 
     let exec = runner.execute(&run_ctx, input);
     let result: anyhow::Result<StepResult> = match step_timeout_secs {
-        Some(secs) if secs > 0 => {
-            match tokio::time::timeout(Duration::from_secs(u64::from(secs)), exec).await {
+        Some(secs) => {
+            match tokio::time::timeout(Duration::from_secs(u64::from(secs.get())), exec).await {
                 Ok(r) => r,
                 Err(_elapsed) => {
                     // Per-step wall-clock budget exceeded. Emit a step-end with the
@@ -479,6 +507,7 @@ async fn execute_step(
                             exit_code: Some(124),
                             duration_ms: dur_ms,
                         }),
+                        failed_or_skipped: true,
                     });
                 }
             }
@@ -525,6 +554,7 @@ async fn execute_step(
                     exit_code: Some(sr.exit_code),
                     duration_ms: dur_ms,
                 }),
+                failed_or_skipped: sr.exit_code != 0,
             })
         }
         Err(e) => {
