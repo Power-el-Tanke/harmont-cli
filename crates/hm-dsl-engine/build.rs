@@ -7,7 +7,6 @@
 )]
 
 use std::env;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -22,17 +21,10 @@ fn main() {
     let esbuild = find_esbuild(&manifest_dir);
 
     let Some(esbuild) = esbuild else {
-        eprintln!(
-            "cargo:warning=esbuild not found; writing stub bundles. \
-             Run `npm ci` in crates/hm-dsl-engine/harmont-ts/ for real bundles."
+        panic!(
+            "esbuild not found.\
+             Install it or run `npm ci` in crates/hm-dsl-engine/harmont-ts/ for generating js bundles before building the crate."
         );
-        fs::write(out_dir.join("harmont-index.mjs"), "// stub\nexport {};").unwrap();
-        fs::write(
-            out_dir.join("harmont-toolchains.mjs"),
-            "// stub\nexport {};",
-        )
-        .unwrap();
-        return;
     };
 
     bundle(
