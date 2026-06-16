@@ -28,6 +28,7 @@ export class Step {
   readonly _runner: string | undefined;
   readonly _runnerArgs: Readonly<Record<string, unknown>> | undefined;
   readonly _keyOverride: string | undefined;
+  readonly _referencesPath: string | undefined
 
   /** @internal */
   constructor(init: {
@@ -43,6 +44,7 @@ export class Step {
     runner?: string;
     runnerArgs?: Record<string, unknown>;
     keyOverride?: string;
+    referencesPath?: string;
   }) {
     this._id = nextId++;
     this._cmd = init.cmd;
@@ -57,6 +59,7 @@ export class Step {
     this._runner = init.runner;
     this._runnerArgs = init.runnerArgs;
     this._keyOverride = init.keyOverride;
+    this._referencesPath = init.referencesPath;
   }
 
   sh(cmd: string, opts?: StepOptions): Step {

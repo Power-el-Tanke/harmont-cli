@@ -52,6 +52,8 @@ class Step:
     """Manual key override; surfaces as the `key=` kwarg on `.sh()`.
     The field is renamed so it doesn't shadow the runtime-derived key
     the lowering pass produces in pipeline.py."""
+    
+    references_path: str | None = None
 
     def sh(
         self,
