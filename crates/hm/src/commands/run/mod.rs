@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 
-use hm_dsl_engine::{detect, DslEngine};
+use hm_dsl_engine::{DslEngine, detect};
 
 use crate::cli::RunArgs;
 use crate::context::RunContext;

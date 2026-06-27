@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use hm_dsl_engine::{detect, python_engine, DslEngine};
+use hm_dsl_engine::{DslEngine, detect, python_engine};
 
 #[derive(Debug, Clone, Parser)]
 pub struct PipelinesArgs {

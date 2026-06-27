@@ -25,7 +25,9 @@ fn fixtures_dir() -> PathBuf {
 }
 
 fn load_fixture(scenario: &str) -> PipelineGraph {
-    let path = fixtures_dir().join("python").join(format!("{scenario}.json"));
+    let path = fixtures_dir()
+        .join("python")
+        .join(format!("{scenario}.json"));
     let bytes = fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     serde_json::from_slice(&bytes).unwrap_or_else(|e| panic!("parse py/{scenario}: {e}"))
 }

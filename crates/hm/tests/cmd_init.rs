@@ -175,10 +175,7 @@ fn init_all_templates_create_files() {
             .success();
 
         let has_py = dir.path().join(".hm/pipeline.py").exists();
-        assert!(
-            has_py,
-            "template {slug}: no pipeline file created"
-        );
+        assert!(has_py, "template {slug}: no pipeline file created");
     }
 }
 

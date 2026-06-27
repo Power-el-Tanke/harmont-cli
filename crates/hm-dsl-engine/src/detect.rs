@@ -90,19 +90,13 @@ mod tests {
         fs::create_dir(tmp.path().join(".hm")).unwrap();
         let err = check_python(tmp.path()).unwrap_err();
         let msg = err.to_string();
-        assert!(
-            msg.contains("no .py files"),
-            "unexpected error: {msg}"
-        );
+        assert!(msg.contains("no .py files"), "unexpected error: {msg}");
     }
 
     #[test]
     fn other_file_extensions_dont_affect_the_check() {
         let tmp = setup(&["ci.py", "deploy.ts"]);
-        assert_eq!(
-            check_python(tmp.path()).unwrap(),
-            ()
-        );
+        assert_eq!(check_python(tmp.path()).unwrap(), ());
     }
 
     #[test]
@@ -110,10 +104,7 @@ mod tests {
         let tmp = setup(&["ci.ts"]);
         let err = check_python(tmp.path()).unwrap_err();
         let msg = err.to_string();
-        assert!(
-            msg.contains("no .py files"),
-            "unexpected error: {msg}"
-        );
+        assert!(msg.contains("no .py files"), "unexpected error: {msg}");
     }
 
     #[test]
