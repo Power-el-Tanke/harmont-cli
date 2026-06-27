@@ -18,13 +18,10 @@ const EMPTY_ENVELOPE: &str = r#"{"schema_version":"1","pipelines":[]}"#;
 
 /// Print the discovery envelope JSON (all pipelines) to stdout.
 ///
-/// A repo with no `.hm/` directory (or one with no `.py`/`.ts` files)
+/// A repo with no `.hm/` directory (or one with no `.py` files)
 /// declares no pipelines and yields the empty envelope rather than an error —
 /// the backend fans discovery out across every repo in an installation, most of
-/// which carry no pipelines. Both Python and TypeScript pipelines emit the same
-/// discovery envelope; a repo declaring both languages resolves to Python via
-/// [`detect::detect_language_python_first`] (the fully-supported backend path),
-/// matching `hm render`.
+/// which carry no pipelines.
 ///
 /// # Errors
 ///
