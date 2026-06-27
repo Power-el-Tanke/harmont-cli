@@ -43,25 +43,6 @@ fn init_rust_creates_pipeline_py() {
 }
 
 #[test]
-fn init_zig_creates_pipeline_ts() {
-    let dir = tempfile::tempdir().unwrap();
-    hm().args(["init", "--template", "zig", "--dir"])
-        .arg(dir.path())
-        .assert()
-        .success();
-
-    let pipeline = dir.path().join(".hm/pipeline.ts");
-    assert!(pipeline.exists(), "expected {}", pipeline.display());
-
-    let content = std::fs::read_to_string(&pipeline).unwrap();
-    assert!(content.contains("zig"), "expected zig toolchain import");
-    assert!(
-        content.contains("export default"),
-        "expected default export"
-    );
-}
-
-#[test]
 fn init_existing_hm_dir_no_pipeline_succeeds() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir(dir.path().join(".hm")).unwrap();
@@ -194,9 +175,8 @@ fn init_all_templates_create_files() {
             .success();
 
         let has_py = dir.path().join(".hm/pipeline.py").exists();
-        let has_ts = dir.path().join(".hm/pipeline.ts").exists();
         assert!(
-            has_py || has_ts,
+            has_py,
             "template {slug}: no pipeline file created"
         );
     }
@@ -208,10 +188,6 @@ fn has_python() -> bool {
     which::which("python3").is_ok()
 }
 
-fn has_js_runtime() -> bool {
-    which::which("bun").is_ok() || which::which("node").is_ok()
-}
-
 #[test]
 fn init_python_templates_roundtrip_render() {
     if !has_python() {
@@ -219,38 +195,6 @@ fn init_python_templates_roundtrip_render() {
     }
 
     for slug in ["cmake", "elixir", "rust", "python"] {
-        let dir = tempfile::tempdir().unwrap();
-        hm().args(["init", "--template", slug, "--dir"])
-            .arg(dir.path())
-            .assert()
-            .success();
-
-        let out = hm()
-            .args(["render", "ci", "--dir"])
-            .arg(dir.path())
-            .assert()
-            .success()
-            .get_output()
-            .stdout
-            .clone();
-
-        let v: serde_json::Value = serde_json::from_slice(&out)
-            .unwrap_or_else(|e| panic!("template {slug}: invalid JSON: {e}"));
-        assert_eq!(v["version"], "0", "template {slug}: expected v0 IR");
-        assert!(
-            v["graph"].is_object(),
-            "template {slug}: expected graph object"
-        );
-    }
-}
-
-#[test]
-fn init_ts_templates_roundtrip_render() {
-    if !has_js_runtime() {
-        return;
-    }
-
-    for slug in ["nextjs", "js", "zig"] {
         let dir = tempfile::tempdir().unwrap();
         hm().args(["init", "--template", slug, "--dir"])
             .arg(dir.path())

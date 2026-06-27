@@ -135,3 +135,8 @@ impl DslEngine for SubprocessPythonEngine {
             .context("dumping pipeline registry via python3")
     }
 }
+
+#[inline]
+pub fn engine() -> Result<SubprocessPythonEngine> {
+    SubprocessPythonEngine::new()
+}
