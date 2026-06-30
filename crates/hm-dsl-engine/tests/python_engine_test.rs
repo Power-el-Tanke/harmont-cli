@@ -29,8 +29,7 @@ def ci() -> hm.Step:
     )
     .unwrap();
 
-    let check = hm_dsl_engine::detect::check_python(dir.path()).unwrap();
-    assert_eq!(check, ());
+    hm_dsl_engine::detect::check_python(dir.path()).unwrap();
 
     let engine = hm_dsl_engine::python_engine().unwrap();
     let metas = engine.list_pipelines(dir.path()).await.unwrap();

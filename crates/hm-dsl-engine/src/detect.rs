@@ -71,8 +71,7 @@ mod tests {
     #[test]
     fn python_file_detected() {
         let tmp = setup(&["ci.py"]);
-        let empty_tuple = check_python(tmp.path()).unwrap();
-        assert_eq!(empty_tuple, ());
+        check_python(tmp.path()).unwrap();
     }
 
     #[test]

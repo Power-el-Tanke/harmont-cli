@@ -136,7 +136,7 @@ impl DslEngine for SubprocessPythonEngine {
     }
 }
 
-/// Instanciates a python engine. 
+/// Instanciates a python engine.
 /// Shorthand for [`SubprocessPythonEngine`].
 ///
 /// # Errors
