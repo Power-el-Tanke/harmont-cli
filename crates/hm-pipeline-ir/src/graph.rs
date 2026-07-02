@@ -72,8 +72,8 @@ pub struct Cache {
 }
 
 /// This struct is only meant to be used
-/// for genrating python and typescript code that can be
-/// deserialized as a daggy's DAG
+/// for genrating python code which is 
+/// deserializable as a daggy's DAG
 /// (see <https://docs.rs/petgraph/latest/src/petgraph/graph_impl/serialization.rs.html#56>).
 #[derive(Serialize, Deserialize, PY)]
 struct InnerGraphRepr {

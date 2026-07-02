@@ -151,6 +151,13 @@ impl HmVm {
         })
     }
 
+    /// Mounts a directory into the workspace
+    /// as an archive.
+    ///
+    /// # Errors
+    /// Fails if the destination directory is outside the
+    /// workspace, the source doesn't exist, the injection
+    /// into the vm fails of the mount couldn't ve registered
     pub async fn mount_to_vm(
         &self,
         from: &str,
