@@ -25,6 +25,14 @@ if TYPE_CHECKING:
 _EMOJI_SHORTCODE_RE = re.compile(r":[a-z0-9_+-]+:")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 
+def hash_key(parent_key: str, cmd: str, position: int) -> str:
+        h = hashlib.sha256()
+        h.update(parent_key.encode("utf-8"))
+        h.update(b"\x00")
+        h.update(cmd.encode("utf-8"))
+        h.update(b"\x00")
+        h.update(str(position).encode("utf-8"))
+        return h.hexdigest()[:12]
 
 def slugify_label(label: str) -> str:
     """Lowercase, strip ``:emoji_codes:``, replace non-alnum runs with ``-``,
@@ -41,20 +49,6 @@ def slugify_label(label: str) -> str:
     s = _EMOJI_SHORTCODE_RE.sub(" ", s)
     s = _NON_ALNUM_RE.sub("-", s)
     return s.strip("-")
-
-
-def hash_key(parent_key: str, cmd: str, position: int) -> str:
-    """Stable 12-char SHA-256 prefix over (parent_key, cmd, position).
-
-    Used as the fallback key when no usable slug is available."""
-    h = hashlib.sha256()
-    h.update(parent_key.encode("utf-8"))
-    h.update(b"\x00")
-    h.update(cmd.encode("utf-8"))
-    h.update(b"\x00")
-    h.update(str(position).encode("utf-8"))
-    return h.hexdigest()[:12]
-
 
 def resolve_keys(steps: Iterable[Step]) -> dict[int, str]:
     """Resolve each Step's key. Returns ``{id(step): key}``.

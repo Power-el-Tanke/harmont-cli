@@ -11,7 +11,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use daggy::petgraph::visit::{EdgeRef, IntoNodeReferences};
-use hm_pipeline_ir::{EdgeKind, PipelineGraph};
+use hm_pipeline_ir::{EdgeKind, PipelineGraph, StepAction};
 
 const SCENARIOS: &[&str] = &[
     "monorepo-ci",
@@ -160,9 +160,13 @@ fn all_fixtures_have_valid_structure() {
             let g = load_fixture(dsl, scenario);
 
             for (_, t) in g.dag().graph().node_references() {
+                let cmd = match &t.step.action {
+                    StepAction::Command { cmd, .. } => Some(cmd.clone()),
+                    _ => None,
+                };
                 assert!(!t.step.key.is_empty(), "{dsl}/{scenario}: empty key");
                 assert!(
-                    !t.step.cmd.is_empty(),
+                    !cmd.is_some_and(|c| c.is_empty()),
                     "{dsl}/{scenario}: empty cmd for {}",
                     t.step.key,
                 );

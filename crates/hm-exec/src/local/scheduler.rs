@@ -39,7 +39,7 @@ use hm_plugin_protocol::{
 };
 use uuid::Uuid;
 
-use hm_pipeline_ir::{EdgeKind, PipelineGraph, Transition};
+use hm_pipeline_ir::{EdgeKind, PipelineGraph, StepAction, Transition};
 
 use crate::local::runner::{RunnerRegistry, StepContext};
 use crate::local::source::build_archive_bytes;
@@ -390,14 +390,28 @@ async fn execute_step(
     let step_wire = transition.step;
     let step_key = step_wire.key.clone();
     let display_name = step_wire.label.clone().unwrap_or_else(|| {
-        let cmd = step_wire.cmd.trim();
-        if cmd.chars().count() <= 40 {
-            cmd.to_owned()
-        } else {
-            // Truncate on a char boundary, not a byte offset: `&cmd[..39]`
-            // panics if byte 39 falls inside a multibyte UTF-8 sequence.
-            let truncated: String = cmd.chars().take(39).collect();
-            format!("{truncated}…")
+        match &step_wire.action {
+            StepAction::Command { cmd, .. } => {
+                if cmd.chars().count() <= 40 {
+                    cmd.to_owned()
+                } else {
+                    // Truncate on a char boundary, not a byte offset: `&cmd[..39]`
+                    // panics if byte 39 falls inside a multibyte UTF-8 sequence.
+                    let truncated: String = cmd.chars().take(39).collect();
+                    format!("{truncated}…")
+                }
+            }
+            StepAction::Mount { from, .. } => {
+                if from.chars().count() <= 40 {
+                    from.to_owned()
+                } else {
+                    from.rmatches(r"/.+")
+                        .collect::<Vec<&str>>()
+                        .first()
+                        .map(|x| x.split_at(0))
+                        .map_or_else(|| from.clone(), |(_, x)| x.to_owned())
+                }
+            }
         }
     });
     let env_map = transition.env;

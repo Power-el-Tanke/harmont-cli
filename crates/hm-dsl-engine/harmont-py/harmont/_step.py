@@ -13,9 +13,11 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .cache import CachePolicy
 
+from ._graph_node import GraphNode
+
 
 @dataclass(frozen=True)
-class Step:
+class Step(GraphNode):
     """Immutable chain node — the primitive the DSL is built on.
 
     Steps are constructed via `scratch()` or `wait()` and extended by
@@ -52,8 +54,6 @@ class Step:
     """Manual key override; surfaces as the `key=` kwarg on `.sh()`.
     The field is renamed so it doesn't shadow the runtime-derived key
     the lowering pass produces in pipeline.py."""
-    
-    references_path: str | None = None
 
     def sh(
         self,
@@ -138,6 +138,21 @@ class Step:
             A new ``Step`` branching from this one.
         """
         return Step(cmd=None, parent=self, label=label)
+    
+    
+    
+    
+    @abstractmethod
+    def get_label(self) -> str | None:
+        pass
+    
+    @abstractmethod
+    def get_parent(self) -> GraphNode | None:
+        pass
+    
+    @abstractmethod
+    def node_type(self) -> str:
+        pass
 
 
 def scratch() -> Step:

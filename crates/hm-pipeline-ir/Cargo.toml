@@ -11,6 +11,9 @@ daggy      = { workspace = true }
 serde      = { workspace = true }
 serde_json = { workspace = true }
 schemars   = { workspace = true }
+py-rs = { version = "0.1.1", features = ["serde-json-impl", "no-serde-warnings"] }
+ts-rs = { version = "12.0.1", features = ["serde-json-impl"] }
+hm-dsl-engine.workspace = true
 
 [dev-dependencies]
 insta = { version = "1", features = ["json"] }

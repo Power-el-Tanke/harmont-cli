@@ -8,17 +8,19 @@
 
 use std::collections::BTreeMap;
 
-use hm_pipeline_ir::{CommandStep, EdgeKind, Transition};
+use hm_pipeline_ir::{EdgeKind, Step, StepAction, Transition};
 
 #[test]
 fn transition_round_trips() {
     let nw = Transition {
-        step: CommandStep {
+        step: Step {
             key: "a".into(),
             label: Some("step A".into()),
-            cmd: "echo a".into(),
+            action: StepAction::Command {
+                cmd: "echo a".into(),
+                env: None,
+            },
             image: Some("ubuntu:24.04".into()),
-            env: None,
             timeout_seconds: None,
             cache: None,
             runner: None,

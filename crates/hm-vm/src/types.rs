@@ -9,18 +9,25 @@ pub enum ImageSource {
     /// Fork from a previous snapshot.
     Snapshot(SnapshotId),
 }
-
 /// What to execute inside a VM.
 #[derive(Clone, Debug)]
 pub struct Action {
-    pub source: ImageSource,
     pub cmd: String,
     pub env: Vec<(String, String)>,
+    pub source: ImageSource,
     pub working_dir: String,
     pub timeout: Option<Duration>,
     /// Host directory to copy into `working_dir` before execution.
     /// Skipped on cache hits (snapshot already contains prior state).
     pub inject: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug)]
+pub struct MountAction {
+    pub source: ImageSource,
+    pub from: String,
+    pub to: String,
+    pub timeout: Option<Duration>,
 }
 
 /// How to cache the result.

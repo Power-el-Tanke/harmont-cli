@@ -1,5 +1,6 @@
 //! High-level VM orchestrator.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -146,6 +147,39 @@ impl HmVm {
         Ok(ExecutionResult {
             exit_code,
             snapshot,
+            cached: false,
+        })
+    }
+
+    pub async fn mount_to_vm(
+        &self,
+        from: &str,
+        to: &str,
+        working_dir: &str,
+        source: &ImageSource,
+    ) -> Result<ExecutionResult> {
+        let wd = working_dir.to_owned();
+        let src_path = if Path::new(&from).is_relative() {
+            wd.clone() + from
+        } else {
+            from.to_string()
+        };
+        let dest_path = if Path::new(&from).is_relative() {
+            wd + to
+        } else {
+            to.to_string()
+        };
+
+        let mut vm = match source {
+            ImageSource::Image(image) => self.backend.create(image, &self.config).await?,
+            ImageSource::Snapshot(snap) => self.backend.restore(snap, &self.config).await?,
+        };
+        vm.inject(Path::new(&src_path), &dest_path).await?;
+        let snapshot = vm.snapshot(&SnapshotLabel::Ephemeral).await?;
+
+        Ok(ExecutionResult {
+            exit_code: 0,
+            snapshot: Some(snapshot),
             cached: false,
         })
     }

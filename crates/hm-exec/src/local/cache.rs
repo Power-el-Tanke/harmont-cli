@@ -1,12 +1,12 @@
 //! Host-side cache key derivation.
 //!
-//! Resolves a wire-typed [`CommandStep`] to a deterministic cache key
+//! Resolves a wire-typed [`Step`] to a deterministic cache key
 //! so the scheduler can pass it to the runner for hit/miss decisions.
 //!
 //! Cache keys are computed by `harmont.keygen` at plan time and ride
 //! along the JSON in `cache.key`.
 
-use hm_plugin_protocol::CommandStep;
+use hm_plugin_protocol::Step;
 
 fn sanitize_for_tag(s: &str) -> String {
     s.chars()
@@ -25,7 +25,7 @@ fn sanitize_for_tag(s: &str) -> String {
 /// Returns `None` when the step has no cache, a `"none"` policy, or no
 /// cache key.
 #[must_use]
-pub(crate) fn stable_cache_tag(step: &CommandStep) -> Option<String> {
+pub(crate) fn stable_cache_tag(step: &Step) -> Option<String> {
     let cache = step.cache.as_ref()?;
     if cache.policy == "none" {
         return None;
@@ -42,8 +42,8 @@ mod tests {
     use super::*;
     use hm_plugin_protocol::Cache;
 
-    fn step(cache: Option<Cache>) -> CommandStep {
-        CommandStep {
+    fn step(cache: Option<Cache>) -> Step {
+        Step {
             key: "build".into(),
             label: None,
             cmd: "true".into(),
