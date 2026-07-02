@@ -1,0 +1,2 @@
+[env]
+PY_RS_EXPORT_DIR = { value = "../hm-dsl-engine/harmont-py/harmont/generated", relative = true }

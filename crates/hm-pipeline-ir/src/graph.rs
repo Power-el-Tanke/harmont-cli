@@ -7,6 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, PY)]
+#[py(export)]
 pub enum StepAction {
     /// A single build command within a pipeline.
     Command {
@@ -24,6 +25,7 @@ pub enum StepAction {
 /// The `key` is the unique identifier used to reference this step in
 /// edges and log output.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, PY)]
+#[py(export)]
 pub struct Step {
     /// Unique identifier for this step within the pipeline.
     pub key: String,
@@ -55,6 +57,7 @@ pub struct Step {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, PY)]
+#[py(export)]
 pub struct Transition {
     pub step: Step,
     #[serde(default)]
@@ -63,6 +66,7 @@ pub struct Transition {
 
 /// Snapshot cache configuration for a step.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, PY)]
+#[py(export)]
 pub struct Cache {
     /// Cache policy name (e.g. `"content-hash"`).
     pub policy: String,
@@ -76,6 +80,7 @@ pub struct Cache {
 /// deserializable as a daggy's DAG
 /// (see <https://docs.rs/petgraph/latest/src/petgraph/graph_impl/serialization.rs.html#56>).
 #[derive(Serialize, Deserialize, PY)]
+#[py(export)]
 struct InnerGraphRepr {
     nodes: Vec<Transition>,
     node_holes: Vec<usize>,
@@ -86,6 +91,7 @@ struct InnerGraphRepr {
 
 /// Edge label in the pipeline DAG.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, PY)]
+#[py(export)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeKind {
     /// Container lineage: the child boots from the parent's committed
@@ -103,6 +109,7 @@ pub enum EdgeKind {
 /// Callers access the underlying [`Dag`] via [`dag()`](Self::dag) and
 /// traverse it with petgraph's standard visitor traits.
 #[derive(Debug, Clone, Serialize, Deserialize, PY)]
+#[py(export)]
 pub struct PipelineGraph {
     #[serde(default = "default_version")]
     version: String,
