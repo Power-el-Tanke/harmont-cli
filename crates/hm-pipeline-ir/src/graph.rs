@@ -15,10 +15,15 @@ pub enum StepAction {
         cmd: String,
         /// Per-step environment variables merged on top of the pipeline env.
         #[serde(default)]
+        #[py(type = "dict[str, str] | None")]
         env: Option<BTreeMap<String, String>>,
     },
     /// Archive mount from a local path to a workspace path
-    Mount { from: String, to: String },
+    Mount { 
+        #[serde(rename = "from_")]
+        from: String, 
+        to: String 
+    },
 }
 
 /// Serialized as a JSON object inside each graph node's `step` field.
@@ -48,6 +53,7 @@ pub struct Step {
     pub runner: Option<String>,
     /// Plugin-specific extra fields passed verbatim to the runner.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[py(type = "dict[str, Any]")]
     pub runner_args: Option<serde_json::Value>,
     /// Behavior of the node
     pub action: StepAction,

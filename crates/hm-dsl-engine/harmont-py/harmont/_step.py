@@ -7,54 +7,86 @@ outside ``harmont`` should import from it.
 
 from __future__ import annotations
 
+import hashlib
+
 from dataclasses import dataclass
+from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
+from pathlib import Path
 
 if TYPE_CHECKING:
     from .cache import CachePolicy
 
-from ._graph_node import GraphNode
+from .generated.StepAction import StepAction, StepActionVariantCommand as Command, StepActionVariantMount as Mount
+from .generated.Step import Step as SerStep
 
-
-@dataclass(frozen=True)
-class Step(GraphNode):
-    """Immutable chain node — the primitive the DSL is built on.
-
-    Steps are constructed via `scratch()` or `wait()` and extended by
-    calling ``.sh()`` or ``.fork()`` on the result. Every mutating method
-    returns a new ``Step``; the receiver is unchanged.
-    """
-
-    cmd: str | None = None
-    parent: Step | None = None
-    """In-tree pointer used by the lowering pass to walk back to the
-    nearest emitted ancestor. Distinct from the wire-format
-    ``builds_in`` field, which carries the resolved key string."""
-
-    is_wait: bool = False
-    continue_on_failure: bool = False
-    label: str | None = None
-    cache: CachePolicy | None = None
-    env: dict[str, str] | None = None
-    timeout_seconds: int | None = None
-    image: str | None = None
-    """Local-mode Docker base image override for this step. Ignored when
-    the step has a ``builds_in`` parent (the parent's snapshot wins).
-    When unset, root steps fall back to ``ubuntu:24.04``; child steps
-    inherit the parent's snapshot."""
-
-    runner: str | None = None
-    """Step-executor plugin runner name. ``None`` = default (Docker)."""
-
-    runner_args: dict[str, Any] | None = None
-    """Plugin-specific runner arguments. Validated by the executor
-    plugin's ``step_schema`` if it set one."""
-
-    key_override: str | None = None
-    """Manual key override; surfaces as the `key=` kwarg on `.sh()`.
-    The field is renamed so it doesn't shadow the runtime-derived key
-    the lowering pass produces in pipeline.py."""
-
+class Step:
+    def __init__(
+        self,
+        *,
+        parent: Step | None = None,
+        key: str | None = None,
+        label: str | None = None,
+        timeout_seconds: int | None  = None,
+        image: str | None = None,
+        runner: str | None = None,
+        runner_args: dict[str, Any],
+        cache: Cache | None = None,
+        cmd: str | None = None,
+        env: dic[str, str] | None = None
+        from_: str | None = None,
+        to: str | None = None
+    ):
+        action = None
+        feature = None
+        
+        if cmd and (not (from_ or to)):
+            action = Command(cmd=cmd, env=env)
+            feature = (
+                f"env "
+                f"{' '.join[f'{k}={v}' for (k,v) in env]} "
+                f"{cmd}"
+            ) if env else cmd
+        elif (from_ and to) and not (cmd or env):
+            action = Mount(from_=from_, to=to)
+            feature = f"from {from_} to {to}"
+        else:
+            raise ValueError(f"Expected from_ and to or cmd with an optional env argument. But got the following: cmd -> {cmd}, env -> {env}, from_ -> {from_}, to -> {to}")
+            
+        step_key = key 
+                   if key 
+                   else hash_key(parent.key if parent else "root node", feature)
+                   
+        self.parent = parent
+        self.inner = SerStep(
+            action = action,
+            key = key,
+            label = label,
+            timeout_seconds: int | None  = None,
+            image = image,
+            runner = runner,
+            runner_args = runner_args,
+            cache = cache
+        )
+    
+    def fork(self, child: Step) -> Step:
+        return Step(
+            parent = self,
+            label= child.inner.label,
+            timeout_seconds=child.inner.timeout_seconds,
+            image=child.inner.image,
+            runner=child.inner.runner,
+            runner_args=child.inner.runner_args,
+            cache=child.inner.cache,
+            cmd=child.inner.cmd,
+            env=child.inner.env 
+            from_=child.inner.from_,
+            to=child.inner.to 
+        )
+        
+    def fork_many(self, children: Collection[Step]) -> list[Step]:
+        return [self.fork(child) for child in children]
+        
     def sh(
         self,
         cmd: str,
@@ -68,52 +100,9 @@ class Step(GraphNode):
         runner_args: dict[str, Any] | None = None,
         key: str | None = None,
     ) -> Step:
-        """Append a shell command to this chain.
-
-        Returns a new ``Step``; the receiver is unchanged (steps are immutable).
-
-        To set a timeout, wrap the result with ``hm.timeout(duration, step)``.
-
-        Args:
-            cmd: Shell command to run.
-            cwd: Directory to run in, relative to the workspace root. Omit to
-                run in the root; pass a non-empty path to change directory first.
-            label: Human-facing label shown in the UI. Defaults to the command.
-            cache: Cache policy controlling result reuse across builds.
-            env: Per-step environment variables, merged on top of pipeline-level
-                env at render time.
-            image: Local-mode Docker base image for this step. Ignored when the
-                step has a ``builds_in`` parent (the parent's snapshot wins).
-            runner: Executor plugin runner name. ``None`` selects the default
-                Docker runner.
-            runner_args: Plugin-specific arguments validated by the runner's
-                schema.
-            key: Manual key override for this step in the v0 IR. Auto-derived
-                from the command when omitted.
-
-        Returns:
-            A new ``Step`` with this command appended to the chain.
-
-        Raises:
-            ValueError: If ``cwd`` is an empty string.
-        """
-        if cwd == "":
-            msg = (
-                "hm: cwd must be a non-empty path\n"
-                "  → omit cwd= to run in the workspace root, "
-                'or pass cwd="some/dir"'
-            )
-            raise ValueError(msg)
-        effective_cmd = f"cd {cwd} && {cmd}" if cwd is not None else cmd
-        # Image inheritance: a scratch root (cmd is None) with image set
-        # passes it down to the first emitted command step. Once the
-        # chain has a real cmd, inheritance stops — keeps wire format
-        # identical for normal chains.
-        effective_image = (
-            image if image is not None else (self.image if self.cmd is None else None)
-        )
-        return Step(
-            cmd=effective_cmd,
+        return sh(
+            cmd,
+            cwd=cwd,
             parent=self,
             label=label,
             cache=cache,
@@ -121,72 +110,135 @@ class Step(GraphNode):
             image=effective_image,
             runner=runner,
             runner_args=runner_args,
-            key_override=key,
+            key=key,
+        )
+        
+    def mount(
+        self,
+        from_: str,
+        to: str,
+        *,
+        label: str | None = None,
+        cache: CachePolicy | None = None,
+        image: str | None = None,
+        runner: str | None = None,
+        runner_args: dict[str, Any] | None = None,
+        key: str | None = None,
+    ) -> Step:
+        return mount(
+            from_,
+            to,
+            parent=self,
+            label=label,
+            cache=cache,
+            image=effective_image,
+            runner=runner,
+            runner_args=runner_args,
+            key=key,
         )
 
-    def fork(self, label: str | None = None) -> Step:
-        """Create a branch point from this step.
-
-        Returns a new scratch-rooted ``Step`` whose parent is ``self``.
-        Downstream ``.sh()`` calls on the fork produce independent leaves
-        that all share ``self`` as their nearest emitted ancestor.
-
-        Args:
-            label: Optional label for the fork node in the UI.
-
-        Returns:
-            A new ``Step`` branching from this one.
-        """
-        return Step(cmd=None, parent=self, label=label)
+    def __or__(self, child) -> Step:
+        return self.fork(child)
+        
+    def __rshift__(self, children: Collection[Step]) -> list[Step]:
+        return self.fork_many(children)
     
-    
-    
-    
-    @abstractmethod
-    def get_label(self) -> str | None:
-        pass
-    
-    @abstractmethod
-    def get_parent(self) -> GraphNode | None:
-        pass
-    
-    @abstractmethod
-    def node_type(self) -> str:
-        pass
+def sh(
+    cmd: str,
+    *,
+    parent: Step | None = None,
+    cwd: str | None = None,
+    label: str | None = None,
+    cache: CachePolicy | None = None,
+    env: dict[str, str] | None = None,
+    image: str | None = None,
+    runner: str | None = None,
+    runner_args: dict[str, Any] | None = None,
+    key: str | None = None,
+) -> Step:
+    """Append a shell command to this chain.
 
+    Returns a new ``Step``; the receiver is unchanged (steps are immutable).
 
-def scratch() -> Step:
-    """Create a new root step with no command.
-
-    Use as the starting point for a chain, or call `sh()` at the module
-    level to combine ``scratch()`` and ``.sh()`` in one call.
-
-    Returns:
-        A new root ``Step`` with no command or parent.
-
-    Examples:
-        >>> import harmont as hm
-        >>> step = hm.scratch().sh("echo hello")
-    """
-    return Step()
-
-
-def wait(*, continue_on_failure: bool = False) -> Step:
-    """Insert a synchronization barrier between pipeline stages.
-
-    All steps emitted before the barrier must finish before any step
-    emitted after it starts. Equivalent to Buildkite's ``wait`` step.
+    To set a timeout, wrap the result with ``hm.timeout(duration, step)``.
 
     Args:
-        continue_on_failure: When ``True``, the barrier passes even if
-            upstream steps have failed, allowing cleanup or notification
-            steps to run.
+        parent: The steps's parent
+        cmd: Shell command to run.
+        cwd: Directory to run in, relative to the workspace root. Omit to
+            run in the root; pass a non-empty path to change directory first.
+        label: Human-facing label shown in the UI. Defaults to the command.
+        cache: Cache policy controlling result reuse across builds.
+        env: Per-step environment variables, merged on top of pipeline-level
+            env at render time.
+        image: Local-mode Docker base image for this step. Ignored when the
+            step has a ``builds_in`` parent (the parent's snapshot wins).
+        runner: Executor plugin runner name. ``None`` selects the default
+            Docker runner.
+        runner_args: Plugin-specific arguments validated by the runner's
+            schema.
+        key: Manual key override for this step in the v0 IR. Auto-derived
+            from the command when omitted.
 
     Returns:
-        A ``Step`` that lowers to a wait barrier in the v0 IR.
+        A new ``Step`` with this command appended to the chain.
 
-    Examples:
-        >>> import harmont as hm
-        >>> p = hm.pipeline([hm.sh("make build"), hm.wait(), hm.sh("make deploy")])
+    Raises:
+        ValueError: If ``cwd`` is an empty string.
     """
-    return Step(is_wait=True, continue_on_failure=continue_on_failure)
+    if cwd == "":
+        msg = (
+            "hm: cwd must be a non-empty path\n"
+            "  → omit cwd= to run in the workspace root, "
+            'or pass cwd="some/dir"'
+        )
+        raise ValueError(msg)
+    effective_cmd = f"cd {cwd} && {cmd}" if cwd is not None else cmd
+
+    return Step(
+        cmd=effective_cmd,
+        parent=parent,
+        label=label,
+        cache=cache,
+        env=env,
+        image=effective_image,
+        runner=runner,
+        runner_args=runner_args,
+        key_override=key,
+    )
+
+def mount(
+    from_: str | Path,
+    to: str | Path,
+    *,
+    parent: Step | None = None,
+    label: str | None = None,
+    cache: CachePolicy | None = None,
+    image: str | None = None,
+    runner: str | None = None,
+    runner_args: dict[str, Any] | None = None,
+    key: str | None = None,
+) -> Step:
+    if isinstance(to, str):
+        to = Path(to)
+    if not Path().absolute in to.resolve().parts:
+        raise ValueError(f"export path ({to}) not in working directory")
+    
+    return Step(
+        parent=parent,
+        from_=from_,
+        to=to,
+        label=label,
+        cache=cache,
+        image=effective_image,
+        runner=runner,
+        runner_args=runner_args,
+        key_override=key,
+    )
+
+def hash_key(parent_key: str, feat: str) -> str:
+        h = hashlib.sha256()
+        h.update(parent_key.encode("utf-8"))
+        h.update(b"\x00")
+        h.update(feat.encode("utf-8"))
+        return h.hexdigest()[:12]

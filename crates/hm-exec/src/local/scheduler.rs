@@ -53,7 +53,7 @@ use tokio_util::sync::CancellationToken;
 /// What one finished step contributes to the scheduler's bookkeeping:
 /// the snapshot it produced (for downstream container lineage) plus a
 /// terminal [`StepResultSummary`] for the run's [`BuildOutcome`].
-#[derive(Clone)]
+#derive(Clone)]
 struct StepOutcome {
     exit_code: i32,
     snapshot: Option<SnapshotRef>,

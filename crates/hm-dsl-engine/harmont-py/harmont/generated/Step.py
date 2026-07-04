@@ -3,7 +3,6 @@ from pydantic import BaseModel
 from enum import StrEnum
 
 from .Cache import Cache
-from .serde_json/JsonValue import JsonValue
 from .StepAction import StepAction
 
 
@@ -49,7 +48,7 @@ class Step(BaseModel):
 	"""
 	 Plugin-specific extra fields passed verbatim to the runner.
 	"""
-	runner_args: JsonValue | None
+	runner_args: dict[str, Any]
 	
 	"""
 	 Behavior of the node

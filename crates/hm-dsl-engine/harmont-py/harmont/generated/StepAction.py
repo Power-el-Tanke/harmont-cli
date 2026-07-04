@@ -18,10 +18,10 @@ class StepActionVariantCommand(BaseModel):
 	"""
 	 Per-step environment variables merged on top of the pipeline env.
 	"""
-	env: { [key in str]?: str } | None
+	env: dict[str, str] | None
 
 class StepActionVariantMount(BaseModel):
-	from: str
+	from_: str
 	to: str
 
 StepAction = StepActionVariantCommand | StepActionVariantMount
