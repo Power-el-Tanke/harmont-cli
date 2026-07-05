@@ -73,12 +73,11 @@ pub struct Transition {
 /// Snapshot cache configuration for a step.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, PY)]
 #[py(export)]
-pub struct Cache {
-    /// Cache policy name (e.g. `"content-hash"`).
-    pub policy: String,
-    /// Explicit cache key override; derived from the step if absent.
-    #[serde(default)]
-    pub key: Option<String>,
+pub enum Cache {
+    /// Do not cache.
+    None,
+    /// Cache the resulting snapshot
+    Cache,
 }
 
 /// This struct is only meant to be used

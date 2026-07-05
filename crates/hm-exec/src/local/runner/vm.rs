@@ -150,10 +150,8 @@ async fn run_step_vm(vm: &HmVm, ctx: &StepContext, input: ExecutorInput) -> Resu
                     step_id: input.step_id,
                     key: input
                         .step
-                        .cache
-                        .as_ref()
-                        .and_then(|c| c.key.clone())
-                        .unwrap_or_default(),
+                        .key
+                        .clone(),
                     tag: result
                         .snapshot
                         .as_ref()

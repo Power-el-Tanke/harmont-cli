@@ -22,23 +22,6 @@ pub struct Action {
     pub inject: Option<PathBuf>,
 }
 
-#[derive(Clone, Debug)]
-pub struct MountAction {
-    pub source: ImageSource,
-    pub from: String,
-    pub to: String,
-    pub timeout: Option<Duration>,
-}
-
-/// How to cache the result.
-#[derive(Clone, Debug)]
-pub enum CachingPolicy {
-    /// Do not cache.
-    None,
-    /// Cache the resulting snapshot under this key.
-    Cache { key: String },
-}
-
 /// Typed instruction for `Vm::snapshot`, describing how the committed
 /// snapshot should be tagged.
 ///
@@ -93,6 +76,14 @@ pub struct ExecutionResult {
     pub exit_code: i32,
     pub snapshot: Option<SnapshotId>,
     pub cached: bool,
+}
+/// How to cache the result.
+#[derive(Clone, Debug)]
+pub enum CachingPolicy {
+    /// Do not cache.
+    None,
+    /// Cache the resulting snapshot under this key.
+    Cache { key: String },
 }
 
 /// VM resource configuration.

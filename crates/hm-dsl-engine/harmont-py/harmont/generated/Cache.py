@@ -4,19 +4,9 @@ from enum import StrEnum
 
 
 
+class CacheIdentifier(StrEnum):
+	None = "None"
+	Cache = "Cache"
 
-class Cache(BaseModel):
-	"""
-	 Snapshot cache configuration for a step.
-	"""
-	
-	
-	"""
-	 Cache policy name (e.g. `"content-hash"`).
-	"""
-	policy: str
-	
-	"""
-	 Explicit cache key override; derived from the step if absent.
-	"""
-	key: str | None
+
+Cache = CacheIdentifier.None | CacheIdentifier.Cache

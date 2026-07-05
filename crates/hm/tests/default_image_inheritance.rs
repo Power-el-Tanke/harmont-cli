@@ -20,7 +20,7 @@ fn decode(json: &[u8]) -> PipelineGraph {
     serde_json::from_slice::<PipelineGraph>(json).unwrap()
 }
 
-fn find_step<'a>(g: &'a PipelineGraph, key: &str) -> &'a hm_pipeline_ir::CommandStep {
+fn find_step<'a>(g: &'a PipelineGraph, key: &str) -> &'a hm_pipeline_ir::Step {
     let dag = g.dag();
     let (_, t) = dag
         .graph()

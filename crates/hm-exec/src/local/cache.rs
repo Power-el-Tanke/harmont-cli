@@ -6,19 +6,7 @@
 //! Cache keys are computed by `harmont.keygen` at plan time and ride
 //! along the JSON in `cache.key`.
 
-use hm_plugin_protocol::Step;
-
-fn sanitize_for_tag(s: &str) -> String {
-    s.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect()
-}
+use hm_plugin_protocol::{Step, Cache};
 
 /// Derive a deterministic cache tag for a cacheable step.
 ///
@@ -27,28 +15,29 @@ fn sanitize_for_tag(s: &str) -> String {
 #[must_use]
 pub(crate) fn stable_cache_tag(step: &Step) -> Option<String> {
     let cache = step.cache.as_ref()?;
-    if cache.policy == "none" {
-        return None;
+    if matches!(cache, Cache::None){
+        None
+    } else {
+        let key = step.key.clone();
+        Some(format!("harmont-cache/{key}"))
     }
-    let key = cache.key.as_deref()?;
-    let safe = sanitize_for_tag(&step.key);
-    let short = &key[..key.len().min(16)];
-    Some(format!("harmont-cache/{safe}:{short}"))
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use hm_plugin_protocol::Cache;
+    use hm_plugin_protocol::{StepAction,Cache};
 
     fn step(cache: Option<Cache>) -> Step {
         Step {
             key: "build".into(),
             label: None,
-            cmd: "true".into(),
+            action: StepAction::Command{
+                cmd: "true".into(),
+                env: None,
+            },
             image: None,
-            env: None,
             timeout_seconds: None,
             cache,
             runner: None,
@@ -57,18 +46,8 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_replaces_invalid_chars() {
-        assert_eq!(sanitize_for_tag("my/step.name:v1"), "my-step-name-v1");
-        assert_eq!(sanitize_for_tag("simple"), "simple");
-        assert_eq!(sanitize_for_tag("a_b-c"), "a_b-c");
-    }
-
-    #[test]
     fn stable_cache_tag_for_cacheable_step() {
-        let s = step(Some(Cache {
-            policy: "ttl".into(),
-            key: Some("0123456789abcdef0000".into()),
-        }));
+        let s = step(Some(Cache::Cache));
         let tag = stable_cache_tag(&s);
         assert_eq!(
             tag,
@@ -84,10 +63,7 @@ mod tests {
 
     #[test]
     fn stable_cache_tag_none_for_policy_none() {
-        let s = step(Some(Cache {
-            policy: "none".into(),
-            key: Some("abc".into()),
-        }));
+        let s = step(Some(Cache::None));
         assert_eq!(stable_cache_tag(&s), None);
     }
 }
