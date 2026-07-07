@@ -6,7 +6,7 @@ use schemars::JsonSchema as DeriveJsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::ir::CommandStep;
+use crate::ir::Step;
 
 /// Opaque archive handle. The plugin streams bytes via
 /// `hm_archive_read(id, offset, max)`.
@@ -72,7 +72,7 @@ pub enum CacheDecision {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveJsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutorInput {
-    pub step: CommandStep,
+    pub step: Step,
     pub workspace_archive_id: ArchiveId,
     pub env: BTreeMap<String, String>,
     pub workdir: String,
