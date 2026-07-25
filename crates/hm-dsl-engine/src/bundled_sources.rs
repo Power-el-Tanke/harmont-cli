@@ -7,8 +7,7 @@ pub(crate) static HARMONT_PY: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/harmon
 
 /// Extract an embedded directory tree to disk.
 pub(crate) fn extract_to(dir: &Dir<'_>, target: &Path) -> anyhow::Result<()> {
-    std::fs::create_dir_all(target)
-        .map_err(|e| anyhow::anyhow!("creating directory {}: {e}", target.display()))?;
+    hm_common::fs::create_dir_all(target)?;
     dir.extract(target)
         .map_err(|e| anyhow::anyhow!("extracting to {}: {e}", target.display()))
 }

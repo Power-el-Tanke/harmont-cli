@@ -446,8 +446,7 @@ fn persist_project_pipeline(dir: &std::path::Path, org: &str, slug: &str) -> Res
     }
     let serialized = toml::to_string_pretty(&doc).context("serializing .hm/config.toml")?;
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
+        hm_common::fs::create_dir_all(parent)?;
     }
     std::fs::write(&path, serialized).with_context(|| format!("writing {}", path.display()))?;
     Ok(())
