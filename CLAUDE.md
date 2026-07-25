@@ -11,6 +11,14 @@ Run `cargo build` from the workspace root.
 
 For cross-cutting doctrine see [PRINCIPLES.md](../PRINCIPLES.md).
 
+## Testing
+
+When writing or running any Rust test, follow the
+[`writing-rust-tests`](.claude/skills/writing-rust-tests/SKILL.md) skill:
+`#[rstest]` over bare `#[test]`, parametrized `#[case]` over duplicated test
+functions and hand-rolled loops, `proptest` for domain-wide properties. Run with
+plain `cargo test -p <crate>` (no nextest/just wrapper).
+
 ## DSL
 
 The `harmont` Python package (pipeline DSL) lives inside `crates/hm-dsl-engine/harmont-py/` so it ships with the crate.
