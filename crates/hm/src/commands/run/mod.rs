@@ -2,6 +2,9 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 
+use bstr::ByteSlice as _;
+use hm_common::app_runtime::AppRuntime;
+use hm_common::git::{GitBranch, GitRemote, GitRepo};
 use hm_dsl_engine::{DslEngine, detect};
 use human_units::FormatSize as _;
 
@@ -127,9 +130,46 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
         );
     }
 
-    // 7. Assemble the run request.
-    let (branch, commit) = git_metadata(&repo_root, args.branch.clone());
-    let repo_name = git_remote_repo_name(&repo_root);
+    // 7. Assemble the run request. Open the worktree's repo and its `origin`
+    // remote once, and read every git-derived field from that single pair of
+    // handles — all best-effort. An explicit `--branch` wins; a missing branch
+    // or commit falls back to `HEAD` / the zero SHA. The block yields owned
+    // strings so `repo_root` can move into the request, and the cloud paths
+    // below reuse `remote_url` / `default_branch` instead of re-shelling to git.
+    let (branch, commit, repo_name, remote_url, default_branch) = {
+        let git = AppRuntime::git();
+        let repo = git.repo(&repo_root).ok();
+        let head = repo.as_ref().and_then(GitRepo::current_branch);
+        let remote = repo.as_ref().and_then(|r| r.remote("origin"));
+
+        let branch = args
+            .branch
+            .clone()
+            .or_else(|| head.as_ref().map(|b| b.name().to_str_lossy().into_owned()))
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "HEAD".to_string());
+        let commit = head
+            .as_ref()
+            .and_then(GitBranch::head_commit)
+            .map(|c| c.to_str_lossy().into_owned())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "0".repeat(40));
+        let repo_name = remote
+            .as_ref()
+            .and_then(GitRemote::gh_repo_name)
+            .map(|n| n.to_str_lossy().into_owned());
+        let remote_url = remote
+            .as_ref()
+            .map(|r| r.url().to_str_lossy().into_owned())
+            .filter(|u| !u.is_empty());
+        // `origin/HEAD`; `None` when unset (fresh clones without `set-head`).
+        let default_branch = remote
+            .as_ref()
+            .and_then(GitRemote::default_branch)
+            .map(|b| b.name().to_str_lossy().into_owned());
+
+        (branch, commit, repo_name, remote_url, default_branch)
+    };
     let mut req = hm_exec::RunRequest {
         plan,
         repo_root,
@@ -158,8 +198,9 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
         if let Some(slug) = ctx.config.cloud.pipeline.clone() {
             req.cloud_pipeline_slug = Some(slug);
         } else if req.source.repo_name.is_none() {
-            let default_branch =
-                git_default_branch(&req.repo_root).unwrap_or_else(|| req.source.branch.clone());
+            let default_branch = default_branch
+                .clone()
+                .unwrap_or_else(|| req.source.branch.clone());
             let slug = register_remoteless_pipeline(
                 client,
                 org,
@@ -172,17 +213,16 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
         }
     }
 
-    // Cloud-only auto-create context. Borrow `req` here (before it's moved into
-    // `start`): the repository URL and default branch come from the worktree's
-    // git remote; the pipeline name is the in-repo source slug.
+    // Cloud-only auto-create context, from the git fields read in step 7: the
+    // `origin` remote URL is the pipeline's `repository`, `default_branch` falls
+    // back to the run's branch, and the pipeline name is the in-repo source slug.
     let autocreate = autocreate_client.map(|(client, org)| AutoCreate {
         client,
         org,
         repo_name: req.source.repo_name.clone(),
-        repository: git_remote_url(&req.repo_root),
+        repository: remote_url,
         name: req.pipeline_slug.clone(),
-        default_branch: git_default_branch(&req.repo_root)
-            .unwrap_or_else(|| req.source.branch.clone()),
+        default_branch: default_branch.unwrap_or_else(|| req.source.branch.clone()),
     });
 
     // 8. Start, drive events, own Ctrl-C, await the outcome.
@@ -238,93 +278,6 @@ fn parse_env(pairs: &[String]) -> HashMap<String, String> {
         .collect()
 }
 
-/// Resolve `(branch, commit)` from git at `root`, best-effort. An explicit
-/// `branch_override` wins; missing values fall back to `HEAD` / the zero SHA.
-fn git_metadata(root: &std::path::Path, branch_override: Option<String>) -> (String, String) {
-    let run = |a: &[&str]| {
-        std::process::Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(a)
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-    };
-    let branch = branch_override
-        .or_else(|| run(&["rev-parse", "--abbrev-ref", "HEAD"]))
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "HEAD".to_string());
-    let commit = run(&["rev-parse", "HEAD"])
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "0".repeat(40));
-    (branch, commit)
-}
-
-/// Parse `owner/repo` from a git remote URL, mirroring the backend's
-/// `Harmont.Pipelines.RepoName`: drop scheme/host and a trailing `.git`, then
-/// take the last two non-empty path segments. `None` when fewer than two
-/// segments remain.
-fn parse_repo_name(url: &str) -> Option<String> {
-    let url = url.trim();
-    let path = if let Some((_, rest)) = url.split_once("://") {
-        // scheme://host/owner/repo  → strip host
-        rest.split_once('/').map_or(rest, |(_, p)| p)
-    } else if url.contains('@') && url.contains(':') {
-        // scp-style git@host:owner/repo → strip "git@host:"
-        let after_at = url.split_once('@').map_or(url, |(_, r)| r);
-        after_at.split_once(':').map_or(after_at, |(_, p)| p)
-    } else {
-        url.split_once('/').map_or(url, |(_, p)| p)
-    };
-    let path = path.trim_end_matches('/');
-    let path = path.strip_suffix(".git").unwrap_or(path);
-    let segs: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    if segs.len() < 2 {
-        return None;
-    }
-    Some(segs[segs.len() - 2..].join("/"))
-}
-
-/// Extract the default branch name from a `git symbolic-ref
-/// refs/remotes/origin/HEAD` result (e.g. `refs/remotes/origin/main` → `main`).
-/// `None` when the line is empty or lacks the expected prefix.
-fn parse_default_branch(symbolic_ref: &str) -> Option<String> {
-    let branch = symbolic_ref.trim().strip_prefix("refs/remotes/origin/")?;
-    (!branch.is_empty()).then(|| branch.to_string())
-}
-
-/// The worktree's raw `origin` remote URL (the pipeline's `repository`).
-fn git_remote_url(root: &std::path::Path) -> Option<String> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["config", "--get", "remote.origin.url"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())?;
-    let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    (!url.is_empty()).then_some(url)
-}
-
-/// The repo's default branch, from `origin/HEAD`. `None` when `origin/HEAD`
-/// isn't set (common on fresh clones without `git remote set-head`).
-fn git_default_branch(root: &std::path::Path) -> Option<String> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["symbolic-ref", "refs/remotes/origin/HEAD"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())?;
-    parse_default_branch(&String::from_utf8_lossy(&out.stdout))
-}
-
-/// Best-effort `owner/repo` from the worktree's `origin` remote.
-fn git_remote_repo_name(root: &std::path::Path) -> Option<String> {
-    parse_repo_name(&git_remote_url(root)?)
-}
-
 /// Resolve repo root, detect the DSL, select the pipeline slug, and render
 /// the v0 IR JSON. Shared by local and cloud runs.
 ///
@@ -343,12 +296,11 @@ async fn render_pipeline(
 ) -> Result<(std::path::PathBuf, String, String)> {
     let repo_root = match args.dir.clone() {
         Some(p) => p,
-        None => std::env::current_dir().context("cannot determine current directory")?,
+        None => AppRuntime::cwd().to_path_buf(),
     };
 
     detect::check_python(&repo_root).map_err(|e| HmError::DslEngine(format!("{e:#}")))?;
-    let engine =
-        hm_dsl_engine::python_engine().map_err(|e| HmError::DslEngine(format!("{e:#}")))?;
+    let engine = hm_dsl_engine::SubprocessPythonEngine::new();
 
     let slug = if let Some(s) = &args.pipeline {
         s.clone()
@@ -735,48 +687,11 @@ mod tests {
     }
 
     #[rstest]
-    #[case::https(
-        "https://github.com/harmont-dev/harmont-cli.git",
-        Some("harmont-dev/harmont-cli")
-    )]
-    #[case::scp(
-        "git@github.com:harmont-dev/harmont-cli.git",
-        Some("harmont-dev/harmont-cli")
-    )]
-    #[case::ssh(
-        "ssh://git@github.com/harmont-dev/harmont-cli",
-        Some("harmont-dev/harmont-cli")
-    )]
-    #[case::deep_path("https://example.com/a/b/c/repo", Some("c/repo"))]
-    #[case::empty("", None)]
-    #[case::not_a_url("not-a-url", None)]
-    fn parse_repo_name_cases(#[case] url: &str, #[case] expected: Option<&str>) {
-        assert_eq!(parse_repo_name(url).as_deref(), expected);
-    }
-
-    #[rstest]
-    #[case::main_trailing_newline("refs/remotes/origin/main\n", Some("main"))]
-    #[case::master("refs/remotes/origin/master", Some("master"))]
-    #[case::empty("", None)]
-    #[case::refs_heads("refs/heads/main", None)]
-    #[case::trailing_slash("refs/remotes/origin/", None)]
-    fn parse_default_branch_cases(#[case] input: &str, #[case] expected: Option<&str>) {
-        assert_eq!(parse_default_branch(input).as_deref(), expected);
-    }
-
-    #[rstest]
     fn parse_env_splits_pairs() {
         let m = parse_env(&["A=1".into(), "B=x=y".into(), "bad".into()]);
         assert_eq!(m.get("A").unwrap(), "1");
         assert_eq!(m.get("B").unwrap(), "x=y");
         assert!(!m.contains_key("bad"));
-    }
-
-    #[rstest]
-    fn git_metadata_falls_back_outside_repo() {
-        let (b, c) = git_metadata(std::path::Path::new("/"), None);
-        assert!(!b.is_empty() && !c.is_empty());
-        assert_eq!(c.len(), 40); // zero-sha fallback
     }
 
     #[rstest]

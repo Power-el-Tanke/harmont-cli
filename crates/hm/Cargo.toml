@@ -53,13 +53,13 @@ webbrowser = "1"
 rand = "0.8"
 uuid = { version = "1", features = ["serde"] }
 bytes = "1"
+bstr = "1"
 human-units = { workspace = true }
 futures = "0.3"
 futures-util = "0.3"
-which = "6"
 hm-pipeline-ir     = { workspace = true }
 hm-plugin-protocol = { workspace = true }
-hm-common = { workspace = true }
+hm-common = { workspace = true, features = ["app-runtime"] }
 hm-util = { workspace = true }
 hm-config = { workspace = true }
 hm-plugin-cloud = { workspace = true }
@@ -87,7 +87,6 @@ assert_cmd = "2"
 predicates = "3"
 assert_fs = "1"
 tempfile = "3"
-which = "6"
 rstest = { workspace = true }
 
 [lints]

@@ -1,8 +1,9 @@
 use std::path::Path;
-use std::process::Stdio;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
+use hm_common::app_runtime::AppRuntime;
+use hm_common::process::CapturedStreams as _;
 use tracing::debug;
 
 use crate::bundled_sources;
@@ -58,21 +59,15 @@ if match is None:
 print(json.dumps(match['definition']))
 ";
 
-#[derive(Debug)]
-pub struct SubprocessPythonEngine {
-    python_bin: std::path::PathBuf,
-}
+#[derive(Debug, Default)]
+pub struct SubprocessPythonEngine;
 
 impl SubprocessPythonEngine {
-    /// Create engine, verifying `python3` is available on PATH.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `python3` is not found on `PATH`.
-    pub fn new() -> Result<Self> {
-        let python_bin =
-            which::which("python3").context("python3 not found on PATH — install Python 3.11+")?;
-        Ok(Self { python_bin })
+    /// Create the engine. It runs `python3` through [`AppRuntime::python`], so
+    /// [`AppRuntime::init`] must have been called first.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
     }
 
     async fn run_script(
@@ -85,28 +80,13 @@ impl SubprocessPythonEngine {
         let harmont_pkg = tmp.path().join("harmont");
         bundled_sources::extract_to(&bundled_sources::HARMONT_PY, &harmont_pkg)?;
 
-        let mut cmd = tokio::process::Command::new(&self.python_bin);
-        cmd.arg("-c")
-            .arg(script)
-            .args(extra_args)
-            .current_dir(project_dir)
-            .env("PYTHONPATH", tmp.path())
-            .env("PYTHONDONTWRITEBYTECODE", "1")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        let mut py = AppRuntime::python().program(script);
+        py.args(extra_args).current_dir(project_dir);
+        py.pythonpath(tmp.path());
 
-        debug!(?cmd, "running python3 subprocess");
+        debug!(?py, "running python3 subprocess");
 
-        let output = cmd.output().await.context("spawning python3")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let code = output.status.code().unwrap_or(-1);
-            bail!("python3 exited with code {code}:\n{stderr}");
-        }
-
-        String::from_utf8(output.stdout).context("python3 stdout is not valid UTF-8")
+        Ok(py.run().await?.stdout_string()?)
     }
 }
 
@@ -134,15 +114,4 @@ impl DslEngine for SubprocessPythonEngine {
             .await
             .context("dumping pipeline registry via python3")
     }
-}
-
-/// Instanciates a python engine.
-/// Shorthand for [`SubprocessPythonEngine`].
-///
-/// # Errors
-///
-/// Returns an error if `python3` is not found on `PATH`.
-#[inline]
-pub fn engine() -> Result<SubprocessPythonEngine> {
-    SubprocessPythonEngine::new()
 }
