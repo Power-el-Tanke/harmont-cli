@@ -6,7 +6,6 @@ The `cli/` directory is a Cargo workspace.
 - `crates/hm-pipeline-ir/` — pipeline IR schema (serde structs only, no runtime).
 - `crates/hm-common/` — shared utilities (OS/filesystem, formatting, and other cross-crate helpers). This is the source of truth for common code; prefer adding shared helpers here.
 - `crates/hm-plugin-protocol/` — wire types (serde structs only).
-- `crates/hm-plugin-sdk/` — authoring SDK for plugin writers.
 Run `cargo build` from the workspace root.
 
 For cross-cutting doctrine see [PRINCIPLES.md](../PRINCIPLES.md).
