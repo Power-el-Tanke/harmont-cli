@@ -1,8 +1,7 @@
 //! File-backed credential store at `~/.config/hm/credentials.toml`.
 //!
-//! The file is written with mode 0o600 (parent dir 0o700) via
-//! [`hm_util::os::fs::blocking::write_atomic_restricted`], keyed by
-//! `(service, account)`.
+//! The file is written with [`Privacy::Private`] (0o600, parent dir 0o700)
+//! via [`hm_common::fs::write_atomic`], keyed by `(service, account)`.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -16,8 +15,8 @@ struct CredentialFile {
 }
 
 fn path() -> Result<PathBuf> {
-    let dir = hm_util::dirs::hm_config_dir().context("could not determine config directory")?;
-    Ok(dir.join("credentials.toml"))
+    let dirs = hm_common::dir_provider::DirProvider::new().context("could not determine config directory")?;
+    Ok(dirs.config().join("hm").join("credentials.toml"))
 }
 
 fn load() -> CredentialFile {
@@ -30,16 +29,12 @@ fn load() -> CredentialFile {
     toml::from_str(&contents).unwrap_or_default()
 }
 
-fn save(file: &CredentialFile) -> Result<()> {
+async fn save(file: &CredentialFile) -> Result<()> {
     let p = path()?;
     let serialized = toml::to_string_pretty(file).context("serializing credentials")?;
-    hm_util::os::fs::blocking::write_atomic_restricted(
-        &p,
-        serialized.as_bytes(),
-        hm_util::os::fs::FileMode(0o600),
-        hm_util::os::fs::DirMode(0o700),
-    )
-    .with_context(|| format!("writing {}", p.display()))?;
+    hm_common::fs::write_atomic(&p, serialized.as_bytes(), hm_common::fs::Privacy::Private)
+        .await
+        .with_context(|| format!("writing {}", p.display()))?;
     Ok(())
 }
 
@@ -51,13 +46,13 @@ pub fn get(service: &str, account: &str) -> Option<String> {
 }
 
 /// Write a credential. Silently no-ops on I/O failure (best-effort).
-pub fn set(service: &str, account: &str, secret: &str) {
+pub async fn set(service: &str, account: &str, secret: &str) {
     let mut f = load();
     f.entries
         .entry(service.to_string())
         .or_default()
         .insert(account.to_string(), secret.to_string());
-    let _ = save(&f);
+    let _ = save(&f).await;
 }
 
 /// Credential `service` name for the cloud bearer token (account = API base URL).
@@ -82,20 +77,20 @@ pub fn cloud_token(api_base: &str) -> Option<String> {
 ///
 /// Silently no-ops on I/O failure (matches the best-effort semantics of
 /// the underlying [`set`] call).
-pub fn set_cloud_token(api_base: &str, token: &str) {
-    set(CLOUD_SERVICE, api_base, token);
+pub async fn set_cloud_token(api_base: &str, token: &str) {
+    set(CLOUD_SERVICE, api_base, token).await;
 }
 
 /// Remove any stored cloud bearer token for `api_base`.
 ///
 /// Silently no-ops if the entry is absent or the write fails.
-pub fn forget_cloud_token(api_base: &str) {
-    delete(CLOUD_SERVICE, api_base);
+pub async fn forget_cloud_token(api_base: &str) {
+    delete(CLOUD_SERVICE, api_base).await;
 }
 
 /// Remove a credential. Silently no-ops if the entry is absent or the
 /// underlying write fails.
-pub fn delete(service: &str, account: &str) {
+pub async fn delete(service: &str, account: &str) {
     let mut f = load();
     let now_empty = f.entries.get_mut(service).is_some_and(|svc| {
         svc.remove(account);
@@ -104,22 +99,31 @@ pub fn delete(service: &str, account: &str) {
     if now_empty {
         f.entries.remove(service);
     }
-    let _ = save(&f);
+    let _ = save(&f).await;
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, unsafe_code)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    fn with_home<F: FnOnce()>(f: F) {
+    #[rstest]
+    #[tokio::test]
+    async fn round_trip() {
         let tmp = tempfile::tempdir().unwrap();
         let prev = std::env::var_os("HOME");
         // SAFETY: tests are single-threaded for env mutation by Cargo.
         unsafe {
             std::env::set_var("HOME", tmp.path());
         }
-        f();
+
+        assert_eq!(get("svc", "acct"), None);
+        set("svc", "acct", "shh").await;
+        assert_eq!(get("svc", "acct").as_deref(), Some("shh"));
+        delete("svc", "acct").await;
+        assert_eq!(get("svc", "acct"), None);
+
         unsafe {
             if let Some(v) = prev {
                 std::env::set_var("HOME", v);
@@ -127,16 +131,5 @@ mod tests {
                 std::env::remove_var("HOME");
             }
         }
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn round_trip() {
-        with_home(|| {
-            assert_eq!(get("svc", "acct"), None);
-            set("svc", "acct", "shh");
-            assert_eq!(get("svc", "acct").as_deref(), Some("shh"));
-            delete("svc", "acct");
-            assert_eq!(get("svc", "acct"), None);
-        });
     }
 }

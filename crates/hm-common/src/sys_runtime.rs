@@ -1,13 +1,14 @@
-//! Application runtime context.
+//! System runtime context.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use crate::dir_provider::DirProvider;
 use crate::git::Git;
 use crate::process::{ExecutableNotFound, pathbin};
 use crate::python::Python;
 
-/// Failure to initialize the [`AppRuntime`].
+/// Failure to initialize the [`SysRuntime`].
 #[derive(Debug, thiserror::Error)]
 pub enum InitError {
     /// A required executable was missing from `PATH`.
@@ -16,26 +17,29 @@ pub enum InitError {
     /// The current directory could not be read.
     #[error("reading the current directory")]
     Cwd(#[source] std::io::Error),
+    /// The Harmont directory layout could not be resolved (no home directory?).
+    #[error("could not resolve the Harmont directory layout")]
+    Dirs,
 }
 
 // TODO: This is a process-wide singleton (a global `OnceLock`), which is
 // convenient but couples every caller to hidden global state. Consider
-// threading an explicit `AppRuntime` handle through the application instead,
+// threading an explicit `SysRuntime` handle through the application instead,
 // so dependencies are visible in signatures and tests can inject their own.
-/// Process-wide runtime context, resolved once at startup.
 ///
 /// Install it with [`init`](Self::init), then read it from anywhere through the
 /// associated accessors — no threading required.
 #[derive(Debug)]
-pub struct AppRuntime {
+pub struct SysRuntime {
     git: PathBuf,
     python3: PathBuf,
     cwd: PathBuf,
+    dirs: DirProvider,
 }
 
-static RUNTIME: OnceLock<AppRuntime> = OnceLock::new();
+static RUNTIME: OnceLock<SysRuntime> = OnceLock::new();
 
-impl AppRuntime {
+impl SysRuntime {
     /// Resolve the runtime and install it as the process-wide singleton.
     ///
     /// Call once, early in `main`, before any accessor. A later call is ignored.
@@ -54,6 +58,7 @@ impl AppRuntime {
             git: pathbin("git")?,
             python3: pathbin("python3")?,
             cwd: std::env::current_dir().map_err(InitError::Cwd)?,
+            dirs: DirProvider::new().ok_or(InitError::Dirs)?,
         })
     }
 
@@ -64,7 +69,7 @@ impl AppRuntime {
     fn get() -> &'static Self {
         RUNTIME
             .get()
-            .expect("AppRuntime::init must be called before the runtime is accessed")
+            .expect("SysRuntime::init must be called before the runtime is accessed")
     }
 
     /// The absolute working directory captured at initialization.
@@ -74,6 +79,15 @@ impl AppRuntime {
     #[must_use]
     pub fn cwd() -> &'static Path {
         &Self::get().cwd
+    }
+
+    /// The platform user directory roots, resolved once at initialization.
+    ///
+    /// # Panics
+    /// If [`init`](Self::init) has not been called.
+    #[must_use]
+    pub fn dirs() -> &'static DirProvider {
+        &Self::get().dirs
     }
 
     /// The system `git`, bound to a [`Git`] handle.
@@ -108,14 +122,14 @@ mod tests {
     #[rstest]
     fn resolve_reports_toolchain_availability() {
         assert_eq!(
-            AppRuntime::resolve().is_ok(),
+            SysRuntime::resolve().is_ok(),
             pathbin("python3").is_ok() && pathbin("git").is_ok()
         );
     }
 
     #[rstest]
     fn resolve_captures_an_absolute_cwd() {
-        let Ok(runtime) = AppRuntime::resolve() else {
+        let Ok(runtime) = SysRuntime::resolve() else {
             eprintln!("skipping: toolchain unavailable");
             return;
         };
@@ -124,15 +138,15 @@ mod tests {
 
     #[rstest]
     fn init_installs_a_globally_accessible_runtime() {
-        if AppRuntime::resolve().is_err() {
+        if SysRuntime::resolve().is_err() {
             eprintln!("skipping: toolchain unavailable");
             return;
         }
-        AppRuntime::init().unwrap();
-        assert!(AppRuntime::cwd().is_absolute());
+        SysRuntime::init().unwrap();
+        assert!(SysRuntime::cwd().is_absolute());
         // git() binds the resolved git; a fresh temp dir is not a repo.
         let dir = tempfile::tempdir().unwrap();
-        assert!(AppRuntime::git().repo(dir.path()).is_err());
+        assert!(SysRuntime::git().repo(dir.path()).is_err());
     }
 
     #[rstest]

@@ -119,8 +119,8 @@ impl Config {
     ///
     /// Returns an error if the platform config directory cannot be determined.
     pub fn user_config_path() -> Result<PathBuf> {
-        let dir = hm_util::dirs::hm_config_dir().context("could not determine config directory")?;
-        Ok(dir.join("config.toml"))
+        let dirs = hm_common::dir_provider::DirProvider::new().context("could not determine config directory")?;
+        Ok(dirs.config().join("hm").join("config.toml"))
     }
 
     /// Project-level config path: `<root>/.hm/config.toml`.
@@ -177,15 +177,11 @@ impl Config {
     /// # Errors
     ///
     /// Returns an error if TOML serialization fails or the atomic write fails.
-    pub fn save_to(&self, path: &Path) -> Result<()> {
+    pub async fn save_to(&self, path: &Path) -> Result<()> {
         let serialized = toml::to_string_pretty(self).context("serializing config")?;
-        hm_util::os::fs::blocking::write_atomic_restricted(
-            path,
-            serialized.as_bytes(),
-            hm_util::os::fs::FileMode(0o644),
-            hm_util::os::fs::DirMode(0o700),
-        )
-        .with_context(|| format!("writing {}", path.display()))
+        hm_common::fs::write_atomic(path, serialized.as_bytes(), hm_common::fs::Privacy::Public)
+            .await
+            .with_context(|| format!("writing {}", path.display()))
     }
 
     /// Save to user-level config path (`~/.config/hm/config.toml`).
@@ -193,8 +189,8 @@ impl Config {
     /// # Errors
     ///
     /// Returns an error if the path cannot be determined or the write fails.
-    pub fn save_user(&self) -> Result<()> {
-        self.save_to(&Self::user_config_path()?)
+    pub async fn save_user(&self) -> Result<()> {
+        self.save_to(&Self::user_config_path()?).await
     }
 }
 
@@ -390,7 +386,7 @@ org = "project-org"
             },
             ..Config::default()
         };
-        cfg.save_to(&path).unwrap();
+        cfg.save_to(&path).await.unwrap();
 
         let loaded = Config::load_from_paths(Some(&path), None).unwrap();
         assert_eq!(loaded.cloud.org.as_deref(), Some("saved-org"));
