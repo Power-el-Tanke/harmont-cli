@@ -1268,6 +1268,8 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "unicode-segmentation",
+ "unicode-width",
  "which 7.0.3",
 ]
 
@@ -1401,6 +1403,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-indicatif",
+ "unicode-width",
  "uuid",
 ]
 

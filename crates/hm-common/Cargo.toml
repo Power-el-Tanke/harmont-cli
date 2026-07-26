@@ -23,6 +23,8 @@ num-traits  = { workspace = true }
 tempfile    = "3"
 tokio       = { version = "1", features = ["process", "fs"] }
 tracing     = "0.1"
+unicode-width        = { workspace = true }
+unicode-segmentation = { workspace = true }
 which       = "7"
 
 [dev-dependencies]
