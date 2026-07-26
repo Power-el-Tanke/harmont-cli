@@ -2,6 +2,7 @@ use std::io::IsTerminal;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
+use hm_core::config::domain::BackendConfig;
 use hm_dsl_engine::detect;
 
 use crate::cli::init::{InitArgs, TemplateKind};
@@ -96,10 +97,11 @@ fn prompt_skills() -> Result<bool> {
 /// - On org selection → write a sparse `.hm/config.toml` with `backend = "cloud"` and the org slug.
 ///
 /// Silently returns `Ok(())` on any user-cancellation (Esc, Ctrl-C on a prompt).
-async fn prompt_cloud_registration(dir: &std::path::Path) -> Result<()> {
-    let cfg = hm_config::Config::load(None).unwrap_or_default();
-    let api_url = &cfg.cloud.api_url;
-    let is_logged_in = hm_config::creds::cloud_token(api_url).is_some();
+async fn prompt_cloud_registration(
+    dir: &std::path::Path,
+    app: &hm_core::app_ctx::AppCtx,
+) -> Result<()> {
+    let is_logged_in = app.creds().get().await.is_some();
 
     if !is_logged_in {
         let want_login = dialoguer::Confirm::new()
@@ -112,10 +114,11 @@ async fn prompt_cloud_registration(dir: &std::path::Path) -> Result<()> {
             return Ok(());
         }
 
-        hm_plugin_cloud::login_interactive().await?;
+        hm_plugin_cloud::login_interactive(app).await?;
     }
 
-    let (client, _ctx) = hm_plugin_cloud::settings::client()
+    let (client, _ctx) = hm_plugin_cloud::settings::client(app)
+        .await
         .context("could not build authenticated cloud client")?;
 
     let orgs = client
@@ -265,7 +268,7 @@ fn has_github_workflows(dir: &Path) -> bool {
 ///
 /// Returns an error if the target directory is unwritable, or if no template
 /// can be determined in a non-interactive context.
-pub async fn handle(args: InitArgs) -> Result<()> {
+pub async fn handle(args: InitArgs, app: &hm_core::app_ctx::AppCtx) -> Result<()> {
     let tty = std::io::stdin().is_terminal();
     let has_pipeline = detect::has_pipeline_files(&args.dir);
 
@@ -302,7 +305,7 @@ pub async fn handle(args: InitArgs) -> Result<()> {
         }
     }
 
-    if tty && let Err(e) = prompt_cloud_registration(&args.dir).await {
+    if tty && let Err(e) = prompt_cloud_registration(&args.dir, app).await {
         tracing::warn!("cloud registration skipped: {e:#}");
     }
 
@@ -319,20 +322,16 @@ pub async fn handle(args: InitArgs) -> Result<()> {
         write_skills(&args.dir, args.force).await?;
     }
 
-    let project_config = hm_config::Config::project_config_path(&args.dir);
-    if project_config.exists() {
-        let cfg =
-            hm_config::Config::load_from_paths(None, Some(&project_config)).unwrap_or_default();
-        match cfg.backend {
-            hm_config::Backend::Cloud => {
-                tracing::info!("next step: run `hm run` to execute your pipeline on Harmont Cloud");
-            }
-            hm_config::Backend::Docker => {
-                tracing::info!("next step: run `hm run` to execute your pipeline locally");
-            }
+    let backend = hm_core::project_ctx::ProjectCtx::at(app, args.dir.clone())
+        .await
+        .map_or(BackendConfig::Docker, |p| p.config().backend.clone());
+    match backend {
+        BackendConfig::Cloud(_) => {
+            tracing::info!("next step: run `hm run` to execute your pipeline on Harmont Cloud");
         }
-    } else {
-        tracing::info!("next step: run `hm run` to execute your pipeline locally");
+        BackendConfig::Docker => {
+            tracing::info!("next step: run `hm run` to execute your pipeline locally");
+        }
     }
     Ok(())
 }

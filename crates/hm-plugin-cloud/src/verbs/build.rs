@@ -7,10 +7,15 @@ use harmont_cloud::HarmontClient;
 
 use crate::cli::BuildCommand;
 use crate::settings;
-use hm_exec::cloud::watch::watch_build;
+use hm_core::app_ctx::AppCtx;
+use hm_core::exec::cloud::watch::watch_build;
 
-pub(crate) async fn run(_env: &BTreeMap<String, String>, cmd: BuildCommand) -> Result<()> {
-    let (client, ctx) = settings::client()?;
+pub(crate) async fn run(
+    _env: &BTreeMap<String, String>,
+    cmd: BuildCommand,
+    app: &AppCtx,
+) -> Result<()> {
+    let (client, ctx) = settings::client(app).await?;
     let org = ctx.org()?;
 
     match cmd {

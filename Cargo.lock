@@ -1125,9 +1125,8 @@ dependencies = [
  "harmont-cloud",
  "hex",
  "hm-common",
- "hm-config",
+ "hm-core",
  "hm-dsl-engine",
- "hm-exec",
  "hm-pipeline-ir",
  "hm-plugin-cloud",
  "hm-plugin-protocol",
@@ -1141,6 +1140,7 @@ dependencies = [
  "rand 0.8.6",
  "reqwest",
  "rstest",
+ "secrecy",
  "semver",
  "serde",
  "serde_json",
@@ -1276,45 +1276,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "hm-config"
-version = "0.0.0-dev"
-dependencies = [
- "anyhow",
- "derive_more",
- "figment",
- "hm-common",
- "rstest",
- "serde",
- "tempfile",
- "tokio",
- "toml",
-]
-
-[[package]]
-name = "hm-dsl-engine"
-version = "0.0.0-dev"
-dependencies = [
- "anyhow",
- "async-trait",
- "derive_more",
- "hm-common",
- "include_dir",
- "rstest",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "hm-exec"
+name = "hm-core"
 version = "0.0.0-dev"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "daggy",
+ "derive_more",
+ "figment",
  "flate2",
  "futures",
  "futures-util",
@@ -1326,6 +1296,7 @@ dependencies = [
  "human-units",
  "ignore",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
  "tar",
@@ -1334,8 +1305,28 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
+ "toml",
  "tracing",
+ "url",
  "uuid",
+]
+
+[[package]]
+name = "hm-dsl-engine"
+version = "0.0.0-dev"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "derive_more",
+ "hm-common",
+ "hm-core",
+ "include_dir",
+ "rstest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1362,11 +1353,11 @@ dependencies = [
  "dialoguer",
  "harmont-cloud",
  "harmont-cloud-raw",
- "hm-config",
- "hm-exec",
+ "hm-core",
  "hm-plugin-protocol",
  "hm-render",
  "rstest",
+ "secrecy",
  "serde_json",
  "tokio",
  "tracing",
@@ -2894,6 +2885,15 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "secrecy"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e891af845473308773346dc847b2c23ee78fe442e0472ac50e22a18a93d3ae5a"
+dependencies = [
+ "zeroize",
+]
 
 [[package]]
 name = "security-framework"

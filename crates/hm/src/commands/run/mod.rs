@@ -3,10 +3,12 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 
 use bstr::ByteSlice as _;
-use hm_common::sys_runtime::SysRuntime;
 use hm_common::git::{GitBranch, GitRemote, GitRepo};
+use hm_core::app_ctx::AppCtx;
+use hm_core::config::domain::BackendConfig;
 use hm_dsl_engine::{DslEngine, detect};
 use human_units::FormatSize as _;
+use secrecy::ExposeSecret as _;
 
 use crate::cli::RunArgs;
 use crate::context::RunContext;
@@ -23,8 +25,8 @@ use crate::error::{ErrorCategory, HmError};
 /// - `--cloud`          → `cloud` (deprecated alias)
 /// - neither            → `ctx.config.backend` (figment-layered, default `docker`)
 ///
-/// This is a THIN driver over the `hm-exec` backends: it builds an
-/// [`hm_exec::ExecutionBackend`], renders the pipeline to v0 IR once, starts
+/// This is a THIN driver over the `hm-core::exec` backends: it builds an
+/// [`hm_core::exec::ExecutionBackend`], renders the pipeline to v0 IR once, starts
 /// the build, drives its event stream through an `hm_render` renderer, owns
 /// Ctrl-C, and returns the build's process exit code. Cloud authentication is
 /// resolved BEFORE the (local) render work so a missing token fails fast.
@@ -35,38 +37,61 @@ use crate::error::{ErrorCategory, HmError};
 /// the backend rejects the build, authentication fails, the network is
 /// unreachable, the local daemon is down, or the pipeline fails to render.
 #[allow(clippy::too_many_lines)] // thin top-level driver: linear, no good split point
-pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
+#[allow(
+    clippy::similar_names,
+    reason = "api_url and app_url are distinct hosts"
+)]
+pub async fn handle(args: RunArgs, ctx: RunContext<'_>) -> Result<i32> {
+    let app = ctx.app;
+
+    // The workspace root: explicit --dir or the cwd captured at startup.
+    let repo_root = args.dir.clone().unwrap_or_else(|| app.cwd().to_path_buf());
+
+    // Resolve the effective config (user + project layers merged).
+    let project = hm_core::project_ctx::ProjectCtx::at(app, repo_root.clone()).await?;
+    let resolved_backend = project.config().backend.clone();
+
+    // Project-persisted cloud pipeline slug, if any (consulted at submit time).
+    let cloud_default_pipeline = match &resolved_backend {
+        BackendConfig::Cloud(cloud) => cloud.default_pipeline.clone(),
+        BackendConfig::Docker => None,
+    };
+
     // 1. Resolve the backend name: explicit --backend > legacy --cloud alias >
-    //    config.backend (figment-layered default "docker").
+    //    the resolved config's backend (default docker).
     let backend_name = args
         .backend
         .clone()
-        .or_else(|| {
-            if args.cloud {
-                Some("cloud".to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| ctx.config.backend.to_string());
+        .or_else(|| args.cloud.then(|| "cloud".to_string()))
+        .unwrap_or_else(|| match &resolved_backend {
+            BackendConfig::Cloud(_) => "cloud".to_string(),
+            BackendConfig::Docker => "docker".to_string(),
+        });
 
     // 2. Cloud needs auth + org resolution up front — fail fast on a missing
-    //    token before any render work. We resolve the credentials here but
-    //    defer *constructing* the backend (and, for local runs, *connecting* to
-    //    Docker) until after the pipeline renders, so an unknown slug or a
-    //    missing/ambiguous pipeline argument fails with a helpful message
-    //    instead of a daemon-connection error.
+    //    token before any render work. Both the API host and the dashboard
+    //    (app.) host derive from the configured domain.
     let cloud_creds = if backend_name == "cloud" {
-        let api_url = ctx.config.cloud.api_url.clone();
-        let token = hm_config::creds::cloud_token(&api_url).context(
+        let cloud = match &resolved_backend {
+            BackendConfig::Cloud(cloud) => cloud.clone(),
+            BackendConfig::Docker => hm_core::config::ResolvedCloudConfig {
+                domain: hm_core::config::domain::BackendDomain::default(),
+                org: None,
+                repo: None,
+                default_pipeline: None,
+            },
+        };
+        let api_url = cloud.domain.api_url();
+        let app_url = cloud.domain.app_url();
+        let token = app.creds().get().await.context(
             "`hm run --backend cloud` requires authentication — run `hm cloud login` or set HM_API_TOKEN",
         )?;
         let org = args
             .org
             .clone()
-            .or_else(|| ctx.config.cloud.org.clone())
-            .context("no organization — pass --org or set `[cloud] org = \"…\"` in .hm/config.toml or ~/.config/hm/config.toml")?;
-        Some((api_url, token, org))
+            .or_else(|| cloud.org.clone())
+            .context("no organization — pass --org or run `hm cloud org switch <slug>`")?;
+        Some((api_url, app_url, token, org))
     } else if backend_name != "docker" {
         anyhow::bail!("unknown --backend '{backend_name}'\n  available: docker, cloud");
     } else {
@@ -76,8 +101,8 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
     // 3. Render + parse the plan once (shared by every backend). This validates
     //    the pipeline argument — unknown slug, or zero/many declared pipelines
     //    — before we connect to any daemon.
-    let (repo_root, slug, ir_json) = render_pipeline(&args, &ctx).await?;
-    let plan = hm_exec::Plan::parse(ir_json).map_err(|e| backend_anyhow(&e))?;
+    let (slug, ir_json) = render_pipeline(&args, app, &repo_root).await?;
+    let plan = hm_core::exec::Plan::parse(ir_json).map_err(|e| backend_anyhow(&e))?;
 
     // 4. Pick the renderer — this validates `--format` — before any daemon
     //    connection, so an unknown format fails fast without a running Docker.
@@ -90,20 +115,22 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
     // For cloud runs, keep a cloned client + org so a `pipeline_not_found` on
     // the first submit can create the pipeline and retry. `None` for local.
     let mut autocreate_client: Option<(harmont_cloud::HarmontClient, String)> = None;
-    let backend: Box<dyn hm_exec::ExecutionBackend> =
-        if let Some((api_url, token, org)) = cloud_creds {
-            let client = harmont_cloud::HarmontClient::with_base_url(token, &api_url);
+    let backend: Box<dyn hm_core::exec::ExecutionBackend> =
+        if let Some((api_url, app_url, token, org)) = cloud_creds {
+            let client = harmont_cloud::HarmontClient::with_base_url(
+                token.expose_secret().to_owned(),
+                &api_url,
+            );
             autocreate_client = Some((client.clone(), org.clone()));
-            // The watch link must point at the dashboard (app.) host, not the
-            // API host — a link built from `api_url` lands on raw JSON.
-            let app_url = hm_config::app_url(&api_url, std::env::var("HM_APP_URL").ok().as_deref());
-            Box::new(hm_exec::CloudBackend::new(client, api_url, app_url, org))
+            Box::new(hm_core::exec::CloudBackend::new(
+                client, api_url, app_url, org,
+            ))
         } else {
             // Local execution on a hm-vm VmBackend (docker).
             let vm_backend: std::sync::Arc<dyn hm_vm::VmBackend> = std::sync::Arc::new(
                 hm_vm::docker::DockerBackend::connect().map_err(|e| anyhow::anyhow!("{e:#}"))?,
             );
-            Box::new(hm_exec::LocalBackend::new(
+            Box::new(hm_core::exec::LocalBackend::new(
                 resolve_parallelism(&args),
                 vm_backend,
             ))
@@ -137,7 +164,7 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
     // strings so `repo_root` can move into the request, and the cloud paths
     // below reuse `remote_url` / `default_branch` instead of re-shelling to git.
     let (branch, commit, repo_name, remote_url, default_branch) = {
-        let git = SysRuntime::git();
+        let git = app.git();
         let repo = git.repo(&repo_root).ok();
         let head = repo.as_ref().and_then(GitRepo::current_branch);
         let remote = repo.as_ref().and_then(|r| r.remote("origin"));
@@ -170,18 +197,18 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
 
         (branch, commit, repo_name, remote_url, default_branch)
     };
-    let mut req = hm_exec::RunRequest {
+    let mut req = hm_core::exec::RunRequest {
         plan,
         repo_root,
         pipeline_slug: slug,
         env: parse_env(&args.env).into_iter().collect(),
-        source: hm_exec::SourceMeta {
+        source: hm_core::exec::SourceMeta {
             branch,
             commit,
             message: args.message.clone(),
             repo_name,
         },
-        options: hm_exec::RunOptions {
+        options: hm_core::exec::RunOptions {
             no_cache: false,
             timeout: None,
             watch: !args.no_watch,
@@ -195,7 +222,7 @@ pub async fn handle(args: RunArgs, ctx: RunContext) -> Result<i32> {
     // interactively now and its slug persisted. A worktree WITH a remote falls
     // through to the repo-identity submit + get-or-create fallback below.
     if let Some((client, org)) = autocreate_client.as_ref() {
-        if let Some(slug) = ctx.config.cloud.pipeline.clone() {
+        if let Some(slug) = cloud_default_pipeline.clone() {
             req.cloud_pipeline_slug = Some(slug);
         } else if req.source.repo_name.is_none() {
             let default_branch = default_branch
@@ -283,7 +310,7 @@ fn parse_env(pairs: &[String]) -> HashMap<String, String> {
 ///
 /// Returns `(repo_root, slug, ir_json_string)`. The JSON is returned as a
 /// string so a backend (e.g. cloud) can ship it verbatim; the driver parses
-/// it into an [`hm_exec::Plan`] once.
+/// it into an [`hm_core::exec::Plan`] once.
 ///
 /// # Errors
 ///
@@ -292,21 +319,17 @@ fn parse_env(pairs: &[String]) -> HashMap<String, String> {
 /// the DSL detection / pipeline-render step fails.
 async fn render_pipeline(
     args: &RunArgs,
-    _ctx: &RunContext,
-) -> Result<(std::path::PathBuf, String, String)> {
-    let repo_root = match args.dir.clone() {
-        Some(p) => p,
-        None => SysRuntime::cwd().to_path_buf(),
-    };
-
-    detect::check_python(&repo_root).map_err(|e| HmError::DslEngine(format!("{e:#}")))?;
-    let engine = hm_dsl_engine::SubprocessPythonEngine::new();
+    app: &AppCtx,
+    repo_root: &std::path::Path,
+) -> Result<(String, String)> {
+    detect::check_python(repo_root).map_err(|e| HmError::DslEngine(format!("{e:#}")))?;
+    let engine = hm_dsl_engine::SubprocessPythonEngine::new(app);
 
     let slug = if let Some(s) = &args.pipeline {
         s.clone()
     } else {
         let metas: Vec<hm_dsl_engine::PipelineMeta> = engine
-            .list_pipelines(&repo_root)
+            .list_pipelines(repo_root)
             .await
             .map_err(|e| HmError::PipelineRender(format!("{e:#}")))?;
         let slugs: Vec<String> = metas.into_iter().map(|m| m.slug).collect();
@@ -324,20 +347,20 @@ async fn render_pipeline(
     };
 
     let json_str = engine
-        .render_pipeline_json(&repo_root, &slug)
+        .render_pipeline_json(repo_root, &slug)
         .await
         .map_err(|e| HmError::PipelineRender(format!("{e:#}")))?;
 
-    Ok((repo_root, slug, json_str))
+    Ok((slug, json_str))
 }
 
-/// Convert an [`hm_exec::BackendError`] into an [`anyhow::Error`] that carries
+/// Convert an [`hm_core::exec::BackendError`] into an [`anyhow::Error`] that carries
 /// BOTH the doctrine message ([`explain`]) AND the right process exit code.
 ///
 /// The exit code is preserved by wrapping in [`HmError::Backend`], whose
 /// [`HmError::category`] returns the embedded [`ErrorCategory`]; `main`'s
 /// `handle_error` downcasts to `HmError` and reads `exit_code()`.
-fn backend_anyhow(err: &hm_exec::BackendError) -> anyhow::Error {
+fn backend_anyhow(err: &hm_core::exec::BackendError) -> anyhow::Error {
     HmError::Backend(explain(err), exit_category(err)).into()
 }
 
@@ -350,8 +373,8 @@ const PIPELINE_NOT_FOUND_CODE: &str = "pipeline_not_found";
 /// submit path surfaces this as a structured `Rejected { code }` (current SDK);
 /// we also accept an opaque `NotFound` body carrying the code, for robustness
 /// against older servers that took the un-structured 404 path.
-fn is_missing_pipeline(err: &hm_exec::BackendError) -> bool {
-    use hm_exec::BackendError as E;
+fn is_missing_pipeline(err: &hm_core::exec::BackendError) -> bool {
+    use hm_core::exec::BackendError as E;
     match err {
         E::Rejected { code, .. } => code == PIPELINE_NOT_FOUND_CODE,
         E::NotFound(body) => body.contains(PIPELINE_NOT_FOUND_CODE),
@@ -378,24 +401,28 @@ fn build_create_pipeline_request(
     }
 }
 
-/// Merge `backend = "cloud"` and `[cloud] org/pipeline = …` into the project's
-/// `.hm/config.toml`, preserving any other keys already in the file. Creates
-/// the file (and `.hm/`) when absent. Used after registering a remoteless
-/// directory so later runs submit by the persisted slug without prompting.
+/// Persist a cloud backend with `org` + `default_pipeline` to the project's
+/// `.hm/config.toml`, preserving an existing domain. Creates the file (and
+/// `.hm/`) when absent. Used after registering a remoteless directory so later
+/// runs submit by the persisted slug without prompting.
 async fn persist_project_pipeline(dir: &std::path::Path, org: &str, slug: &str) -> Result<()> {
+    use hm_core::config::project::{ProjectCloudConfig, ProjectConfig};
+
     let path = dir.join(".hm/config.toml");
-    let mut doc: toml::Table = std::fs::read_to_string(&path)
+    let existing: ProjectConfig = std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| toml::from_str(&s).ok())
         .unwrap_or_default();
-    doc.insert("backend".into(), toml::Value::String("cloud".into()));
-    let cloud = doc
-        .entry("cloud".to_string())
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    if let Some(t) = cloud.as_table_mut() {
-        t.insert("org".into(), toml::Value::String(org.to_string()));
-        t.insert("pipeline".into(), toml::Value::String(slug.to_string()));
-    }
+    let mut cloud = match existing.backend {
+        Some(BackendConfig::Cloud(cloud)) => cloud,
+        _ => ProjectCloudConfig::default(),
+    };
+    cloud.org = Some(org.to_string());
+    cloud.default_pipeline = Some(slug.to_string());
+
+    let doc = ProjectConfig {
+        backend: Some(BackendConfig::Cloud(cloud)),
+    };
     let serialized = toml::to_string_pretty(&doc).context("serializing .hm/config.toml")?;
     hm_common::fs::write_create_all(&path, serialized)
         .await
@@ -505,7 +532,7 @@ struct AutoCreate {
 /// identified, or the user declined (caller then surfaces the original error).
 /// Returns `Err` only when a lookup or create request itself failed.
 async fn resolve_or_create_cloud_pipeline(
-    err: &hm_exec::BackendError,
+    err: &hm_core::exec::BackendError,
     ac: Option<&AutoCreate>,
 ) -> Result<Option<String>> {
     use std::io::IsTerminal;
@@ -566,15 +593,15 @@ async fn resolve_or_create_cloud_pipeline(
     Ok(Some(slug))
 }
 
-/// Map a [`hm_exec::BackendError`] to the process exit-code category.
+/// Map a [`hm_core::exec::BackendError`] to the process exit-code category.
 ///
 /// Note: the old taxonomy distinguished a downed Docker daemon
 /// (`EXIT_NETWORK`) from an unknown-runner pipeline error
 /// (`EXIT_PIPELINE_INVALID`). Both now arrive as
-/// [`hm_exec::BackendError::Local`], so they collapse to a single category
+/// [`hm_core::exec::BackendError::Local`], so they collapse to a single category
 /// (`Network`) here — an acceptable loss of resolution.
-const fn exit_category(err: &hm_exec::BackendError) -> ErrorCategory {
-    use hm_exec::BackendError as E;
+const fn exit_category(err: &hm_core::exec::BackendError) -> ErrorCategory {
+    use hm_core::exec::BackendError as E;
     match err {
         // A plan/IR rejection is a pipeline-config problem.
         E::Rejected { .. } => ErrorCategory::PipelineInvalid,
@@ -593,12 +620,12 @@ const fn exit_category(err: &hm_exec::BackendError) -> ErrorCategory {
     }
 }
 
-/// Render a [`hm_exec::BackendError`] in the project's error doctrine: point
+/// Render a [`hm_core::exec::BackendError`] in the project's error doctrine: point
 /// precisely, say what was observed, say the fix, give a stable code + doc URL.
 ///
 /// Adapted from the legacy `executor/cloud.rs::explain(&HarmontError)`.
-fn explain(err: &hm_exec::BackendError) -> String {
-    use hm_exec::BackendError as E;
+fn explain(err: &hm_core::exec::BackendError) -> String {
+    use hm_core::exec::BackendError as E;
     match err {
         E::Unauthorized => "\
 error[auth_required]: not authenticated
@@ -660,7 +687,7 @@ error[source_too_large]: worktree archive is {observed} (cap {cap})
     reason = "test setup and assertions"
 )]
 mod tests {
-    use hm_exec::BackendError as E;
+    use hm_core::exec::BackendError as E;
     use rstest::rstest;
 
     use super::*;
@@ -795,35 +822,39 @@ mod tests {
     }
 
     #[rstest]
-    #[case::absent(None, "my-app-2", None)]
-    #[case::existing_keys(
-        Some("backend = \"docker\"\n[cloud]\norg = \"old\"\napi_url = \"https://example.test\"\n"),
+    #[case::absent(None, "my-app-2", "https://api.harmont.dev")]
+    #[case::preserves_domain(
+        Some("[backend]\ntype = \"cloud\"\ndomain = \"example.test\"\norg = \"old\"\n"),
         "web",
-        Some("https://example.test")
+        "https://api.example.test"
     )]
     #[tokio::test]
     async fn persist_project_pipeline_writes_config(
         #[case] preexisting: Option<&str>,
         #[case] slug: &str,
-        #[case] expected_api_url: Option<&str>,
+        #[case] expected_api_url: &str,
     ) {
+        use hm_core::config::domain::BackendConfig;
+        use hm_core::config::project::ProjectConfig;
+
         let dir = tempfile::tempdir().unwrap();
         if let Some(content) = preexisting {
             std::fs::create_dir_all(dir.path().join(".hm")).unwrap();
             std::fs::write(dir.path().join(".hm/config.toml"), content).unwrap();
         }
 
-        persist_project_pipeline(dir.path(), "acme", slug).await.unwrap();
+        persist_project_pipeline(dir.path(), "acme", slug)
+            .await
+            .unwrap();
 
         let raw = std::fs::read_to_string(dir.path().join(".hm/config.toml")).unwrap();
-        let doc: toml::Table = toml::from_str(&raw).unwrap();
-        assert_eq!(doc["backend"].as_str(), Some("cloud"));
-        let cloud = doc["cloud"].as_table().unwrap();
-        assert_eq!(cloud["org"].as_str(), Some("acme"));
-        assert_eq!(cloud["pipeline"].as_str(), Some(slug));
-        // Any unrelated key present beforehand is preserved across the merge.
-        if let Some(api_url) = expected_api_url {
-            assert_eq!(cloud["api_url"].as_str(), Some(api_url));
-        }
+        let cfg: ProjectConfig = toml::from_str(&raw).unwrap();
+        let Some(BackendConfig::Cloud(cloud)) = cfg.backend else {
+            panic!("expected a cloud backend");
+        };
+        assert_eq!(cloud.org.as_deref(), Some("acme"));
+        assert_eq!(cloud.default_pipeline.as_deref(), Some(slug));
+        // A pre-existing domain is preserved; an absent one falls back to default.
+        assert_eq!(cloud.domain.unwrap_or_default().api_url(), expected_api_url);
     }
 }

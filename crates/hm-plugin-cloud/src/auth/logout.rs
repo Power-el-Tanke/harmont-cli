@@ -3,12 +3,10 @@
 use std::collections::BTreeMap;
 
 use anyhow::Result;
+use hm_core::app_ctx::AppCtx;
 
-use crate::settings;
-
-pub(crate) async fn run(_env: &BTreeMap<String, String>) -> Result<()> {
-    let (_client, api) = settings::anon_client()?;
-    hm_config::creds::forget_cloud_token(&api).await;
-    tracing::info!("logged out of {api}");
+pub(crate) async fn run(_env: &BTreeMap<String, String>, app: &AppCtx) -> Result<()> {
+    app.creds().clear().await?;
+    tracing::info!("logged out");
     Ok(())
 }

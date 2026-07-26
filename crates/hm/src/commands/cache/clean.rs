@@ -1,12 +1,12 @@
 use anyhow::Result;
-use hm_common::sys_runtime::SysRuntime;
+use hm_core::app_ctx::AppCtx;
 use hm_vm::VmBackend as _;
 use human_units::FormatSize as _;
 
 /// # Errors
 /// Returns an error if workspace cache removal fails.
-pub async fn handle_clean() -> Result<i32> {
-    let hm_cache = SysRuntime::dirs().cache().join("hm");
+pub async fn handle_clean(app: &AppCtx) -> Result<i32> {
+    let hm_cache = app.dirs().cache().join("hm");
 
     let ws_cache = hm_cache.join("workspaces");
     let ws_cleaned = if ws_cache.exists() {
@@ -112,4 +112,3 @@ fn dir_size(path: &std::path::Path) -> u64 {
     }
     walk(path)
 }
-

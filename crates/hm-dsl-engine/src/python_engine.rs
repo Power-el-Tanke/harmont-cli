@@ -2,8 +2,8 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use hm_common::sys_runtime::SysRuntime;
 use hm_common::process::CapturedStreams as _;
+use hm_core::app_ctx::AppCtx;
 use tracing::debug;
 
 use crate::bundled_sources;
@@ -59,15 +59,16 @@ if match is None:
 print(json.dumps(match['definition']))
 ";
 
-#[derive(Debug, Default)]
-pub struct SubprocessPythonEngine;
+#[derive(Debug)]
+pub struct SubprocessPythonEngine<'app> {
+    app: &'app AppCtx,
+}
 
-impl SubprocessPythonEngine {
-    /// Create the engine. It runs `python3` through [`SysRuntime::python`], so
-    /// [`SysRuntime::init`] must have been called first.
+impl<'app> SubprocessPythonEngine<'app> {
+    /// Create the engine bound to `app`, whose resolved `python3` it runs.
     #[must_use]
-    pub const fn new() -> Self {
-        Self
+    pub const fn new(app: &'app AppCtx) -> Self {
+        Self { app }
     }
 
     async fn run_script(
@@ -80,7 +81,7 @@ impl SubprocessPythonEngine {
         let harmont_pkg = tmp.path().join("harmont");
         bundled_sources::extract_to(&bundled_sources::HARMONT_PY, &harmont_pkg)?;
 
-        let mut py = SysRuntime::python().program(script);
+        let mut py = self.app.python().program(script);
         py.args(extra_args).current_dir(project_dir);
         py.pythonpath(tmp.path());
 
@@ -91,7 +92,7 @@ impl SubprocessPythonEngine {
 }
 
 #[async_trait]
-impl DslEngine for SubprocessPythonEngine {
+impl DslEngine for SubprocessPythonEngine<'_> {
     async fn list_pipelines(&self, project_dir: &Path) -> Result<Vec<PipelineMeta>> {
         let stdout = self
             .run_script(project_dir, LIST_PIPELINES_SCRIPT, &[])

@@ -221,8 +221,8 @@ fn init_python_templates_roundtrip_render(#[case] slug: &str) {
         .stdout
         .clone();
 
-    let v: serde_json::Value =
-        serde_json::from_slice(&out).unwrap_or_else(|e| panic!("template {slug}: invalid JSON: {e}"));
+    let v: serde_json::Value = serde_json::from_slice(&out)
+        .unwrap_or_else(|e| panic!("template {slug}: invalid JSON: {e}"));
     assert_eq!(v["version"], "0", "template {slug}: expected v0 IR");
     assert!(
         v["graph"].is_object(),
@@ -278,10 +278,7 @@ fn skill_content_is_well_formed(#[case] content: &str, #[case] extras: &[&str]) 
         "skill must have 'Procedure' section"
     );
     for needle in extras {
-        assert!(
-            content.contains(needle),
-            "skill must reference `{needle}`"
-        );
+        assert!(content.contains(needle), "skill must reference `{needle}`");
     }
 }
 
@@ -379,21 +376,4 @@ fn init_noninteractive_skips_cloud_registration() {
         !config.exists(),
         "non-interactive init should not create .hm/config.toml"
     );
-}
-
-#[rstest]
-fn cloud_project_config_layers_correctly() {
-    let dir = tempfile::tempdir().unwrap();
-    let hm_dir = dir.path().join(".hm");
-    std::fs::create_dir(&hm_dir).unwrap();
-
-    let config_path = hm_dir.join("config.toml");
-    let content = "backend = \"cloud\"\n\n[cloud]\norg = \"test-org\"\n";
-    std::fs::write(&config_path, content).unwrap();
-
-    let cfg = hm_config::Config::load_from_paths(None, Some(&config_path)).unwrap();
-    assert_eq!(cfg.backend, hm_config::Backend::Cloud);
-    assert_eq!(cfg.cloud.org.as_deref(), Some("test-org"));
-    // Unrelated defaults survive layering.
-    assert_eq!(cfg.preferences.format, "human");
 }
