@@ -11,6 +11,8 @@ use hm_common::python::Python;
 use crate::config::domain::ConfigLoadingError;
 use crate::config::user::UserConfig;
 use crate::creds::{CredsInitError, CredsProvider};
+use crate::env::EnvVarProvider;
+use crate::term::{Term, TerminalState};
 
 /// Failure to initialize the [`AppCtx`].
 #[derive(Debug, thiserror::Error)]
@@ -32,7 +34,8 @@ pub enum InitError {
     Creds(#[from] CredsInitError),
 }
 
-/// Resolved toolchain, platform directories, user config, and credentials.
+/// Resolved toolchain, platform directories, user config, credentials, and the
+/// captured environment and terminal state.
 #[derive(Debug)]
 pub struct AppCtx {
     git: PathBuf,
@@ -41,6 +44,8 @@ pub struct AppCtx {
     dirs: DirProvider,
     user_config: Option<UserConfig>,
     creds: CredsProvider,
+    env: EnvVarProvider,
+    term: TerminalState,
 }
 
 impl AppCtx {
@@ -75,6 +80,8 @@ impl AppCtx {
             dirs,
             user_config,
             creds,
+            env: EnvVarProvider::init(),
+            term: TerminalState::detect(),
         })
     }
 
@@ -106,6 +113,18 @@ impl AppCtx {
     #[must_use]
     pub const fn dirs(&self) -> &DirProvider {
         &self.dirs
+    }
+
+    /// The environment facts captured at initialization.
+    #[must_use]
+    pub const fn env(&self) -> &EnvVarProvider {
+        &self.env
+    }
+
+    /// The terminal state captured at initialization, bound to the environment.
+    #[must_use]
+    pub const fn term(&self) -> Term<'_> {
+        self.term.term(&self.env)
     }
 
     /// The user config, or `None` when no user config file is present.

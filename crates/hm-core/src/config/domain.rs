@@ -49,26 +49,40 @@ impl BackendDomain {
         Ok(Self(Url::parse(&normalized)?))
     }
 
+    // TODO: return `Url` from api_url()/app_url() once the harmont-cloud client
+    // accepts a URL base instead of string-concatenating (`format!("{base}{path}")`).
+    // Its naive concat is why these must hand back a trailing-slash-trimmed String.
+
     /// The API base URL (`https://api.<domain>`), without a trailing slash.
     #[must_use]
     pub fn api_url(&self) -> String {
-        self.subdomain_url("api")
+        self.subdomain("api")
+            .as_str()
+            .trim_end_matches('/')
+            .to_owned()
     }
 
     /// The dashboard base URL (`https://app.<domain>`), without a trailing slash.
     #[must_use]
     pub fn app_url(&self) -> String {
-        self.subdomain_url("app")
+        self.app().as_str().trim_end_matches('/').to_owned()
     }
 
-    fn subdomain_url(&self, sub: &str) -> String {
+    /// The dashboard base URL (`https://app.<domain>`), for extending with a
+    /// path and query pairs.
+    #[must_use]
+    pub fn app(&self) -> Url {
+        self.subdomain("app")
+    }
+
+    fn subdomain(&self, sub: &str) -> Url {
         match self.0.host_str() {
             Some(host) if host.contains('.') && host.parse::<std::net::IpAddr>().is_err() => {
                 let mut url = self.0.clone();
                 let _ = url.set_host(Some(&format!("{sub}.{host}")));
-                url.as_str().trim_end_matches('/').to_owned()
+                url
             }
-            _ => self.0.as_str().trim_end_matches('/').to_owned(),
+            _ => self.0.clone(),
         }
     }
 }

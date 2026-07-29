@@ -6,8 +6,10 @@
 use anyhow::{Context, Result};
 use harmont_cloud::HarmontClient;
 use hm_core::app_ctx::AppCtx;
+use hm_core::config::ResolvedCloudConfig;
 use hm_core::config::domain::{BackendConfig, BackendDomain};
 use hm_core::config::user::UserCloudConfig;
+use hm_core::term::Term;
 use secrecy::ExposeSecret as _;
 
 /// Resolved cloud context for the `hm cloud` verbs.
@@ -50,6 +52,18 @@ pub fn domain(app: &AppCtx) -> BackendDomain {
         .unwrap_or_default()
 }
 
+/// A minimal resolved cloud config for the auth flows, which only need the
+/// domain; org/repo/pipeline are irrelevant to authentication.
+#[must_use]
+pub fn auth_config(app: &AppCtx) -> ResolvedCloudConfig {
+    ResolvedCloudConfig {
+        domain: domain(app),
+        org: None,
+        repo: None,
+        default_pipeline: None,
+    }
+}
+
 /// An authenticated cloud client built from the user config + stored token.
 ///
 /// Fails fast with a clear message when no token is present.
@@ -68,6 +82,27 @@ pub async fn client(app: &AppCtx) -> Result<(HarmontClient, ResolvedCtx)> {
     let client = HarmontClient::with_base_url(token.expose_secret().to_owned(), &api);
     let org = user_cloud(app).and_then(|c| c.org.clone());
     Ok((client, ResolvedCtx { api, domain, org }))
+}
+
+/// Resolve the pipeline slug for a verb: the explicit `--pipeline`, else the
+/// project's configured `default_pipeline`.
+///
+/// # Errors
+///
+/// Returns an error if neither is set, or the project config cannot be loaded.
+pub async fn resolve_pipeline(app: &AppCtx, explicit: Option<String>) -> Result<String> {
+    if let Some(slug) = explicit {
+        return Ok(slug);
+    }
+    let project = hm_core::project_ctx::ProjectCtx::at(app, app.cwd().to_path_buf()).await?;
+    let default = match &project.config().backend {
+        BackendConfig::Cloud(cloud) => cloud.default_pipeline.clone(),
+        BackendConfig::Docker => None,
+    };
+    default.context(
+        "no pipeline given and no default configured — pass --pipeline <slug>, or set a \
+         default_pipeline in .hm/config.toml",
+    )
 }
 
 /// An anonymous client (for the login flow) + the resolved cloud domain.
@@ -93,12 +128,12 @@ pub struct RenderPrefs {
 }
 
 impl RenderPrefs {
-    /// Detect render preferences from the current `NO_COLOR` and TTY state.
+    /// Derive render preferences from the terminal state and `NO_COLOR`.
     #[must_use]
-    pub fn detect() -> Self {
+    pub const fn detect(term: Term<'_>) -> Self {
         Self {
-            color: hm_render::color_enabled(false),
-            logs: hm_render::stdout_piped(),
+            color: term.wants_color(),
+            logs: !term.stdout_is_tty(),
         }
     }
 }

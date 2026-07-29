@@ -1,28 +1,35 @@
 //! `hm cloud build list|show|cancel|watch`.
 
-use std::collections::BTreeMap;
-
 use anyhow::Result;
 use harmont_cloud::HarmontClient;
 
-use crate::commands::cloud::cli::BuildCommand;
 use crate::commands::cloud::settings;
+use hm_cloud::cli::BuildCommand;
 use hm_core::app_ctx::AppCtx;
 use hm_core::exec::cloud::watch::watch_build;
+use hm_core::term::Term;
 
-pub(crate) async fn run(
-    _env: &BTreeMap<String, String>,
-    cmd: BuildCommand,
-    app: &AppCtx,
-) -> Result<()> {
+pub(crate) async fn run(cmd: BuildCommand, app: &AppCtx) -> Result<()> {
     let (client, ctx) = settings::client(app).await?;
     let org = ctx.org()?;
 
     match cmd {
-        BuildCommand::List { pipeline } => list(&client, &org, &pipeline).await,
-        BuildCommand::Show { pipeline, number } => show(&client, &org, &pipeline, number).await,
-        BuildCommand::Cancel { pipeline, number } => cancel(&client, &org, &pipeline, number).await,
-        BuildCommand::Watch { pipeline, number } => watch(&client, &org, &pipeline, number).await,
+        BuildCommand::List { pipeline } => {
+            let pipe = settings::resolve_pipeline(app, pipeline).await?;
+            list(&client, &org, &pipe).await
+        }
+        BuildCommand::Show { pipeline, number } => {
+            let pipe = settings::resolve_pipeline(app, pipeline).await?;
+            show(&client, &org, &pipe, number).await
+        }
+        BuildCommand::Cancel { pipeline, number } => {
+            let pipe = settings::resolve_pipeline(app, pipeline).await?;
+            cancel(&client, &org, &pipe, number).await
+        }
+        BuildCommand::Watch { pipeline, number } => {
+            let pipe = settings::resolve_pipeline(app, pipeline).await?;
+            watch(&client, &org, &pipe, number, app.term()).await
+        }
     }
 }
 
@@ -57,11 +64,17 @@ async fn cancel(client: &HarmontClient, org: &str, pipe: &str, number: i64) -> R
     Ok(())
 }
 
-async fn watch(client: &HarmontClient, org: &str, pipe: &str, number: i64) -> Result<()> {
+async fn watch(
+    client: &HarmontClient,
+    org: &str,
+    pipe: &str,
+    number: i64,
+    term: Term<'_>,
+) -> Result<()> {
     // Render the live build through the shared `hm-render` renderers (the same
     // ones a local `hm run` uses), driven by the `BuildEvent`s `watch_build`
     // emits over an mpsc channel.
-    let prefs = crate::commands::cloud::settings::RenderPrefs::detect();
+    let prefs = crate::commands::cloud::settings::RenderPrefs::detect(term);
     let renderer = hm_render::renderer_for("human", prefs.color, prefs.logs)?;
     let (tx, rx) = tokio::sync::mpsc::channel(1024);
     let driver = tokio::spawn(hm_render::drive(renderer, rx));

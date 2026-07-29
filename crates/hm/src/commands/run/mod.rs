@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 
 use bstr::ByteSlice as _;
-use hm_common::git::{GitBranch, GitRemote, GitRepo};
+use hm_common::git::{GitBranch, GitRemote, GitRepo, GitSha};
 use hm_core::app_ctx::AppCtx;
 use hm_core::config::domain::BackendConfig;
 use hm_dsl_engine::{DslEngine, detect};
@@ -106,9 +106,7 @@ pub async fn handle(args: RunArgs, ctx: RunContext<'_>) -> Result<i32> {
 
     // 4. Pick the renderer — this validates `--format` — before any daemon
     //    connection, so an unknown format fails fast without a running Docker.
-    let use_logs = args.logs
-        || std::env::var_os("CI").is_some_and(|v| !v.is_empty())
-        || !hm_render::stderr_interactive();
+    let use_logs = args.logs || app.term().is_ci() || !app.term().stderr_is_tty();
     let renderer = hm_render::renderer_for(&args.format, ctx.output.color_enabled(), use_logs)?;
 
     // 5. Build the backend. For local runs this is where we connect to Docker.
@@ -178,9 +176,7 @@ pub async fn handle(args: RunArgs, ctx: RunContext<'_>) -> Result<i32> {
         let commit = head
             .as_ref()
             .and_then(GitBranch::head_commit)
-            .map(|c| c.to_str_lossy().into_owned())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "0".repeat(40));
+            .unwrap_or_else(GitSha::zero);
         let repo_name = remote
             .as_ref()
             .and_then(GitRemote::gh_repo_name)

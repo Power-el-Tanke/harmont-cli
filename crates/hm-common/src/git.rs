@@ -1,4 +1,4 @@
-//! Running git.
+//! Git integration: running the `git` CLI and git value types.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -6,6 +6,87 @@ use std::process::Command;
 use bstr::{BStr, BString, ByteSlice};
 
 use crate::process::{CapturedStreams as _, CommandExt as _};
+
+/// A git object identifier: a SHA-1 digest, stored as its 20 raw bytes and
+/// rendered as 40 lowercase hex characters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GitSha([u8; 20]);
+
+/// A string that is not a valid [`GitSha`].
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum GitShaError {
+    /// The digest is not 40 hex characters long.
+    #[error("git sha must be 40 hex chars, got {0}")]
+    BadLength(usize),
+    /// The digest contains a non-hex character.
+    #[error("git sha contains a non-hex character")]
+    NotHex,
+}
+
+impl GitSha {
+    /// The all-zero null oid git uses to mean "no commit".
+    #[must_use]
+    pub const fn zero() -> Self {
+        Self([0; 20])
+    }
+
+    /// Whether this is the all-zero null oid git uses to mean "no commit".
+    #[must_use]
+    pub fn is_zero(&self) -> bool {
+        self.0 == [0; 20]
+    }
+}
+
+impl std::str::FromStr for GitSha {
+    type Err = GitShaError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() != 40 {
+            return Err(GitShaError::BadLength(s.len()));
+        }
+        let mut bytes = [0; 20];
+        hex::decode_to_slice(s, &mut bytes).map_err(|_| GitShaError::NotHex)?;
+        Ok(Self(bytes))
+    }
+}
+
+impl TryFrom<&str> for GitSha {
+    type Error = GitShaError;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+impl TryFrom<String> for GitSha {
+    type Error = GitShaError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+impl std::fmt::Display for GitSha {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for byte in self.0 {
+            write!(f, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+impl serde::Serialize for GitSha {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for GitSha {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        s.parse().map_err(serde::de::Error::custom)
+    }
+}
 
 /// A path that is not a git repository.
 #[derive(Debug, thiserror::Error)]
@@ -95,11 +176,12 @@ impl<'r, 'g, 'bin> GitBranch<'r, 'g, 'bin> {
         self.name.as_bstr()
     }
 
-    /// The commit the branch points at, as a hex object id. `None` if git fails.
+    /// The commit the branch points at. `None` if git fails or its output is
+    /// not a valid object id.
     #[tracing::instrument(skip(self))]
-    pub fn head_commit(&self) -> Option<BString> {
+    pub fn head_commit(&self) -> Option<GitSha> {
         let name = self.name.to_str().ok()?;
-        self.repo.run(&["rev-parse", name])
+        self.repo.run(&["rev-parse", name])?.to_str().ok()?.parse().ok()
     }
 }
 
@@ -180,7 +262,67 @@ fn parse_default_branch(line: &BStr, remote: &str) -> Option<BString> {
 #[allow(clippy::unwrap_used, reason = "test setup and assertions")]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use rstest::rstest;
+
+    #[rstest]
+    #[case::lower("0123456789abcdef0123456789abcdef01234567")]
+    #[case::upper("0123456789ABCDEF0123456789ABCDEF01234567")]
+    fn parses_and_renders_lowercase(#[case] input: &str) {
+        let sha: GitSha = input.parse().unwrap();
+        assert_eq!(sha.to_string(), input.to_ascii_lowercase());
+    }
+
+    #[rstest]
+    #[case::empty(0)]
+    #[case::short(39)]
+    #[case::just_over(41)]
+    #[case::sha256_width(64)]
+    fn rejects_wrong_length(#[case] len: usize) {
+        assert_eq!("a".repeat(len).parse::<GitSha>(), Err(GitShaError::BadLength(len)));
+    }
+
+    #[rstest]
+    fn rejects_non_hex() {
+        let with_g = format!("{}g", "a".repeat(39));
+        assert_eq!(with_g.parse::<GitSha>(), Err(GitShaError::NotHex));
+    }
+
+    #[rstest]
+    fn zero_is_the_null_oid() {
+        let sha: GitSha = "0".repeat(40).parse().unwrap();
+        assert!(sha.is_zero());
+        assert_eq!(sha, GitSha::zero());
+    }
+
+    #[rstest]
+    fn non_zero_is_not_the_null_oid() {
+        let sha: GitSha = "0123456789abcdef0123456789abcdef01234567".parse().unwrap();
+        assert!(!sha.is_zero());
+    }
+
+    #[rstest]
+    fn serde_round_trips_as_a_bare_string() {
+        let sha: GitSha = "0123456789abcdef0123456789abcdef01234567".parse().unwrap();
+        let json = serde_json::to_string(&sha).unwrap();
+        assert_eq!(json, "\"0123456789abcdef0123456789abcdef01234567\"");
+        assert_eq!(serde_json::from_str::<GitSha>(&json).unwrap(), sha);
+    }
+
+    #[rstest]
+    fn deserialize_rejects_an_invalid_digest() {
+        assert!(serde_json::from_str::<GitSha>("\"not-a-sha\"").is_err());
+    }
+
+    proptest! {
+        #[test]
+        fn every_digest_round_trips_through_hex(bytes in any::<[u8; 20]>()) {
+            let sha = GitSha(bytes);
+            let hex = sha.to_string();
+            prop_assert_eq!(hex.len(), 40);
+            prop_assert_eq!(hex.parse::<GitSha>().unwrap(), sha);
+        }
+    }
 
     #[rstest]
     #[case::https("https://github.com/acme/web.git", Some("acme/web"))]
@@ -251,7 +393,7 @@ mod tests {
 
         let branch = repo.current_branch().unwrap();
         assert_eq!(branch.name(), "main");
-        assert_eq!(branch.head_commit().unwrap().len(), 40);
+        assert!(!branch.head_commit().unwrap().is_zero());
 
         let remote = repo.remote("origin").unwrap();
         assert_eq!(remote.name(), "origin");

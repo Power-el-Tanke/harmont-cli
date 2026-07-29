@@ -1,7 +1,5 @@
 //! `hm cloud job list|show|log`.
 
-use std::collections::BTreeMap;
-
 use anyhow::Result;
 use chrono::Utc;
 use harmont_cloud::HarmontClient;
@@ -9,31 +7,37 @@ use hm_plugin_protocol::events::{BuildEvent, PlanSummary};
 use hm_plugin_protocol::ir::DurationMs;
 use uuid::Uuid;
 
-use crate::commands::cloud::cli::JobCommand;
 use crate::commands::cloud::settings;
+use hm_cloud::cli::JobCommand;
 use hm_core::app_ctx::AppCtx;
 use hm_core::exec::cloud::watch::stream_job_logs_as_events;
+use hm_core::term::Term;
 
-pub(crate) async fn run(
-    _env: &BTreeMap<String, String>,
-    cmd: JobCommand,
-    app: &AppCtx,
-) -> Result<()> {
+pub(crate) async fn run(cmd: JobCommand, app: &AppCtx) -> Result<()> {
     let (client, ctx) = settings::client(app).await?;
     let org = ctx.org()?;
 
     match cmd {
-        JobCommand::List { pipeline, build } => list(&client, &org, &pipeline, build).await,
+        JobCommand::List { pipeline, build } => {
+            let pipe = settings::resolve_pipeline(app, pipeline).await?;
+            list(&client, &org, &pipe, build).await
+        }
         JobCommand::Show {
             pipeline,
             build,
             job_id,
-        } => show(&client, &org, &pipeline, build, &job_id).await,
+        } => {
+            let pipe = settings::resolve_pipeline(app, pipeline).await?;
+            show(&client, &org, &pipe, build, &job_id).await
+        }
         JobCommand::Log {
             pipeline,
             build,
             job_id,
-        } => log_cmd(&client, &org, &pipeline, build, &job_id).await,
+        } => {
+            let pipe = settings::resolve_pipeline(app, pipeline).await?;
+            log_cmd(&client, &org, &pipe, build, &job_id, app.term()).await
+        }
     }
 }
 
@@ -67,6 +71,7 @@ async fn log_cmd(
     pipe: &str,
     build: i64,
     jid: &str,
+    term: Term<'_>,
 ) -> Result<()> {
     let job_id = Uuid::parse_str(jid)
         .map_err(|e| anyhow::anyhow!("job id '{jid}' is not a valid UUID: {e}"))?;
@@ -75,7 +80,7 @@ async fn log_cmd(
     let token = client.log_token(org, pipe, build).await?;
     let log_base = client.base_url().to_string();
 
-    let prefs = settings::RenderPrefs::detect();
+    let prefs = settings::RenderPrefs::detect(term);
     // A single-job tail is always a flat log stream, so force the streaming
     // HumanRenderer (logs = true) regardless of TTY.
     let renderer = hm_render::renderer_for("human", prefs.color, true)?;

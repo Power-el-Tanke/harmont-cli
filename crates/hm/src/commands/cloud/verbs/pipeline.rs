@@ -1,25 +1,22 @@
 //! `hm cloud pipeline list|show`.
 
-use std::collections::BTreeMap;
-
 use anyhow::Result;
 use harmont_cloud::HarmontClient;
 
-use crate::commands::cloud::cli::PipelineCommand;
 use crate::commands::cloud::settings;
+use hm_cloud::cli::PipelineCommand;
 use hm_core::app_ctx::AppCtx;
 
-pub(crate) async fn run(
-    _env: &BTreeMap<String, String>,
-    cmd: PipelineCommand,
-    app: &AppCtx,
-) -> Result<()> {
+pub(crate) async fn run(cmd: PipelineCommand, app: &AppCtx) -> Result<()> {
     let (client, ctx) = settings::client(app).await?;
     let org = ctx.org()?;
 
     match cmd {
         PipelineCommand::List => list(&client, &org).await,
-        PipelineCommand::Show { slug } => show(&client, &org, &slug).await,
+        PipelineCommand::Show { slug } => {
+            let slug = settings::resolve_pipeline(app, slug).await?;
+            show(&client, &org, &slug).await
+        }
     }
 }
 
