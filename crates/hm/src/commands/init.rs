@@ -45,6 +45,11 @@ impl TemplateKind {
                 filename: "pipeline.py",
                 content: include_str!("init_templates/rust.py"),
             },
+            Self::Scala => Template {
+                label: "Scala",
+                filename: "pipeline.py",
+                content: include_str!("init_templates/scala.py"),
+            },
             Self::Zig => Template {
                 label: "Zig",
                 filename: "pipeline.py",
@@ -65,6 +70,7 @@ const ALL: &[TemplateKind] = &[
     TemplateKind::Nextjs,
     TemplateKind::Js,
     TemplateKind::Rust,
+    TemplateKind::Scala,
     TemplateKind::Zig,
     TemplateKind::Python,
 ];

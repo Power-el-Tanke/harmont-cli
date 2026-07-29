@@ -19,9 +19,11 @@ fn hm() -> Command {
 // ── non-interactive (--template) ──────────────────────────────
 
 #[rstest]
-fn init_rust_creates_pipeline_py() {
+#[case::rust("rust", "hm.rust.project(")]
+#[case::scala("scala", "hm.scala.project(")]
+fn init_creates_project_pipeline_py(#[case] slug: &str, #[case] entrypoint: &str) {
     let dir = tempfile::tempdir().unwrap();
-    hm().args(["init", "--template", "rust", "--dir"])
+    hm().args(["init", "--template", slug, "--dir"])
         .arg(dir.path())
         .assert()
         .success();
@@ -35,15 +37,15 @@ fn init_rust_creates_pipeline_py() {
         "expected pipeline decorator"
     );
     assert!(
-        content.contains("hm.rust.project("),
-        "expected rust.project() entrypoint, got:\n{content}"
+        content.contains(entrypoint),
+        "expected {entrypoint} entrypoint, got:\n{content}"
     );
     assert!(
         content.contains(".ci()"),
         "expected the one-call .ci() DAG, got:\n{content}"
     );
     assert!(
-        !content.contains("rust.toolchain("),
+        !content.contains(&format!("{slug}.toolchain(")),
         "template should not use the legacy toolchain() API, got:\n{content}"
     );
 }
@@ -177,6 +179,7 @@ fn init_unknown_template_rejected_by_clap() {
 #[case::nextjs("nextjs")]
 #[case::js("js")]
 #[case::rust("rust")]
+#[case::scala("scala")]
 #[case::zig("zig")]
 #[case::python("python")]
 fn init_all_templates_create_files(#[case] slug: &str) {
@@ -200,6 +203,7 @@ fn has_python() -> bool {
 #[case::cmake("cmake")]
 #[case::elixir("elixir")]
 #[case::rust("rust")]
+#[case::scala("scala")]
 #[case::python("python")]
 fn init_python_templates_roundtrip_render(#[case] slug: &str) {
     if !has_python() {
